@@ -1,0 +1,1836 @@
+DETECTIVES: DETEcting Coalition hiT Inﬂation attacks in
+
+adVertising nEtworks Streams ∗
+
+Ahmed Metwally
+
+Divyakant Agrawal Amr El Abbadi
+
+Department of Computer Science,
+
+University of California at Santa Barbara
+
+†
+
+Santa Barbara, CA 93106
+
+{metwally, agrawal, amr}@cs.ucsb.edu
+
+ABSTRACT
+Click fraud is jeopardizing the industry of Internet adver-
+tising.
+Internet advertising is crucial for the thriving of
+the entire Internet, since it allows producers to advertise
+their products, and hence contributes to the well being of e-
+commerce. Moreover, advertising supports the intellectual
+value of the Internet by covering the running expenses of
+publishing content. Some content publishers are dishonest,
+and use automation to generate traﬃc to defraud the ad-
+vertisers. Similarly, some advertisers automate clicks on the
+advertisements of their competitors to deplete their com-
+petitors’ advertising budgets. This paper describes the ad-
+vertising network model, and focuses on the most sophisti-
+cated type of fraud, which involves coalitions among fraud-
+sters. We build on several published theoretical results to
+devise the Similarity-Seeker algorithm that discovers coali-
+tions made by pairs of fraudsters. We then generalize the
+solution to coalitions of arbitrary sizes. Before deploying our
+system on a real network, we conducted comprehensive ex-
+periments on data samples for proof of concept. The results
+were very accurate. We detected several coalitions, formed
+using various techniques, and spanning numerous sites. This
+reveals the generality of our model and approach.
+
+Categories and Subject Descriptors
+H.2.8 [Database Management]: Database Applications—
+Data Mining; K.4.4 [Computers and Society]: Electronic
+Commerce—Payment schemes; Security
+
+General Terms
+Algorithms, Experimentation, Performance, Security
+
+Keywords
+Click Spam Detection, Coalition Fraud Attacks, Approxi-
+mate Set Similarity, Similarity-Sensitive Sampling, Cliques
+Enumeration, Real Data Experiments
+∗
+02-23022, and CNF 04-23336.
+†
+Part of this work was done while the ﬁrst author was at
+FastClick, Inc., a ValueClick company.
+
+This work was supported in part by NSF under grants IIS
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2007, May 8–12, 2007, Banff, Alberta, Canada.
+ACM 978-1-59593-654-7/07/0005.
+
+1.
+
+INTRODUCTION
+
+Internet advertising ﬂourishes as the ideal choice for both
+small and large businesses to target their marketing cam-
+paigns to the appropriate customer body on the ﬂy. An
+Internet advertiser, e.g. ebay, provides an advertising com-
+missioner, e.g. ValueClick, with its advertisements, allocates
+a budget, and sets a commission for each customer action,
+such as clicking an advertisement, bidding in an auction,
+or making a purchase. The Internet publishers, e.g. mys-
+pace.com, motivated by the commission paid by the adver-
+tisers, contract with the commissioner to display advertise-
+ments on their Web sites. The main orchestrators in this
+setting are the commissioners, who are the brokers between
+publishers and advertisers, and whose servers are the back-
+stage for targeting and budgeting.
+
+Whenever a surfer visits a publisher’s site, the surfer is re-
+ferred to one of the servers of the commissioner, which picks
+an advertisement, and embeds it in the publisher’s site on
+the surfer’s Browser. If the surfer clicks the advertisement
+on the publisher’s site, the surfer is referred to the com-
+missioner, who logs the click for accounting purposes, and
+clicks-through the surfer to the advertiser’s site.
+
+Since publishers earn revenue on impressions (rendering
+advertisements), as well as clicks they drive to advertisers,
+there is an incentive for dishonest publishers to inﬂate the
+number of impressions and clicks their sites generate [3, 5,
+25, 28, 34, 35, 38, 45]. Moreover, dishonest advertisers sim-
+ulate clicks on the advertisements of their competitors to
+deplete their advertising budgets [32, 39], which limits the
+exposure of their competitors’ advertisements. Fraudulent
+traﬃc results in bad reputation for the commissioner, and
+sometimes in paying forfeitures for advertisers [29, 30]. Hit
+inﬂation fraud jeopardizes not only the Internet advertising
+industry, but rather the entire Internet [32].
+
+Hit inﬂation has been a concern to advertising commis-
+sioners since their conception [47]1. Most of the research
+investigates publishers’ fraud, since the discussion can be
+generalized to advertisers’ fraud. Three main approaches
+have been proposed to detect hit inﬂation attacks.
+
+The ﬁrst classical fraud detection approach employed a
+set of tools that judge publishers based on how the adver-
+tisements behave on their sites, such as how the ratio of
+impressions to clicks (the Click Through Rate) for each ad-
+
+1The complementary problem of advertisers’ hit shaving,
+where advertisers do not pay commission on some of the
+received traﬃc, was satisfactorily solved in [40].
+
+vertisement diﬀers from the network-wide norms that are
+supposedly exclusively known for commissioners [28]. How-
+ever, fraudsters can make use of a speciﬁc publishers’ site
+architecture [36], sample the network-wide metrics of adver-
+tisements, acquire knowledge about the metrics of the adver-
+tisements loaded on their site, and can hence fool the classi-
+cal tools. In addition, the classical approach cannot detect
+malicious intentions, and is designed to discard low-quality
+traﬃc2, even if it is legitimate. Aggressively discounting
+low-quality traﬃc “underpays” both honest publishers and
+commissioners for a lot of the traﬃc their servers deliver.
+
+The second cryptographic approach [5, 38] asks for the
+cooperation of surfers to identify fraudulent traﬃc. This
+entails changing the advertising network model to be non-
+transparent to all surfer, which is unscalable. Moreover, for
+the solution to be eﬀective, the commissioner has to uniquely
+identify surfers, which compromises surfers’ privacy.
+
+We proposed the third data analysis approach in [34].
+Data analysis tools perform statistical analysis on aggre-
+gate data of surfers’ temporary identiﬁcation, e.g. Cookie
+IDs and IP addresses. Analysis of cookie IDs and IPs is more
+privacy friendly than the cryptographic approach. Cookies
+store no personal information, and they can be blocked, or
+periodically cleared [33]. An IP is usually assigned to surfers
+temporarily, and could be shared by several surfers. The phi-
+losophy of the data analysis approach is not to change the
+industry model, and to obfuscate individual surfers’ identi-
+ties, but still achieve satisfactory levels of fraud detection.
+
+Data analysis techniques [34, 35] can identify speciﬁc pat-
+terns that characterizes fraudulent traﬃc [32]. For instance,
+to uncover a primitive hit inﬂation attack where a script con-
+tinuously simulates clicks on advertisements, we proposed a
+simple Bloom-based [4] algorithm to detect duplicates in a
+stream of impressions or clicks [34]. Experiments on a real
+network were revealing. Interestingly, one of the advertise-
+ments was clicked 10,781 times by the same cookie ID in
+one day. Hence, this approach can reveal malicious inten-
+tions, and thus complement the classical tools that cannot
+distinguish low-quality traﬃc from fraudulent traﬃc.
+
+The classical and the cryptographic approaches did not
+distinguish between attacks made by one publisher or a
+group of publishers forming a coalition. Meanwhile, mak-
+ing this distinction is at the heart of the data analysis ap-
+proach. By forming coalitions, fraudsters share large pools
+of attacking machines. Hence, they avoid the cost and over-
+head of launching highly distributed attacks individually. In
+addition, coalition attacks are more diﬃcult to detect since
+the patterns of fraudulent traﬃc are shared by numerous
+publishers. Therefore, coalition attacks can easily circum-
+vent the classical tools. However, the data analysis approach
+looks for signs of publishers’ coalitions. In [35], we devised
+an algorithm that detects a speciﬁc attack [3].
+
+In this paper, we devise a generalized technique that de-
+tects all forms of coalition attacks. We ﬁrst build on pub-
+lished theoretical results to devise the Similarity-Seeker al-
+gorithm that discovers coalitions of size 2. We then ex-
+tend Similarity-Seeker to discover coalitions of arbitrary
+sizes.
+Interestingly, when implemented on a real network,
+Similarity-Seeker detected numerous coalitions of various
+sizes launching attacks with a variety of techniques. The
+rest of the paper is organized as follows. We start by setting
+2The quality of a click or an impression is an estimate of the
+probability that it yields a sale.
+
+the stage for discovering coalition attacks in Section 2. We
+describe two brute force algorithms in Section 3. Section 4
+develops one of the brute force algorithms into Similarity-
+Seeker that discovers coalitions made by pairs of sites. The
+generalized problem of detecting coalitions of several sites
+is explored in Section 5. We comment on the ﬁndings on a
+real network in Section 6. We discuss the related work in
+Section 7, and conclude with our future work in Section 8.
+
+2. FRAUD DETECTION BY
+
+TRAFFIC ANALYSIS
+
+The basic premise of traﬃc analysis is to draw correla-
+tions between the attacking machines, identiﬁed by IPs and
+cookies, and fraudsters. To circumvent the data analysis
+techniques, fraudulent publishers should dilute the strong
+correlation between their sites and the machines from which
+the attacks are launched. This can be done either on the
+side of the attacking machines or on the side of the attack-
+ers’ sites. Hence, the spectrum extremes of the hit inﬂation
+attacks are:
+
+• To dilute the correlation on the machine(s)’ side, non-
+coalition attack are performed by one fraudster, while
+obliterating or frequently changing the identiﬁcation of
+the machine(s), or using a huge number of machines.
+• To dilute the correlation on the sites’ side, coalition
+attack are performed by many fraudsters, where any
+machine can be used to simulate traﬃc to any site.
+
+If we detect both non-coalition and coalition attacks, then
+any attacker on the spectrum is also detectable. Hence, the
+attackers will have no leeway around the fraud detection
+system, and the hit inﬂation problem is ultimately solved.
+Understandably, the diﬃculty of detecting a non-coalition
+attack increases as the number of machines from which the
+attack is launched increases. In its simplest form, launching
+an attack from one machine, identiﬁed by one cookie-ID,
+can be detected trivially by checking for duplicate impres-
+sions and clicks [34]. However, launching an attack from
+multiple machines is much harder to detect, since the de-
+tection algorithm has to examine the relationship between
+each publisher and all the machines generating traﬃc.
+
+Although the straightforward use of network anonymiza-
+tion, e.g. tor.eﬀ.org, is attractive for inexperienced fraud-
+sters, it is not eﬀective. Those services were designed to
+protect surfers’ privacy. Hence, they block surfers’ cookies.
+Therefore, using network anonymization can be trivially de-
+tected by monitoring the percentage of cookie-less traﬃc per
+publisher and investigating publishers whose traﬃc deviates
+from the norm. Similarly, on real networks, we notice some
+novice fraudsters generating a lot of traﬃc from ISPs that
+assign virtual IP addresses to surfers, such as AOL r(cid:2). How-
+ever, the ranges of IPs of those ISPs are well known, and
+again, the ratio of the traﬃc of any publisher received from
+those ISPs is highly stable across all the publishers. Hence,
+such attacks are easily detected by examining the ratio of the
+traﬃc received from ISPs assigning virtual IPs as compared
+to the entire publisher’s traﬃc.
+
+This is where the complexity of launching scalable at-
+tacks becomes clear. Hard-to-detect attacks from several
+machines could be costly and unscalable to launch. To have
+a normal percentage of cookie-less traﬃc, and a normal per-
+centage of non-virtual ISPs’ IPs, fraudsters are motivated
+
+Resources of
+Fraudster 1
+
+Resources of
+Fraudster 2
+
+......
+
+Resources of
+Fraudster Q
+
+Site of
+
+Fraudster 1
+
+Site of
+
+Fraudster 2
+
+......
+
+Site of
+
+Fraudster Q
+
+(a) In non-coalition attacks, every
+fraudster generates traﬃc to its site
+only.
+
+Resources of
+Fraudster 1
+
+Resources of
+Fraudster 2
+
+......
+
+Resources of
+Fraudster Q
+
+Site of
+
+Fraudster 1
+
+Site of
+
+Fraudster 2
+
+......
+
+Site of
+
+Fraudster Q
+
+(b) In coalition attacks, every fraud-
+ster generates traﬃc to its and other
+sites in the coalition.
+
+Figure 1: Non-Coalition versus Coalition Attacks
+
+to either own the attacking machines, or to control the ma-
+chines of real surfers through Trojans in order to use the
+IPs and cookies of real surfers. In other words, launching
+scalable attacks entails high cost or requires some Trojan-
+writing skills, since out-of-the-box Trojans are easily de-
+tected with anti-virus softwares, and hence are unscalable.
+Thus, the correlation between the diﬃculty of launching an
+attack and the diﬃculty of detecting it is understandable.
+
+2.1 Forming Fraudsters’ Coalitions
+
+To avoid the cost of launching scalable hit inﬂation at-
+tacks, fraudsters shift their strategy from launching dis-
+tributed non-coalition attacks, to launching coalition attacks
+where many fraudsters share their resources (machines used
+in the attack). That is, the machines are used to generate
+traﬃc for several sites.
+
+For instance, assume attacker A can generate u hits from
+each machine it controls, without being rejected by the com-
+missioners’ non-coalition radars. Another attacker, B, can
+simulate another u undetectable hits per controlled resource.
+Assuming no overlap between A’s and B’s resources, it is
+more scalable and cost eﬀective to time-share the resources,
+and generate 2u hits for each publisher, instead of doubling
+the number of resources. The argument can be extended for
+larger coalitions as illustrated in Figure 1.
+
+Forming coalitions serves two main purposes. The ﬁrst
+purpose is to increase the traﬃc and the revenue while main-
+taining the same cost per fraudster. The second purpose
+is to blur the relationship between the identities (IPs and
+cookie IDs) of the attacking machines and the attackers’
+sites. Launching coalition attacks does not need specialized
+Web development skills.
+It only needs minimal resources,
+and the knowledge of other fraudsters.
+
+For commissioners, detecting coalition attacks is challeng-
+ing since the traﬃc coming from any attacking machine does
+
+not exclusively go to one publisher (Figure 1). Rather, each
+attacking machine contributes a small portion to the traf-
+ﬁc of each fraudster in the coalition. This hinders non-
+coalition radars from associating any publisher with a rea-
+sonable amount of resources. Therefore, forming coalitions
+is the perfect solution for fraudsters to launch scalable at-
+tacks from machines whose identiﬁcations are weakly corre-
+lated with their sites.
+2.2 Detecting Fraudsters’ Coalitions
+
+To detect coalition attacks, the commissioner has to search
+for publishers’ sites with highly similar traﬃc. A reliable ﬁn-
+gerprint of a site’s traﬃc is the set of IP addresses generating
+the traﬃc3. Given the set of distinct IPs visiting each site,
+the commissioner has to search for sites whose traﬃc entries
+are generated from roughly the same set of IPs4.
+
+Since the traﬃc entries of diﬀerent publishers are inter-
+leaved in the log ﬁle, the traﬃc is scanned ﬁrst to obtain
+the set of IPs visiting each site, which is then stored in a
+separate ﬁle. For each publisher, A, let SA be the set of IPs
+visiting A. Deﬁne SB analogously. Several measures of the
+similarity between SA and SB exist [16], including the Dice
+√
+|SA∩SB|
+coeﬃcient, 2
+|SA|×|SB| ;
+|SA∩SB|
+|SA∪SB| . The goal is to discover
+and the Jaccard coeﬃcient,
+all pairs of sites whose similarity exceeds some threshold, s.
+Fortunately, as shown in Section 6, any two legitimate sites
+have negligible similarity.
+
+|SA∩SB|
+|SA|+|SB| ; the cosine coeﬃcient,
+
+3. THE BRUTE FORCE ALGORITHMS
+
+We start by describing the two brute force alternatives in
+Sections 3.1, and 3.2. Since eﬃciently detecting coalitions
+is hard, we develop the second algorithms further to detect
+coalitions of pairs of sites in Section 4.
+In Section 5, we
+extend the algorithm to detect coalitions of arbitrary sizes.
+3.1 The First Brute Force Algorithm:
+
+All-Pairs
+
+The ﬁrst algorithm considers every possible pair of sites.
+For every pair, A and B, the All-Pairs algorithm calculates
+any of the three aforementioned similarity coeﬃcients be-
+tween their sets of IPs by determining the size of the inter-
+section (SA ∩ SB) using a sort-merge procedure. Assuming
+the main memory cannot accommodate the entire traﬃc,
+but can accommodate the traﬃc of any two sites, then the
+sort-merge procedure can be done in memory. However, the
+traﬃc is read from disk O(D) times, where D is the num-
+ber of publishers’ sites. An average-sized commissioner has
+around 50,000 sites.
+The traﬃc of each site can be presorted. The presort-
+ing step is O(D|S| log(|S|)), where S is the largest IP set.
+The number of distinct IPs visiting a site in a day is around
+25,000, but reaches 1,000,000 for some sites. Presorting re-
+duces the total in-memory complexity from O(D2|S|2) to
+O(D|S|(D + log(|S|))).
+3Through the sequel, we concentrate on fraud detection, and
+thus we assume the source IPs of the traﬃc are not spoofed.
+Counteracting spooﬁng has been studied in [15].
+4To simplify the presentation, we assume all the IPs are
+equally treated. However, the entire discussion can be triv-
+ially generalized for the case where special IPs, such as those
+coming from a speciﬁc location or known to belong to Inter-
+net Service Providers (ISPs), are given diﬀerent weights.
+
+(cid:2)
+
+≥
+
+1 − |SA∩SC|
+|SA∪SC|
+
+1 − |SA∩SB|
+|SA∪SB|
+
+Optimizing All-Pairs.
+The All-Pairs algorithm can be enhanced by using the tri-
+angle inequality. This limits the optimization to the Jaccard
+|SA∪SB| , the Jaccard dissimilarity of SA
+coeﬃcient since 1− |SA∩SB|
+(cid:2)
+and SB, satisﬁes the triangle inequality. That is, for any
+(cid:1)
+(cid:1)
+three sites A, B, and C, it is true that
++
+1 − |SB∩SC|
+|SB∪SC|
+. The dissimilarity based
+on the other two coeﬃcients does not satisfy the triangle
+inequality. The optimization entails looking for a third site,
+C, such that A and B can be judged similar or dissimi-
+lar using the similarity already calculated for the pair A
+and C, and the pair B and C in a dynamic programming
+scheme. Thus, when testing A and B for having similarity
+exceeding the threshold s, if there exists a site, C, such that
+, then (1 − s) ≥
+1 − |SB∩SC|
+(1 − s) ≥
+1 − |SA∩SC|
+(cid:1)
+(cid:2)
+|SA∪SC|
+|SB∪SC|
+1 − |SA∩SB|
+|SA∪SB|
+, and A and B are similar.
+(cid:3)(cid:3)(cid:3)(cid:1)
+(cid:2)(cid:3)(cid:3)(cid:3), then A and B are dis-
+(cid:1)
+(cid:2)
+Conversely, if there exists a site, C, such that (1 − s) ≤
+1 − |SA∩SC|
+|SA∪SC|
+similar because (1 − s) ≤
+
+1 − |SB∩SC|
+(cid:1)
+|SB∪SC|
+
+(cid:2)
+
+.
+
+(cid:2)
+
+(cid:1)
+
++
+
+(cid:1)
+
+(cid:2)
+
+(cid:1)
+
+−
+
+(cid:2)
+
+1 − |SA∩SB|
+|SA∪SB|
+
+However, as shown in Section 6,
+
+legitimate sites have
+slim similarity, which makes this optimization ineﬀective for
+faster discovery of sites with similar traﬃc.
+3.2 The Second Brute Force Algorithm:
+
+All-IPs
+
+Instead of performing a sort-merge for every possible pair
+of sets of IPs, the All-IPs algorithm performs a sort-merge
+for all the sets together. Hence, all sites sharing a speciﬁc IP
+are identiﬁed, and All-IPs calculates the similarity of pairs
+that have a common IP. Counting the number of IPs shared
+by any pair of sites requires one scan on the sorted data.
+However, the sort-merge is done out-of-memory5. Hence,
+the traﬃc is read from disk O(log(D)) times. The ﬁrst pre-
+sorting scan has in-memory complexity of O(D|S| log(|S|)).
+Then, O(log(D)) scans are made for merging, each has an in-
+memory complexity of O(D|S|), yielding a total in-memory
+complexity of O(D|S|(log(D) + log(|S|))).
+
+The All-IPs brute force algorithm has been proposed be-
+fore for measuring set similarity in the context of ﬁnding
+similar ﬁles and domains on the Internet [9, 10, 13]. In a
+collection of D documents, each document is represented by
+the set of all statements of a speciﬁc length the document
+contains. This is analogous to our problem of ﬁnding highly
+similar sets of IPs among a large collection of sets.
+
+Optimizing All-IPs.
+To compact the sets, Broder et al. [9, 10, 13] proposed sam-
+pling. Reducing the size of S decreases the computations.
+Sampling results in the sort-merge producing fewer IPs as
+well as fewer sites sharing any IP.
+However, random sampling from the two sets SA and SB
+greatly skews the size of the intersection. In the worst case,
+random sampling can lead to an empty intersection even
+(cid:4)|SA| × |SB|,
+though the actual intersection is not empty [17]. Therefore,
+the sampling technique used should scale down |SA ∩SB| by
+the same factor it scales down |SA| + |SB|,
+or |SA ∪ SB|, to conserve the Dice, cosine, or Jaccard coeﬃ-
+5[46] gives a good survey on external memory algorithms.
+
+cients, respectively. Three hash-based sampling techniques
+were proposed by Broder et al. to conserve the similarity.
+Since our ﬁnal algorithm is based on the All-IPs brute force
+algorithm, we discuss the three techniques in Section 4.
+
+4. DETECTING COALITIONS OF
+
+PAIRS OF SITES
+
+In this section, we develop All-IPs to eﬃciently detect all
+coalitions of size 2. In Section 4.1, we describe the sampling
+of IPs visiting sites, and derive the sample size that guaran-
+tees a speciﬁc error. In Section 4.2, we propose Similarity-
+Seeker for detecting sites with similar traﬃc.
+4.1 Similarity-Sensitive Sampling
+The IP sets should be sampled, such that any pair of sites,
+A and B, whose IP sets, SA and SB, have a similarity ex-
+ceeding a threshold, s, is discovered with high probability.
+For any set S deﬁned on domain Ω ⊆ N , let π : Ω → Ω be a
+permutation of Ω chosen uniformly at random; g : Ω → N
+be an arbitrary injection; and M ODy(S) be the subset of
+the elements that are 0 modulo y. Yy,g,π(S), deﬁned as
+M ODy(g(π(S))), is a similarity-sensitive sample of S. In [9],
+|Yy,g,π (SA)∩Yy,g,π (SB )|
+|Yy,g,π (SA)∪Yy,g,π (SB )| was shown to be an unbiased estima-
+|SA∩SB|
+|SA∪SB| . Although [9, 10, 13]
+tor of the Jaccard coeﬃcient,
+tackled the problem in the context of Jaccard similarity only,
+we like to point out the generality of the sampling method.
+|Yy,g,π (SA)∩Yy,g,π (SB )|
+|Yy,g,π (SA)|+|Yy,g,π (SB )| is an unbiased es-
+It is easy to show 2
+√
+|Yy,g,π (SA)∩Yy,g,π (SB )|
+|Yy,g,π (SA)|×|Yy,g,π (SB )|
+
+timator of the Dice coeﬃcient, and
+
+is an unbiased estimator of the cosine coeﬃcient
+Broder et al. proposed other techniques to estimate Jac-
+card similarity in speciﬁc. For any set, S, from a totally
+ordered domain, let M INz(S) be the subset containing the
+smallest z elements in S if |S| ≥ z; otherwise M INz(S) = S.
+Let SA and SB be the sets of IPs visiting sites A and B, re-
+spectively. Deﬁne Zz,π(SA) as M INz(π(SA)), and deﬁne
+Zz,π(SB) analogously.
+It was shown in [13] that an unbi-
+ased estimator of the Jaccard coeﬃcient of SA and SB is
+given by
+The number of samples generated by the former method,
+based on Yy,g,π(S), grows with |S|, which could be inconve-
+nient; while the number of sample generated by the latter
+method, based Zz,π(S), is ﬁxed. On the other hand, the
+former method is easier to calculate, and can be used for all
+similarity coeﬃcients. However, it is diﬃcult to derive any
+guarantees on the quality of both estimators.
+
+|M INz (Zz,π(SA)∪Zz,π(SB ))∩Zz,π(SA)∩Zz,π(SB )|
+
+|M INz (Zz,π(SA)∪Zz,π(SB ))|
+
+.
+
+−1
+i
+
+In [10], a MinHash-based Jaccard estimator was adopted.
+Since this is the only estimator that we can draw error guar-
+antees for, we use it in the sequel. Let πi be a permutation
+of Ω chosen uniformly at random. For a set S = {s1, s2, . . .}
+on Ω, let minπi (S) be π
+(min(πi(s1), πi(s2), . . . )). There-
+fore, for sets SA and SB, minπi (SA) = minπi (SB) if and only
+if minπi (SA ∪SB) ∈ (SA ∩SB). Since πi is chosen uniformly
+at random, then all the elements in (SA ∪ SB) are equi-
+probable to become minπi (SA ∪ SB). Hence, minπi (SA) =
+minπi (SB) with probability
+|SA∩SB|
+|SA∪SB| , which is the Jaccard
+coeﬃcient of SA and SB. Therefore, we can calculate an
+unbiased estimate of the Jaccard coeﬃcient of the pair SA
+and SB as follows. Construct a set of n independent uni-
+form permutations, π1, π2, . . . , πn, and calculate minπi (SA)
+and minπi (SB) for 1 ≤ i ≤ n. The unbiased estimate is
+
+Count(i| minπi
+
+(SA)=minπi
+
+(SB ))
+
+given by
+permutations (samples) where both minimums agree.
+
+, which is the ratio of
+
+n
+
+4.1.1 How Big is n? Error Analysis of the Jaccard
+
+Estimator.
+
+|SA∩SB|
+|SA∪SB| .
+
+In advertising networks, having guarantees on the qual-
+ity of the results is very crucial. The commissioner has to
+know, with very low error rate, sites whose traﬃc are highly
+similar. Discarding sites erroneously reduces the commis-
+sioner’s revenue, while charging advertisers for fraudulent
+traﬃc puts the commissioner at risk. However, no robust
+error analysis for the estimators in [9, 10, 13] was provided.
+Since each permutation generates one sample, to discuss
+error analysis, we use the two terms interchangeably. We
+calculate the minimum number of samples, n, for a spe-
+ciﬁc conﬁdence interval estimate on the Jaccard coeﬃcient
+of SA and SB using the sampling method proposed in [10].
+For each permutation πi, we model comparing the samples,
+minπi (SA) and minπi (SB), as an independent Bernoulli trial
+
+with unknown success probability, p =
+A Bernoulli random variable is 1 with probability p, and
+is 0 with probability (1− p). Based on n samples, the Maxi-
+(cid:5)
+xi
+mum Likelihood Estimator of p is given by ˆp =
+n , where
+the variance of ˆp is given by p(1−p)
+. Since the distributions
+of the samples are independent, and identical, the central
+limit theorem and the law of large numbers state, for large
+n, ˆp is approximately normally distributed. Thus, if Kα de-
+notes the cdf of the standard normal distribution between
+−∞ and α, then both Pr
+
+(cid:7)
+
+< Kα/2
+
+n
+
+(cid:6)
+ˆp−p√
+−Kα/2 <
+(cid:7)
+p(1−p)/n
+are equal to 1 − α.
+
+and Pr
+
+−Kα <
+
+ˆp−p√
+p(1−p)/n
+
+(cid:6)
+
+(cid:8)
+
+n
+
+(cid:10)
+
+ˆp(1− ˆp)
+
+|SA∪SB| is given by ˆp ± Kα/2
+|SA∩SB|
+(cid:8)
+ˆp(1− ˆp)
+
+Therefore, a two-sided (1− α) approximate conﬁdence in-
+, and a one-
+terval for
+(cid:9)
+sided (1 − α) approximate conﬁdence interval is given by
+ˆp − Kα
+One-sided conﬁdence intervals are more interesting for
+our application, since we are looking for pairs of sites with
+Jaccard coeﬃcient exceeding a threshold s. Therefore, the
+minimum size, n, of the permutations family that would
+guarantee (1 − α) conﬁdence that the estimator exceeds s
+is n =
+. Clearly, the sample size is not
+
+ˆp(1 − ˆp)
+
+(cid:2)2
+
+(cid:1)
+
+(cid:11)
+
+(cid:12)
+
+, 1
+
+n
+
+.
+
+Kα
+ˆp−s
+
+(cid:16)
+
+Kα
+2
+
+(cid:15)2
+
+(cid:13)(cid:14)
+bounded in the general case. However, if p is to be esti-
+mated within a margin of error of , then this bounds n by
+[7]. Statistically, this is interpreted as: with prob-
+ability at least 1 − α, the estimator is no more than  less
+than the user threshold, s, i.e., Pr (ˆp > s − ) ≥ 1 − α. For
+instance, n =
+= 423 permutations guarantees
+
+(cid:11)(cid:1)
+
+(cid:2)2
+
+(cid:12)
+
+1.645
+2×0.04
+
+that a pair of sites is estimated to be similar is truly similar
+within an error of  = 0.04 with probability 0.95.
+
+4.1.2 A Discussion of Permutations.
+
+Random permutations are needed to implement this Jac-
+card estimator. Representing each truly random permuta-
+tion requires |N| log |N| bits, where practically |N| = 264
+[24]. This motivated Broder et al. to deﬁne min-wise inde-
+pendent (MWI) permutations in [11]. F is a family of MWI
+permutations on a domain Ω ⊆ N , if when π is chosen
+
+Procedure: Samples-Select(Integer n)
+begin
+
+Construct πi using the technique in [12];
+
+//Constructing permutations
+for (Integer i = 1, i ≤ n, i + +){
+}// end for
+//Traﬃc separation
+for each TraﬃcEntry e = (Site ID, IP ){
+}
+//Selecting samples
+for each Site ID{
+
+Write e to the traﬃc ﬁle of Site ID on disk;
+
+IP Site-Samples[n] = empty array;
+for each TraﬃcEntry e = (Site ID, IP ){
+for (Integer j = 1, j ≤ n, j + +){
+
+if (πj (IP ) < πj (Site-Samples[j])){
+}
+
+Site-Samples[j] = IP ;
+
+}// end for
+
+}// end for
+let Site ID be stored at row i in Samples
+Write Site-Samples to Samples[i] on disk;
+
+}// end for
+
+end;
+
+Figure 2: The Samples-Select Procedure.
+
+at random from F, then for any x ∈ Ω, Pr(min(π(Ω)) =
+π(x)) = 1|Ω| . That is, all the elements of any domain, Ω,
+have equal chances to be the minimum element of the image
+of Ω under any π. However, MWI families are impractical,
+|Ω|−o(|Ω|)
+since the cardinality of any such family is at least e
+[11]. In our case, Ω is the IP domain.
+To achieve easy computation, Indyk proposed a relaxed
+version of MWI, −MWI [24], deﬁned as follows. For any
+domain Ω ⊂ N , and x ∈ (N − Ω), if π : N → N is chosen
+at random from F, then Pr(π(x) < min(π(Ω))) = 1±
+|Ω|+1 .
+if x ∈ Ω, then
+
+We rewrite this in a simpler form as,
+
+(cid:3)(cid:3)(cid:3) ≤ |Ω| . That is, all the ele-
+
+(cid:3)(cid:3)(cid:3)Pr(π(x) = min(π(Ω))) − 1|Ω|
+
+1
+
+ments of any domain, Ω, have almost equal chances to be
+the minimum element of the image of Ω under any π.
+[24]
+provides a construction of compact −MWI permutations.
+An even more practical variation of MWI is pair-wise inde-
+pendent (PWI) permutations [11]. F is a family of PWI per-
+mutations if for any {s1, s2, t1, t2} ⊆ Ω, s1 (cid:13)= s2, t1 (cid:13)= t2, if π
+is chosen at random from F then Pr((π(s1) = t1)∧ (π(s2) =
+|Ω|×(|Ω|−1) . Although [11] showed that PWI families
+t2)) =
+can be viewed as −MWI families with  as large as log Ω,
+in practice, they have many implementations and are widely
+used [12]. For instance, the performance of linear indepen-
+dence, of the form πi(x) = aix + bi modulo c, is acceptable
+in real life if Ω ⊆ {1, . . . , c}, Ω, c → ∞, c is a prime, ai and
+bi are chosen at random, and ai (cid:13)= 0 [11, 6]. [12] provided an
+eﬃcient way to construct a family of −MWI permutations
+using a random invertible Boolean matrix, coupled with a
+redundant input representation, yielding an  of 0.25 in the
+worst case, and 0.06 in practice. We choose this implemen-
+tation [12] due to its guaranteed tolerable error.
+
+4.2 The Similarity-Seeker Algorithm
+
+Now, we have a reliable sampling technique that eﬃciently
+estimates the similarity of huge sets of IPs visiting sites.
+Moreover, for a given error bound and conﬁdence, we know
+the number samples to collect. We use this sampling method
+to describe the Similarity-Seeker algorithm.
+
+The algorithm starts by collecting samples using the tech-
+nique in [12]. It uses every permutation to discover all pos-
+
+Algorithm: Similarity-Seeker (Double s, , α, Integer l)
+begin
+
+(cid:11)(cid:1)
+
+(cid:12)
+
+(cid:2) 2
+
+;
+
+Kα
+2
+
+//Calculating the number of samples
+Integer n =
+//Creating an array of samples
+IP Samples[|Sites|][n] = empty D × n array;
+Samples-Select(n);
+//Allocating space for C
+Set <SiteID, SiteID, Integer> C = empty set;
+for (Integer j = 1, j ≤ n, j + +){// IPs loop
+
+//Allocating space for H
+HashTable <IP, SiteList> H = empty hash table;
+for (Integer i = 1, i ≤ |Sites|, i + +){// Sites Loop
+
+//Populating H with lists of sites sharing an IP
+let Site ID be the SiteID at Samples[i]
+let IP be the IP at Samples[i, j]
+Insert Site ID into H[IP ].SiteList;
+
+}// end for
+//Incrementing similarity of sites sharing the jth IP
+for each SiteList SL in H{
+
+if (|SL| < l){// Sites do not share a popular IP
+
+for each two sites, A and B, in SL{
+
+if ((A, B) ∈ C){
+
+C[(A, B)].Integer ++;
+if (sn − 1 ≥ C[(A, B)].Integer > sn){
+}
+
+Output (A, B) as similar;
+
+Insert (A, B, 1) into C;
+
+} else{
+}
+
+}// end for
+
+}
+
+}// end for
+
+}// end for
+
+end;
+
+Figure 3: The Similarity-Seeker Algorithm.
+
+sible pairs of sites that share an IP in their samples. The
+algorithm employs three data structures: Samples, C, and
+H. Samples is a D × n array whose rows represent sites,
+columns represent permutations, and cells represent sam-
+ples for sites under permutations. The Samples array is
+populated by the Samples-Select procedure described next.
+C is a set of triplets: two site IDs and the number of shared
+samples. C tracks pairs of sites with shared samples exceed-
+ing sn, where s is the similarity threshold. H is a hash table
+of tuples: a sample ID, and a list of sites sharing it.
+
+4.2.1 Selecting the Samples.
+
+To populate Samples, the Samples-Select, as sketched in
+Figure 2, procedure makes two preliminary scans on the
+traﬃc data. In the ﬁrst scan, Samples-Select separates the
+traﬃc of each site in an individual ﬁle that can ﬁt in memory.
+For each site, Samples-Select makes a second pass where it
+hashes each traﬃc entry using all the permutations. After
+collecting all the samples, the ﬁle is written back to the right
+row in Samples. We only require the memory to accommo-
+date one row or one column of Samples at a time. This
+increases the scalability of the proposed algorithm. The in-
+memory complexity of Samples-Select is O(D|S|n).
+4.2.2 Discovering Similar Pairs.
+
+Once Samples is populated, Similarity-Seeker reads it in
+a column-major manner. For every column (permutation),
+a hash table, H, is temporarily constructed for holding D
+samples and their corresponding lists of sites sharing each
+sample. The hash table is populated after one scan on the
+column, and the list of sites sharing each IP is populated. A
+scan is then made on H. Any list that contains a large num-
+ber, l, of sites sharing a sample is discarded. This sample
+
+is probably the IP address of an Internet Service Provider
+(ISP) or a Network Address Translation (NAT) box, that is
+shared by hundreds of computers. Otherwise, for each pair
+in a list sharing a sample, a corresponding element is created
+with a number of shared samples of 1, and is inserted in C, if
+it does not already belong to C, or is incremented otherwise.
+At any time, if the incremented pair satisﬁes the similarity
+s, Similarity-Seeker outputs this pair as similar. The algo-
+rithm for discovering all pairs with a similarity exceeding s
+with conﬁdence α and error  is presented in Figure 3.
+
+4.2.3 The Similarity-Seeker Complexity.
+
+In addition to the two scans on the traﬃc date made
+by Samples-Select, Similarity-Seeker makes only one scan
+on Samples. Since Samples is typically smaller than the
+entire traﬃc, then the traﬃc is considered to be scanned
+only thrice, as compared to the O(log(D)) in the All-IPs
+algorithm, where D is around 50,000. Calculating the in-
+memory complexity of Similarity-Seeker is more involved.
+To establish a bound on the in-memory complexity of pro-
+cessing one column by Similarity-Seeker, we have to consider
+two extreme cases. The ﬁrst is where l − 1 sites share the
+same sample, and all the other D−(l−1)
+samples are shared
+by two sites. The second is where all the D samples are
+clustered to form lists of length l − 1. Then the complex-
+ity of processing one column is O
+. The
+complexity of any non-extreme case is clearly a linear combi-
+nation of O
+and O(lD). Since the lD factor dom-
+inates, and there are n columns, the total complexity of
+Similarity-Seeker is O
+with a tiny hidden constant. In
+practice, the complexity is less due to the dissimilarity of IPs
+visiting sites, and hence less clustering of sites. We examine
+the relationship between the estimated sites’ similarity and
+the parameter l in Section 6. Interestingly, some site pairs
+retain their similarity, no matter how small l is set.
+
+l2 + D, lD
+
+l2 + D
+
+(cid:15)(cid:15)
+
+max
+
+lD
+2
+
+(cid:14)
+
+(cid:14)
+
+2
+
+(cid:14)
+
+(cid:14)
+
+(cid:15)
+
+(cid:15)
+
+Due to the smaller number of sets, D, in our case (50,000
+instead of all the Internet documents) we assumed that all
+the D samples from one permutation can ﬁt in memory.
+Thus Similarity-Seeker avoids the out-of-memory sort-merge
+performed by All-IPs with all the associated I/O and com-
+putational overheads.
+
+5. DETECTING COALITIONS OF
+
+ARBITRARY SIZES
+
+Similarity-Seeker can eﬃciently detect coalitions of pairs
+of sites. However, as we discuss in Section 5.1, attackers
+form coalitions of sizes exceeding 2 to stay under the radar
+level by giving up some greed. Hence, we extend Similarity-
+Seeker to detect larger coalitions in Sections 5.2, and 5.3.
+5.1 Greed versus Subtleness Given a
+
+Coalition Size
+
+A group of attackers, of size Q, can make hard-to-detect
+coalitions by not sharing all the resources together. Instead,
+each publisher would share each resource it controls with
+only q random attackers. Hence, as shown by Theorem 1 the
+pairs’ similarities drop, while still gaining from coalitions.
+
+Theorem 1. A group of attacking publishers, of size Q,
+where each publisher shares each resource it controls with
+only q < Q random publishers, reduces similarity between
+2(Q−1)+q(2Q−q−3) and achieves a gain of q.
+pairs from 1 to
+
+q(q+1)
+
+Proof. Assume each site in the attacking group controls r
+resources, the Jaccard coeﬃcient is used for similarity, and
+that a resource shared by A with B is not re-shared by B.
+For any two sites, A and B, SA∩SB is given by the resources
+shared by A with B, the resources shared by B with A, and
+the resources shared by all the other Q − 2 nodes with both
+A and B. This is equal to 2r q
+(Q−1)(Q−2) =
+Q−1 . SA ∪SB is given by the resources controlled by
+r(q + 1) q
+A, the resources controlled by B, and the resources shared
+by all the other Q − 2 nodes with either A or B. This
+is equal to 2r + 2r(Q − 2) q
+(Q−1)(Q−2) .
+Q−1
+q(q+1)
+2(Q−1)+q(2Q−q−3) .
+Hence the Jaccard coeﬃcient is given by
+The resources directing traﬃc to each site is r(q + 1), after
+forming the coalition, instead of the r resources controlled
+2
+by each site.
+
+Q−1 + r(Q− 2)× (q)(q−1)
+
+− r(Q − 2) × (q)(q−1)
+
+Corollary 1. By increasing the size of a coalition, at-
+tackers can sustain similarity between pairs at a low level,
+while still increasing their gains.
+
+.
+
+(cid:1)
+
+1
+
+(cid:2)
+
+2(s+1)
+
+(cid:4)
+
+Proof. To keep pairs’ similarity below a detectable level,
+×
+
+(2Qs + 1)2 − (4Qs2 + 1) + (1 − s)2
+
+s, the gain of each publisher is q, where q is given by
+(2Q − 3)s − 1 +
+Hence, similarity between pairs can be sustained at any
+level, s, while increasing the gain, q, by forming larger groups,
+2
+i.e. increasing Q.
+Q, the Jaccard
+coeﬃcient is less than 1√
+Q . Fortunately, as shown in Sec-
+tion 6, any two legitimate sites have negligible similarity.
+Therefore, even if attackers form large coalitions, the subtle
+similarity between pairs is still above the norm, and is still
+detectable by Similarity-Seeker.
+5.2 Detecting Large Coalitions based on
+
+From Theorem 1, if q > 1 and q =
+
+√
+
+Pairs of Sites
+
+Increasing the size of coalitions from pairs to large groups
+shifts our focus from searching for pairs of sites with highly
+similar traﬃc to searching for groups with moderate simi-
+larity. For two main reasons, the solution in Section 4 has
+to be extended for coalitions of arbitrary sizes. First, out-
+putting one set of several sites, such that each pair of sites
+have similar traﬃc, establishes the evidence for the fraud-
+sters’ malicious intention. It is very unlikely, for any random
+group of sites of size Q, that all possible pairs are similar. If
+any two publishers’ sites can be mistakenly judged to have
+similar traﬃc with probability ρ. Then, mistakenly judging
+that Q random sites are involved in a coalition attack has
+a probability of ρ
+. For instance, if ρ = 0.1, then er-
+roneously judging a small group of 5 random sites to be in
+coalition has a probability of 10
+
+−10.
+
+Q(Q−1)
+
+2
+
+Second, outputting one set of several sites is more concise
+than outputting all the possible pairs in that set. For in-
+stance, if 3 coalitions of size 50 fraudsters are discovered, it
+is more convenient for the management to verify a list of 3
+entries, each of size 50, than to examine 3 × 50×49
+2 = 3225
+entries, each of size 2. In addition, the output conciseness
+gives a more panoramic picture of the coalition and facil-
+itates manual investigations like checking for common fea-
+tures of the sites, such as contract date, and earning rate.
+
+Therefore, we need to condense the detected pairs of sites
+into groups of sites. sites’ similarity can be modeled as an
+undirected graph whose nodes represent sites, and whose
+
+edges connect pairs of sites with similar traﬃc. The objec-
+tive is to search for, instead of just edges, all maximal cliques
+in this huge graph.
+5.3 Discovering All Maximal Cliques in the
+
+Sites’ Similarity Graph
+
+Let G = (V, E) be the sites’ similarity graph, where the
+set of nodes V represent sites, and E is a set of edges con-
+necting pairs of sites if and only if their similarity is at least
+s. We will be interchangeably referring to sites and nodes
+representing them.
+For a subset W ⊆ V , G(W ) = (W, E(W )) with E(W ) =
+{(v, w) ∈ W × W|(v, w) ∈ E} is called a subgraph of G
+induced by W , and G is called a supergraph of G(W ). G(W )
+is said to be a clique if and only if (v, w) ∈ E ∀ v, w ∈ W .
+G(W ) is a maximal clique if it is not a proper subgraph of
+another clique. The objective is to ﬁnd all maximal clique
+in the sites’ similarity graph G. The graph ¯G = (V, ¯E) is a
+complementary graph of G if ¯E = {(v, w) ∈ V × V |(v, w) /∈
+E}. A subset W ⊆ V is an independent set if and only if
+(v, w) /∈ E ∀ v, w ∈ W . W is a maximal independent set if it
+is not a proper subgraph of another independent set. Finding
+all maximal clique in a graph G is equivalent to ﬁnding all
+maximal independent sets in ¯G.
+
+Two seminal algorithm for enumerating all cliques are
+provided in [14]. The ﬁrst algorithm is a basic recursive
+branch and backtrack technique. The second algorithm is
+an optimized variation that prunes the search space faster.
+
+(cid:1)
+
+(cid:2)
+
+|V |
+3
+
+|V |3
+(cid:1)
+
+(cid:2)
+
+|V |
+3
+
+The complexity of the second algorithm is O
+[43].
+Among all the variations [19, 26, 43, 44] of the algorithms
+
+3
+
+in [14], [43] was able to reach a complexity of O
+by
+integrating the output function into the algorithm. This is
+|V |
+3 cliques 6 [37].
+optimal, since a graph can contain up to 3
+The maximal cliques enumeration algorithm in [43] has
+polynomial storage requirements, and is optimal in the worst
+case. However, since the sites’ similarity graph is extremely
+sparse as shown in Section 6, quantifying the complexity
+in terms of the number of maximal cliques in the graph is
+crucial to our application. Although this involves complex
+analysis [43], the original experiments in [14] showed the
+average time to identify a maximal clique, i.e., a coalition
+attack, is not dependent on the size of the graph or the
+number of maximal cliques.
+
+We recommend the implementation of [43] due to its op-
+timal worst case complexity, though other algorithms estab-
+lished complexity bounds in terms of the number of maximal
+cliques in the graph, i.e., the number of coalitions. For in-
+stance, [44] combined the pruning techniques in [2] and [14]
+to ﬁnd all the maximal independent sets with a complexity of
+O(|V ||E|µ), where |V |, |E|, and µ are the numbers of nodes
+(cid:4)|V |).
+(sites), edges, and cliques in the graph. This algorithm was
+improved in [19] to O(a(G)|E|µ), where a(G) ≤ O(
+
+6. FINDINGS ON A REAL NETWORK
+
+We have devised Similarity-Seeker for detecting coalitions
+of pairs of attackers, and then extended it for coalitions of
+arbitrary sizes. To check the validity and the eﬀectiveness
+of our development, we comment on our comprehensive set
+6For instance, let G be a graph of x triplets, i.e., |V | = 3x.
+Two nodes are connected if they belong to diﬀerent triplet.
+Hence, there are 3x cliques, each of size 3.
+
+Variation of Number of Site Pairs with Similarity
+
+Excluding IPs shared by 
+
+l  or more sites
+
+l >=
+
+  1000 sites
+  30 sites
+
+  100 sites
+  20 sites
+
+  50 sites
+  10 sites
+
+  40 sites
+
+s
+r
+i
+
+a
+P
+
+ 
+f
+o
+ 
+r
+e
+b
+m
+u
+N
+
+1.E+8
+1.E+7
+1.E+6
+1.E+5
+1.E+4
+1.E+3
+1.E+2
+1.E+1
+1.E+0
+
+Figure 4: The Number of Pairs (Logarithmic Scale) Having a Speciﬁc Similarity.
+
+10%
+
+20%
+
+30%
+
+40%
+
+50%
+60%
+Similarity
+
+70%
+
+80%
+
+90%
+
+100%
+
+of experiments using real data. We describe our experience
+with building a fraud detection system at Fastclick, Inc., a
+ValueClick company. For proof of concept, we analyzed a
+data sample of 54,045,873 traﬃc entries using Similarity-
+Seeker to discover site pairs with similar traﬃc. To reduce
+the noise, we excluded all the IPs that visited a large number
+of sites, because such IPs probably belong to NAT boxes.
+We repeated the experiment and progressively increased the
+parameter l, the number of sites beyond which the IPs are
+disregarded, from 10 to 1,000. The results are plotted in
+Figure 4, with a logarithmic scale on the vertical axis.
+
+It is interesting to note that when l was 1,000, 98.94% of
+the pairs had less than 1% of similarity. When l was 10,
+99.98% of the pairs had less than 1% of similarity. Clearly,
+the similarity between sites’ IP sets is negligible. For each
+run, Similarity-Seeker output all the pairs with similarity
+more than 10%, and we fed the output to the cliques enu-
+meration algorithm [43] to discover larger coalitions.
+
+In particular, when l, the number of sites beyond which
+the IPs are disregarded, was 10, Similarity-Seeker output
+81 pairs with similarity, s, at least 0.1. The 81 pairs con-
+tained 5 coalitions of size 3. As l increased, more pairs were
+discovered. For instance, when l was 30, 189 pairs of sites
+were found. Since more IPs shared by the disjoint compo-
+nents were considered, the cliques enumeration algorithm
+was able to connect some of these components into bigger
+coalitions. However, many of the cliques were overlapping.
+It became
+clear that the cliques discovered are highly overlapping and
+noisy, since popular IPs that are shared by many legitimate
+sites are not discarded. To reduce the noise, we increased
+the minimum traﬃc similarity gradually beyond 0.1. When
+s reached 0.5, for the same l of 40, the output of Similarity-
+Seeker comprised 406 pairs of sites that translated into ex-
+actly 1 perfect clique of size 29. That was clearly a coalition
+attack, as discussed below.
+
+As l increased to 40, 647 pairs were found.
+
+As l, the number of sites beyond which the IPs are disre-
+garded, increases, more legitimate pairs are output as simi-
+lar, since popular IPs shared by those sites are not discarded.
+To overcome this problem, it is advisable to increase the
+minimum required traﬃc similarity, s, as we increase l.
+
+We increased l to 50 sites and increased s gradually up to
+0.6. There were 680 pairs. With very few anomalies that
+can be manually identiﬁed, there was the original coalition
+of size 29, sharing 15 sites with another coalition of size 22.
+There were 8 other disjoint coalitions of sizes between 3 and
+10, some isolated pairs, and a star of size 6.
+
+Among all the discovered 680 sites, there were strong ev-
+idences that more than 93% of them were real fraudsters.
+
+Most of the coalitions had all their sites signed up with
+the commissioner around the same date. The noticeable
+characteristic of the coalitions of size 29 and 22 was that
+their traﬃc was of moderate size, yet coming from IPs all
+over the world. After further investigations, we found that
+the Referer ﬁelds in the HTTP requests were coming from
+pages that do not have the commissioner’s advertisements;
+and sometimes no advertisements at all. We suspect the
+attackers had some form of readily available traﬃc through
+a network of Trojans, and that they do not work for the
+domains they signed up for. When the commissioner sent
+the account activation e-mails7, the publishers somehow ac-
+quired the attached activation secrets and activated the ac-
+counts. Since the activation secrets are stored in a hashed
+form, the attackers must have compromised some machines
+on those domains, and hence, acquired the attached secrets.
+For some of the isolated pairs, we noticed almost simul-
+taneous traﬃc entries for the two sites of the coalition. We
+suspect that those attacks were launched using the attack
+in [3] that will be discussed shortly in Section 7.
+
+As l grew further, the cliques enumeration algorithm did
+not connect those coalitions, but rather started to output
+groups that share extremely popular IPs. We checked those
+IPs on www.arin.net/whois, and they are ISP-owned IPs.
+
+We recommend setting l and s initially to small values,
+say 5 sites and 0.1 similarity. From there, the commissioner
+can tune the values of l and s according to the noise in
+the results, as described above. The noise is usually mani-
+fested in the number of isolated pairs, small coalitions, and
+overlapping coalitions. From our experience, an appropriate
+value for the error  is s
+10 , and the plausible range for the
+conﬁdence α is between 0.01 to 0.1.
+
+7. RELATED WORK
+
+The work related to ours can be classiﬁed into two cate-
+gories. The ﬁrst category is the recent research in discover-
+ing densely connected subgraphs in huge graphs. The second
+category is our previous work on coalition attacks.
+7.1 Discovering Dense Subgraphs
+
+Due to the NP-hardness of the cliques enumeration prob-
+lem, it was recently attempted to approximate this prob-
+lem as discovering densely connected subgraphs or clusters.
+
+7When a publisher signs up with FastClick, FastClick sends
+the publisher an e-mail on the domain signed up, with a
+secret key. The publisher can activate the account only using
+this secret key. This ensures that the publisher has an e-mail
+account on the domain (s)he signed up for.
+
+Three main approximations were proposed. The conduc-
+tance measure [8, 18, 22, 27] of a subgraph is a measure of
+the number of the external edges (bridges to the rest of the
+graph), in comparison to the internal edges of the subgraph,
+and the internal edges of the rest of the graph. The sec-
+ond cluster editing approximation [41] bounds the number
+of edges to be added or deleted to transform a subgraph into
+an isolated clique. The third approximation [1] bounds the
+average internal degree of nodes. However, discovering any
+cluster with a bound on any of the three approximations is
+proved to be NP-complete [23, 42]. Being as hard as the
+original problem, the approximations are of limited use.
+
+The algorithm in [21] eﬃciently discovers dense clusters.
+However, the algorithm associates no connectivity metrics
+with the identiﬁed clusters.
+It hence provides no guaran-
+tees on the clustering quality. The algorithm cannot answer
+queries about clusters with a speciﬁc threshold on a con-
+nectivity metric, since the identiﬁed clusters can be either
+split or combined to satisfy the query threshold. Although
+the algorithm is suitable for link spam detection, it is not
+applicable in money-sensitive fraud detection.
+
+7.2 Previous Work on Coalition Attacks
+
+We have previously proposed an algorithm to detect the
+coalition attack identiﬁed in [3]. The attack in [3] involves
+a coalition of a dishonest publisher, P , with a dishonest
+Web site, S. S’s page will have a script that runs on the
+surfer’s machine when its page loads, and automatically re-
+directs the surfer to P ’s Web site. P will have two versions
+of its Web page, a non-fraudulent page; and a fraudulent
+page. The non-fraudulent page is a normal page that dis-
+plays the advertisement, and the surfer is totally free to
+click it or not. The fraudulent page has a script that runs
+on the surfer’s machine when it loads, and automatically
+clicks the advertisement. P selectively shows the fraudulent
+page when the Web site that referred the surfer to P is S.
+The attack silently converts every innocent visit to S to a
+click on the advertisement in P ’s page. Several factors make
+the attack virtually impossible to detect. First, if the com-
+missioner directly visits P ’s page, the non-fraudulent page
+will be loaded. Second, the commissioner cannot know the
+Referer ﬁelds of the HTTP requests to publishers. To iden-
+tify S, the commissioner has to check all the Internet sites,
+which is infeasible. Third, the attack is done in an automatic
+way that is hidden from the surfer.
+
+In [35], we proposed a solution this sophisticated coalition
+attack via a collaboration between commissioners and ISPs.
+By analyzing the aggregate stream of HTTP requests, the
+ISP can detect sites that are usually visited before a speciﬁc
+site, without violating the surfers’ privacy. Bearing in mind
+the size and the speed of HTTP requests made to ISPs,
+the problem boils down to identifying associations between
+HTTP requests that are not widely separated in a traﬃc
+stream. We devised the Streaming-Rules algorithm to detect
+associations among stream elements.
+
+Although the solution proposed in [35] is eﬀective, it is
+very speciﬁc to the attack in [3]. The solution is not eﬀec-
+tive against other coalition attacks. For instance, if each
+attacker in the coalition controls a network of surfers’ ma-
+chines through Trojans, then HTTP requests for attackers
+could be widely separated in the ISP HTTP stream, and
+hence, are not detected by the solution in [35]. However,
+the general solution proposed in this paper detects coalition
+
+attacks in their full generality, including the attack in [3]
+without the need to the ISPs’ support.
+
+8. DISCUSSION AND FUTURE WORK
+
+We have proposed a generalized solution for detecting gen-
+eralized coalition attacks of hit inﬂation. Since sites’ traﬃc
+is highly dissimilar, any similarity is usually suspicious. We
+modeled the problem of detecting fraud coalitions in terms
+of the set similarity problem. We built on several pub-
+lished theoretical results to propose our Similarity-Seeker
+algorithm that uncovers coalitions of site pairs. We then
+extended the detection algorithm to detect coalitions of any
+size by ﬁnding all maximal cliques in a graph. On real net-
+work data, 93% of the detected sites were provably fraud-
+sters. This shows how accurate our model and algorithm
+are regardless of how the attack is designed.
+
+However, several publishers can collude to attack more
+than one commissioner. Each commissioner can only know
+the traﬃc of its publishers, and no commissioners can detect
+the similarity between the traﬃc of the attackers. Then, to
+detect attacks that span several advertising networks, we
+anticipate the development of new specialized auditing, or
+“detective”, entities that are trusted by commissioners.
+
+Our future work focuses on two directions. The ﬁrst di-
+rection is to compare several cliques enumeration using real
+data. Although [43] has an optimal worst case bound, other
+algorithms can outperform it for extremely sparse graphs.
+The algorithms in [19, 20, 31, 43] were never experimentally
+compared, to the best of our knowledge. The second direc-
+tion of our future work is to extend the algorithms to the
+streaming environment. Bearing in mind that an average-
+sized commissioner has around 50,000 publishers’ sites, and
+receives around 70M traﬃc entries per hour, it is desirable
+to detect coalition attacks using only one scan on the data.
+
+Acknowledgment
+We thank Dr. Jerry Qi Zheng for helping us with acquiring
+the real data, and for his useful discussions.
+9. REFERENCES
+[1] J. Abello, M. Resende, and S. Sudarsky. Massive
+
+Quasi-Clique Detection. In Proceedings of the 5th LATIN
+Latin American Symposium on Theoretical Informatics,
+pages 598–612, 2002.
+
+[2] E. Akkoyunlu. The Enumeration of Maximal Cliques of
+Large Graphs. SIAM Journal on Computing, 2(1):1–6,
+1973.
+
+[3] V. Anupam, A. Mayer, K. Nissim, B. Pinkas, and
+
+M. Reiter. On the Security of Pay-Per-Click and Other
+Web Advertising Schemes. In Proceedings of the 8th WWW
+International Conference on World Wide Web, pages
+1091–1100, 1999.
+
+[4] Burton H. Bloom. Space/Time Trade-oﬀs in Hash Coding
+
+with Allowable Errors. Communications of the ACM,
+13(7):422–426, 1970.
+
+[5] C. Blundo and S. Cimato. SAWM: A Tool for Secure and
+Authenticated Web Metering. In Proceedings of the 14th
+ACM SEKE International Conference on Software
+Engineering and Knowledge Engineering, pages 641–648,
+2002.
+
+[6] T. Bohman, C. Cooper, and A. Frieze. Min-Wise
+
+Independent Linear Permutations. Electronic Journal of
+Combinatorics, 7:R26, 2000.
+
+[7] A. Bowker and G. Lieberman. Engineering Statistics, 2nd
+
+Edition. Prentice Hall, 1972.
+
+[8] U. Brandes, M. Gaertler, and D. Wagner. Experiments on
+
+Computer and Information Sciences, 5(3):209–238, 1976.
+
+Graph Clustering Algorithms. In Proceedings of the 11th
+ESA European Symposium on Algorithms, pages 568–579,
+2003.
+
+[9] A. Broder. On the Resemblance and Containment of
+
+Documents. In Proceedings of the IEEE SEQUENCES
+Compression and Complexity of Sequences, pages 21–29,
+1997.
+
+[10] A. Broder. Identifying and Filtering Near-Duplicate
+
+Documents. In Proceedings of the 11th COM Symposium
+on Combinatorial Pattern Matching, pages 1–10, 2000.
+
+[11] A. Broder, M. Charikar, A. Frieze, and M. Mitzenmacher.
+Min-Wise Independent Permutations (Extended Abstract).
+In Proceedings of the 30th ACM STOC Symposium on
+Theory Of Computing, pages 327–336, 1998.
+
+[12] A. Broder and U. Feige. Min-Wise versus Linear
+
+Independence (Extended Abstract). In Proceedings of the
+11th ACM-SIAM SODA Symposium on Discrete
+Algorithms, pages 147–154, 2000.
+
+[13] A. Broder, S. Glassman, M. Manasse, and G. Zweig.
+
+Syntactic clustering of the Web. In Proceedings of the 6th
+WWW International Conference on World Wide Web,
+pages 391–404, 1997.
+
+[14] C. Bron and J. Kerbosch. Algorithm 457: Finding All
+
+Cliques of an Undirected Graph. Communications of the
+ACM, 16(9):575–577, 1973.
+
+[15] CERT Coordination Center. CERT Advisory CA-1996-21
+
+TCP SYN Flooding and IP Spooﬁng Attacks.
+http://www.cert.org/advisories/CA-1996-21.html,
+September 19 1996.
+
+[16] Moses S. Charikar. Similarity estimation techniques from
+
+rounding algorithms. In Proceedings of the 34th ACM
+STOC Symposium on Theory Of Computing, pages
+380–388, 2002.
+
+[17] S. Chaudhuri, R. Motwani, and V. Narasayya. On Random
+
+Sampling over Joins. In Proceedings of the 18th ACM
+SIGMOD International Conference on Management of
+Data, pages 263–274, 1999.
+
+[18] D. Cheng, S. Vempala, R. Kannan, and G. Wang. A
+
+Divide-and-Merge Methodology for Clustering. In
+Proceedings of the 24th ACM PODS Symposium on
+Principles of Database Systems, pages 196–205, 2005.
+
+[19] N. Chiba and T. Nishizeki. Arboricity and subgraph listing
+
+algorithms. SIAM Journal on Computing, 14(1):210–223,
+1985.
+
+[20] L. Gerhards and W. Lindenberg. Clique Detection for
+
+Nondirected Graphs: Two New Algorithms. Computing,
+Volume 21(4):295–322, 1979.
+
+[21] D. Gibson, R. Kumar, and A. Tomkins. Discovering Large
+Dense Subgraphs in Massive Graphs. In Proceedings of the
+31st VLDB International Conference on Very Large Data
+Bases, pages 721–732, 2005.
+
+[22] C. Gkantsidis, M. Mihail, and A. Saberi. Conductance and
+
+Congestion in Power Law Graphs. In Proceedings of the
+22nd ACM SIGMETRICS International Conference on
+Measurement and Modeling of Computer Systems, pages
+148–159, 2003.
+
+[23] K. Holzapfel, S. Kosub, M. Maaß, and H. T¨aubig. The
+
+Complexity of Detecting Fixed-Density Clusters. In
+Proceedings of the 5th CIAC Italian Conference on
+Algorithms and Complexity, pages 201–212, 2003.
+
+[24] P. Indyk. A small Approximately Min-Wise Independent
+
+Family of Hash Functions. In Proceedings of the 10th
+ACM-SIAM SODA Symposium On Discrete Algorithms,
+pages 454–456, 1999.
+
+[25] M. Jakobsson, P. MacKenzie, and J. Stern. Secure and
+
+Lightweight Advertising on the Web. In Proceedings of the
+8th WWW International Conference on World Wide Web,
+pages 1101–1109, 1999.
+
+[26] H. Johnston. Cliques of a Graph-Variations on the
+
+Bron-Kerbosch Algorithm. International Journal of
+
+[27] R. Kannan, S. Vempala, and A. Veta. On Clusterings:
+
+Good, Bad and Spectral. In Proceedings of the 41st IEEE
+FOCS Annual Symposium on Foundations of Computer
+Science, pages 367–377, 2000.
+
+[28] D. Klein. Defending Against the Wily Surfer-Web-based
+Attacks and Defenses. In Proceedings of the 1st USENIX
+ID Workshop on Intrusion Detection and Network
+Monitoring, pages 81–92, 1999.
+
+[29] M. Liedtke. Google to Pay $90M in ‘Click Fraud’ Case.
+
+Washington Post Magazine, March 9 2006.
+
+[30] M. Liedtke. Yahoo Settles ‘Click Fraud’ Lawsuit. MSNBC
+
+News, June 28 2006.
+
+[31] E. Loukakis. A New Backtracking Algorithm for
+
+Generating the Family of Maximal Independent Sets of a
+Graph. Computers & Mathematics with Applications,
+9(4):583–589, 1983.
+
+[32] C. Mann. How Click Fraud Could Swallow the Internet.
+
+Wired Magazine, January 2006.
+
+[33] R. McGann. Study: Consumers Delete Cookies at
+
+Surprising Rate. ClickZ News, March 14 2005.
+
+[34] A. Metwally, D. Agrawal, and A. El Abbadi. Duplicate
+Detection in Click Streams. In Proceedings of the 14th
+WWW International World Wide Web Conference, pages
+12–21, 2005.
+
+[35] A. Metwally, D. Agrawal, and A. El Abbadi. Using
+
+Association Rules for Fraud Detection in Web Advertising
+Networks. In Proceedings of the 31st VLDB International
+Conference on Very Large Data Bases, pages 169–180,
+2005.
+
+[36] A. Metwally, D. Agrawal, and A. El Abbadi. Hide and
+Seek: Detecting Hit Inﬂation Fraud in Streams of Web
+Advertising Networks. Technical Report 2006-06,
+University of California, Santa Barbara, Department of
+Computer Science, 2006.
+
+[37] J. Moon and L. Moser. On cliques in graphs. Israel journal
+
+of Mathematics, 3:23–28, 1965.
+
+[38] M. Naor and B. Pinkas. Secure and Eﬃcient Metering. In
+
+Proceedings EUROCRYPT International Conference on
+the Theory and Application of Cryptographic Techniques,
+pages 576–590, 1998.
+
+[39] S. Olsen. Click Fraud Roils Search Advertisers. CNET
+
+News, March 4 2005.
+
+[40] M. Reiter, V. Anupam, and A. Mayer. Detecting
+
+Hit-Shaving in Click-Through Payment Schemes. In
+Proceedings of the 3rd USENIX Workshop on Electronic
+Commerce, pages 155–166, 1998.
+
+[41] R. Shamir, R. Sharan, and D. Tsur. Cluster Graph
+
+Modiﬁcation Problems. Discrete Applied Mathematics,
+144(1-2):173–182, 2004.
+
+[42] J. Sima and S. Schaeﬀer. On the NP-Completeness of Some
+
+Graph Cluster Measures. In Proceedings of the 32nd
+SOFSEM Conference on Current Trends in Theory and
+Practice of Informatics, pages 530–537, 2006.
+
+[43] E. Tomita, A. Tanaka, and H. Takahashi. The Worst-Case
+Time Complexity for Generating All Maximal Cliques. In
+Proceedings of the 10th COCOON Annual International
+Conference on Computing and Combinatorics, pages
+161–170, 2004.
+
+[44] S. Tsukiyama, M. Ide, H. Ariyoshi, and I. Shirakawa. A
+
+New Algorithm for Generating All the Maximal
+Independent Sets. SIAM Journal on Computing,
+6(3):505–517, 1977.
+
+[45] D. Vise. Clicking To Steal. Washington Post Magazine,
+
+page F01, April 17 2005.
+
+[46] J. Vitter. External Memory Algorithms and Data
+
+Structures: Dealing with Massive Data. ACM Computing
+Surveys, 33(2):209–271, 2001.
+
+[47] T. Zeller Jr. With Each Technology Advance, a Scourge.
+
+The New York Times, October 18 2004.
+
+

@@ -1,0 +1,1497 @@
+Collaborative Filtering for Orkut Communities:
+
+Discovery of User Latent Behavior
+
+Wen-Yen Chen∗
+University of California
+
+Santa Barbara, CA 93106
+wychen@cs.ucsb.edu
+
+Hongjie Bai
+
+Google Research
+
+Beijing 100084, China
+hjbai@google.com
+
+Jon-Chyuan Chu∗
+
+MIT
+
+Cambridge, MA 02139
+jonchu88@mit.edu
+
+Yi Wang
+
+Google Research
+
+Beijing 100084, China
+wyi@google.com
+
+Junyi Luan∗
+Peking University
+
+Beijing 100084, China
+
+luanjunyi@gmail.com
+
+Edward Y. Chang
+Google Research
+
+Beijing 100084, China
+
+edchang@google.com
+
+ABSTRACT
+Users of social networking services can connect with each
+other by forming communities for online interaction. Yet as
+the number of communities hosted by such websites grows
+over time, users have even greater need for eﬀective commu-
+nity recommendations in order to meet more users. In this
+paper, we investigate two algorithms from very diﬀerent do-
+mains and evaluate their eﬀectiveness for personalized com-
+munity recommendation. First is association rule mining
+(ARM), which discovers associations between sets of com-
+munities that are shared across many users. Second is latent
+Dirichlet allocation (LDA), which models user-community
+co-occurrences using latent aspects. In comparing LDA with
+ARM, we are interested in discovering whether modeling
+low-rank latent structure is more eﬀective for recommen-
+dations than directly mining rules from the observed data.
+We experiment on an Orkut data set consisting of 492, 104
+users and 118, 002 communities. Our empirical comparisons
+using the top-k recommendations metric show that LDA
+performs consistently better than ARM for the community
+recommendation task when recommending a list of 4 or more
+communities. However, for recommendation lists of up to 3
+communities, ARM is still a bit better. We analyze exam-
+ples of the latent information learned by LDA to explain
+this ﬁnding. To eﬃciently handle the large-scale data set,
+we parallelize LDA on distributed computers [1] and demon-
+strate our parallel implementation’s scalability with varying
+numbers of machines.
+
+Categories and Subject Descriptors
+H.2.8 [Database Management]: Database Applications—
+Data Mining; H.3.3 [Information Storage and Retrieval]:
+Information Search and Retrieval—Information Filtering;
+H.3.4 [Information Storage and Retrieval]: Systems
+and Software—Distributed Systems
+
+∗Work done while the ﬁrst three authors were interns at
+Google Research, Beijing.
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2009, April 20–24, 2009, Madrid, Spain.
+ACM 978-1-60558-487-4/09/04.
+
+General Terms
+Algorithms, Experimentation
+
+Keywords
+Recommender systems, collaborative ﬁltering, association
+rule mining, latent topic models, data mining
+
+1.
+
+INTRODUCTION
+
+Much information is readily accessible online, yet we as
+humans have no means of processing all of it. To help users
+overcome the information overload problem and sift through
+huge amounts of information eﬃciently, recommender sys-
+tems have been developed to generate suggestions based on
+user preferences. In general, recommender systems can be
+classiﬁed into two categories: content-based ﬁltering and col-
+laborative ﬁltering. Content-based ﬁltering analyzes the as-
+sociation between user proﬁles and the descriptions of items.
+To recommend new items to a user, the content-based ﬁlter-
+ing approach matches the new items’ descriptions to those
+items known to be of interest to the user. On the other
+hand, the collaborative ﬁltering (CF) approach does not
+need content information to make recommendations. The
+operative assumption underlying CF is that users who had
+similar preferences in the past are likely to have similar pref-
+erences in the future. As such, CF uses information about
+similar users’ behaviors to make recommendations. Besides
+avoiding the need for collecting extensive information about
+items and users, CF requires no domain knowledge and can
+be easily adopted across diﬀerent recommender systems.
+
+In this paper, we focus on applying CF to community rec-
+ommendation. To investigate which notions of similarity are
+most useful for this task, we examine two approaches from
+diﬀerent ﬁelds. First, association rule mining (ARM) [2] is a
+data mining algorithm that ﬁnds association rules based on
+frequently co-occurring sets of communities and then makes
+recommendations based on the rules. For example, if users
+in the community “New York Yankees” usually join the com-
+munity “MLB” (for Major League Baseball), then ARM will
+discover a rule connecting communities “New York Yankees”
+and “MLB.” If you join “New York Yankees,” you can be rec-
+ommended “MLB.” Generally speaking, ARM can discover
+explicit relations between communities based on their co-
+occurrences across multiple users.
+
+WWW 2009 MADRID!Track: Social Networks and Web 2.0 / Session: Recommender Systems681Second, latent Dirichlet allocation (LDA) [5] is a machine-
+
+learning algorithm that models user-community co-occurrences
+using latent aspects and makes recommendations based on
+the learned model parameters. Unlike ARM, LDA models
+the implicit relations between communities through the set
+of latent aspects. Following the previous example, suppose
+we have another community called “New York Mets” that
+shares many users in common with “MLB” but not with
+“New York Yankees.” If you are a user joining “New York
+Mets,” you would not receive recommendations from ARM
+for “New York Yankees,” because there are not enough “New
+York Mets”-“New York Yankees” co-occurrences to support
+such a rule. This is the problem of sparseness in explicit
+co-occurrence. On the other hand, LDA can possibly rec-
+ommend “New York Yankees” because of there may exist an
+implicit relation (semantically, “baseball”) among the three
+communities. However, implicit co-occurrence is not always
+inferred correctly. Suppose the community “Boston Red
+Sox” occurs frequently with “MLB” but not “New York Yan-
+kees.” With LDA, if you were to join “Boston Red Sox,” you
+might receive a recommendation for “New York Yankees,”
+which is a bad recommendation as the two teams have a
+longstanding rivalry. This is the problem of noise in inferred
+implicit co-occurrence.
+
+Explicit relations suﬀer from the problem of sparseness,
+but are usually quite accurate. Modeling implicit relations
+can overcome the sparseness problem; however, doing so may
+introduce noise. In what scenarios does each type of relation
+manifest its strengths and weaknesses? In particular, how
+do membership size (the number of communities joined by
+a given user) and community size (the number of users in
+a given community) aﬀect sparseness of explicit relations
+mined using ARM?
+
+• Membership size: Would explicit relations be more
+eﬀective at recommendations for active users, ones who
+have joined many communities?
+
+• Community size: Would implicit relations be more
+eﬀective at recommending new or niche communities
+with few members?
+
+Similarly, how do membership spread (the diversity among
+the communities that a user joins) and community spread
+(the diversity among the users of a particular community)
+aﬀect noise in the implicit relations inferred by a latent topic
+model such as LDA?
+
+• Membership spread: Would explicit relations be
+more eﬀective at recommendations for a diverse user,
+one who is involved in a miscellaneous set of commu-
+nities?
+
+• Community spread: Would implicit relations be
+more eﬀective at recommending umbrella communi-
+ties, those composed of many smaller, tighter sub-
+communities or many non-interacting members?
+
+It remains unclear how sparseness and noise come into play
+in collaborative ﬁltering. Both explicit and implicit relations
+are arguably important for community recommendations to
+overcome the problems of sparseness and noise, but how can
+they be maximally leveraged for recommendations? Up until
+now, little has been done in the way of performance compar-
+isons. This paper makes the following three contributions:
+
+• We apply both algorithms to an Orkut data set con-
+sisting of 492, 104 users and 118, 002 communities. Our
+empirical comparisons using the top-k recommenda-
+tions metric show a surprisingly intuitive ﬁnding: that
+LDA performs consistently better than ARM for the
+community recommendation task when recommending
+a list of 4 or more communities. However, for rec-
+ommending up to 3 communities, ARM is still a bit
+better.
+
+• We further analyze the latent information learned by
+
+LDA to help explain this ﬁnding.
+
+• We parallelize LDA to take advantage of the distributed
+computing infrastructure of modern data centers. Our
+scalability study on the same Orkut data set shows
+that our parallelization can reduce the training time
+from 8 hours to less than 46 minutes using up to 32 ma-
+chines (We have made parallel LDA open-source [1]).
+
+The remainder of this paper is organized as follows: In
+Section 2, we brieﬂy introduce ARM and LDA and works
+related to them. In Section 3, we show how ARM and LDA
+can be adapted for the community recommendation task.
+We present our parallelization framework of LDA in Sec-
+tion 4 and an empirical study on our Orkut data set in Sec-
+tion 5. Finally, we oﬀer our concluding remarks in Section 6.
+
+2. RELATED WORK
+
+Association rule mining (ARM) is a well researched algo-
+rithm for discovering of correlations between sets of items.
+It was originally motivated by analysis of supermarket trans-
+action data to discover which itemsets are often purchased
+together. For example, the rule X ⇒ Y means customers
+who purchased X would likely also purchase Y . To select in-
+teresting rules from the set of all possible rules, support and
+conﬁdence are used as constraints. The support of an item-
+set X, supp(X), is deﬁned as the number of transactions in
+the data set that contain the itemset. A frequent itemset is
+one whose support value exceeds a predeﬁned threshold. An
+association rule is of the form X ⇒ Y , where X and Y are
+itemsets. The support of a rule is deﬁned as supp(X ⇒ Y )
+= supp(X ∪ Y ), and the conﬁdence of a rule is deﬁned as
+conf(X ⇒ Y ) = supp(X ∪ Y )/supp(X). Association rule
+mining is the process of ﬁnding all rules whose support and
+conﬁdence exceed speciﬁed thresholds.
+
+Since ARM was ﬁrst introduced in [2], various algorithms
+have been designed to mine frequent itemsets eﬃciently.
+In [3] and [18], a fast algorithm called Apriori was proposed
+to exploit the monotonicity property of the support of item-
+sets and the conﬁdence of association rules. Subsequently,
+FP-growth [9] employed depth-ﬁrst search for mining fre-
+quent itemsets and has been shown to outperform Apriori
+in most cases. ARM has been applied to several CF tasks.
+The work of [15] proposed to use ARM for mining user ac-
+cess patterns and predicted Web pages requests.
+In [14],
+authors examined the robustness of a recommendation algo-
+rithm based on ARM.
+
+Latent Dirichlet allocation (LDA) [5], as used in docu-
+ment modeling, assumes a generative probabilistic model in
+which documents are represented as random mixtures over
+latent topics, where each topic is characterized by a probabil-
+ity distribution over words. In LDA, the generative process
+
+WWW 2009 MADRID!Track: Social Networks and Web 2.0 / Session: Recommender Systems682Table 1: Notations. The following notations are
+used in the paper.
+
+N
+M
+K
+P
+u1, . . . , uN ∈ U
+c1, . . . , cM ∈ C
+z1, . . . , zK ∈ Z
+
+number of users
+number of communities
+number of topics
+number of machines
+a set of users
+a set of communities
+a set of topics
+
+Table 2: Each user is a transaction and his joined
+communities are items.
+
+User
+u1
+u2
+u3
+u4
+
+Communities
+{c1, c3, c7}
+{c3, c7, c8, c9}
+{c2, c3, c8}
+{c1, c8, c9}
+
+consists of three steps. First, for each document, a multi-
+nomial distribution over topics is sampled from a Dirichlet
+prior. Second, each word in the document is assigned a sin-
+gle topic according to this distribution. Third, each word
+is generated from a multinomial distribution speciﬁc to the
+topic.
+
+In [5], the parameters of LDA are estimated using an
+approximation technique called variational EM, since stan-
+dard estimation methods are intractable. The work of [7]
+shows how Gibbs sampling, a simple and widely applica-
+ble Markov Chain Monte Carlo technique, could be applied
+to estimate parameters of LDA. By extending LDA, several
+other algorithms have been proposed to model publication
+(the Author-Topic model) [19] and email data (the Author-
+Recipient-Topic model) [13]. Not limited to text analysis,
+LDA has also been used to annotate images, where image
+segmentations (blobs) can be considered as words in an im-
+age document [4].
+
+3. RECOMMENDATION ALGORITHMS
+
+To assist readers, Table 1 deﬁnes terms and notations used
+
+throughout this paper.
+3.1 Association Rule Mining and Prediction
+
+In ARM, we view each user as a transaction and his joined
+communities as items, as shown in Table 2. We employ the
+FP-growth algorithm [9] for mining frequent itemsets and
+use the discovered frequent itemsets to generate association
+rules. We generate ﬁrst-order association rules for recom-
+mendations. That is, each item is iterated one by one as the
+precondition of the rule. For example, assuming the support
+threshold is 2, we can mine the frequent itemsets and their
+corresponding association rules as shown in Table 3. With
+the rules at hand, we can recommend communities to a user
+based on his joined communities. Speciﬁcally, we match
+each joined community with the precondition of the rules
+to recommend communities. We weight the recommended
+communities by summing up each corresponding rule’s con-
+ﬁdence. For example, suppose a user joins communities {c7,
+c8}. According to the association rules in Table 3 (b), three
+
+Support
+
+Frequent Itemsets
+
+(a) Frequent itemsets and their
+support. The minimum support
+threshold is 2.
+{c1}
+{c3}
+{c7}
+{c8}
+{c9}
+{c3, c7}
+{c3, c8}
+{c8, c9}
+
+2
+3
+2
+3
+2
+2
+2
+2
+
+(b) Association rules with their support and
+conﬁdence values.
+
+Association Rules
+
+c3 ⇒ c7
+c3 ⇒ c8
+c7 ⇒ c3
+c8 ⇒ c3
+c8 ⇒ c9
+c9 ⇒ c8
+
+Support Conﬁdence
+
+2
+2
+2
+2
+2
+2
+
+66.7%
+66.7%
+100%
+66.7%
+66.7%
+100%
+
+Table 3: Frequent itemsets and association rules.
+
+Figure 1: LDA model for user-community data.
+
+rules will be taken into consideration: {c7 ⇒ c3}, {c8 ⇒ c3}
+and {c8 ⇒ c9}. In the end, the user will be recommended
+community c3 with score 1.667 (1+0.667) and community
+c9 with score 0.667.
+3.2 LDA Training and Inference
+
+In LDA, user-community data is entered as a membership
+count where the value is 1 (join) or 0 (not join). To train
+LDA, we then view the values as co-occurrence counts. Be-
+low we show how to estimate parameters using Gibbs sam-
+pling, then infer the community recommendation from the
+model parameters and analyze the computational complex-
+ity. As shown in Figure 1, we denote the per-user topic
+distribution as θ, each being drawn independently from a
+symmetric Dirichlet prior α, and the per-topic community
+distribution as φ, each being drawn from a symmetric Dirich-
+let prior β. For each occurrence, the topic assignment is
+sampled from:
+
+P
+
+P (zi = j|wi = c, z−i, w−i) ∝
+C CZ
+cj + β
+c(cid:48) C CZ
+c(cid:48)j + M β
+
+uj + α
+uj(cid:48) + Kα
+
+C U Z
+j(cid:48) C U Z
+
+P
+
+,
+
+(1)
+
+WWW 2009 MADRID!Track: Social Networks and Web 2.0 / Session: Recommender Systems683Table 4: Sample MPI functions.
+
+Blocking send message to destination process.
+Blocking receive a message from source process.
+
+MPI Send:
+MPI Receive:
+MPI Broadcast: Broadcasts information to all processes.
+MPI AllGather: Gathers the data contributed by each process on all processes.
+MPI Reduce:
+MPI AllReduce: Performs a global reduction (i.e., sum) and returns the result on all processes.
+
+Performs a global reduction (i.e., sum) and returns the result to the speciﬁed root.
+
+where zi = j represents the assignment of the ith commu-
+nity occurrence to topic j, wi = c represents the observa-
+tion that the ith community occurrence is the community
+c in the community corpus, z−i represents all topic assign-
+ments not including the ith community occurrence, and w−i
+represents all community occurrences not including the ith
+community occurrence. Furthermore, C CZ
+is the number of
+cj
+times community c is assigned to topic j, not including the
+current instance, and C U Z
+is the number of times topic j is
+uj
+assigned to user u, not including the current instance. From
+these count matrices, we can estimate the topic-community
+distributions φ and user-topic distribution θ by:
+
+P
+P
+
+C CZ
+c(cid:48) C CZ
+C U Z
+j(cid:48) C U Z
+
+cj + β
+c(cid:48)j + M β
+uj + α
+uj(cid:48) + Kα
+
+φcj =
+
+θuj =
+
+,
+
+,
+
+(2)
+
+X
+
+where φcj is the probability of containing community c in
+topic j, and θuj is the probability of user u using topic j. The
+algorithm randomly assigns a topic to each community oc-
+currence, updates the topic to each occurrence using Gibbs
+sampling (Equation 1), and then repeats the Gibbs sampling
+process to update topic assignments for several iterations.
+
+Once we have learned the model parameters, we can infer
+user-community relations using Bayes’ rule. For example,
+communities can be ranked for a given user according to the
+score ξ:
+
+ξcu =
+
+φczθuz.
+
+(3)
+
+z
+
+Communities with high scores but not joined by the user are
+good candidates for recommendation.
+
+In each Gibbs sampling iteration, one needs to compute
+
+the posterior probability for each community occurrence:
+
+P (zi = j|wi = c, z−i, w−i).
+
+(4)
+
+We assume that on average there are L community occur-
+rences for every user and each P (zi = j|wi = c, z−i, w−i)
+consists of K topics. Then, the total computational com-
+plexity of running l Gibbs sampling iterations for N users is
+O(K · N · L · l).
+
+4. PARALLELIZATION
+
+We parallelized LDA with libraries of MPI [16] and MapRe-
+duce [6]. (For our parallel ARM eﬀort, please consult [12].)
+With MPI, a program is loaded into the local memory of
+each machine, where every local process receives a unique
+ID. When needed, the processes can communicate and syn-
+chronize with each other by calling the MPI library func-
+tions shown in Table 4. With MapReduce, a user speciﬁes
+Map and Reduce functions and the program reads and writes
+
+Figure 2: The user-community matrix is distribut-
+edly computed and stored on multiple machines.
+
+results to disks. For Gibbs sampling, which requires com-
+putation of multiple iterations, we face a tradeoﬀ decision
+between eﬃciency (without disk IOs of MPI) and reliability
+(with disk IOs of MapReduce). For our empirical studies
+where the computation time is relatively short compared to
+mean-time-between-failures (MTBF) of machines, we chose
+the MPI implementation. (Though MPI itself does not per-
+form logging for recovery, an application can perform check-
+points to achieve fault tolerance, which is an issue beyond
+the scope of this paper.) Since standard MPI implemen-
+tations such as MPICH21 [8] cannot be directly ported to
+our distributed data centers, we implemented our own MPI
+system by modifying MPICH2. We have made LDA/MPI
+open-source; please visit [1] for details.
+
+cj (i) and C UiZ
+
+The parameter estimation using Gibbs sampling in LDA
+can be divided into parallel subtasks. Suppose P machines
+are allocated in a distributed environment. Figure 2 shows
+that we construct N/P rows of the user-community matrix
+at each machine. Thus, each machine i only deals with a
+speciﬁed subset of users Ui ⊂ U , and is aware of all com-
+munities c. Recall that in LDA, community memberships
+are viewed as occurrence counts. Each machine i randomly
+initializes a topic assignment for every community occur-
+rence and calculates local counts C CZ
+. All local
+counts are then reduces (i.e., sum) to the speciﬁed root, and
+root broadcasts the global count C CZ
+to all machines. Most
+cj
+communication occurs here, and this is a MPI AllReduce
+function in MPI shown in Table 4. We perform Gibbs sam-
+pling simultaneously on each machine independently, and
+updates the topic assignment for each community occur-
+rence. The sampling process is repeated for l iterations.
+We summarize the procedure in Algorithm 1.
+The computational complexity for parallel LDA reduces
+to O((K · N · L · l)/P ). As for communication complex-
+ity, C CZ
+is reduced and broadcasted among P machines
+cj
+in each training iteration through an MPI AllReduce call.
+After some experiments, we use the recursive-halving and
+recursive doubling algorithms [20] for an eﬃcient implemen-
+tation of MPI AllReduce functionality. Under this scheme,
+
+uj
+
+1http://www.mcs.anl.gov/research/projects/mpich2
+
+WWW 2009 MADRID!Track: Social Networks and Web 2.0 / Session: Recommender Systems684cj , C U Z
+uj
+
+Algorithm 1: Parallel LDA
+Input: user-community matrix (N × M )
+Output: C CZ
+Variables:
+l: number of iterations
+Each machine i loads N/P rows of input matrix and
+randomly assigns a topic to each community occurrence
+for iter = 1 to l do
+
+Each machine i calculates local counts
+
+cj (i) and C UiZ
+All local counts C CZ
+cj (i)
+
+cj =P
+
+i C CZ
+
+C CZ
+
+C CZ
+
+uj
+
+cj (i) are reduced to the root
+
+Root broadcasts global count C CZ
+cj
+foreach u in Ui do
+
+to all machines
+
+foreach community occurrence do
+
+Performs Gibbs sampling using Equation (1)
+Updates the topic assignment
+
+end
+
+end
+
+end
+
+1
+
+2
+3
+
+4
+
+5
+
+6
+
+7
+8
+9
+10
+11
+
+12
+
+13
+
+14
+
+the communication cost becomes O(α·log(P )+β· P−1
+P KM +
+γ · P−1
+P KM ) per iteration, where α is the startup time of a
+transfer, β is the transfer time per byte, and γ is the compu-
+tation time per byte for performing the reduction operation
+locally on any machine.
+
+5. EXPERIMENTS
+
+We divide our experiments into two parts. The ﬁrst part
+is conducted on an Orkut community data set to evaluate
+the recommendation quality of LDA and ARM using top-k
+recommendations metric. The second part is conducted on
+the same Orkut data set to investigate the scalability of our
+parallel implementation.
+5.1 Recommendation Quality
+
+5.1.1 The Orkut Data Set
+According to Alexa web information service, Orkut is an
+extremely active social network service with more than two
+billion page views a day worldwide. Our community mem-
+bership information data set was a ﬁltered collection of Orkut
+in July 2007. To safeguard user privacy, all user and com-
+munity data were anonymized as performed in [17]. After
+restricting our data to English communities only, we col-
+lected 492, 104 users and 118, 002 communities. The density
+of the user-community matrix (percentage of non-zero en-
+tries) is 0.01286%; the matrix is extremely sparse.
+
+5.1.2 Evaluation Metric and Protocol
+The metrics for evaluating recommendation algorithms
+can be divided into two classes: (1) Prediction accuracy met-
+rics measure the diﬀerence between the true values and the
+predicted values. Commonly used metrics include Mean Ab-
+solute Error (MAE) and Root Mean Square Error (RMSE);
+(2) Ranking accuracy metrics measure the ability to pro-
+duce an ordered list of items that matches how a user would
+have ordered the same items. These include the top-k rec-
+ommendations [11] and Normalized Discounted Cumulative
+
+Gain (NDCG) [10]. Our overall goal is to measure the eﬀec-
+tiveness of suggesting top-ranked items to a user. Besides,
+the predicted scores of recommended communities by LDA
+and ARM are not in same range. Thus, to fairly compare
+their performance, we employ the top-k recommendations
+metric. That is, each ranking algorithm needs to suggest
+the top k items to a user. We describe the evaluation pro-
+tocol below.
+
+First, for each user u, we randomly withhold one joined
+community c from his original set of joined communities
+to form user u’s training set. The training sets for all users
+form the training input for both algorithms. Second, for each
+user u, we select k − 1 additional random communities that
+were not in user u’s original set; the withheld community c
+together with these k − 1 other communities form user u’s
+evaluation set (of size k).
+
+For user u, LDA calculates the score for each of the k com-
+munities in the evaluation set using Equation 3. ARM as-
+signs the score of each community based on the mined rules.
+Note that LDA is guaranteed to produce a well-deﬁned score
+for each evaluation community. However, this is not the case
+for ARM. For a given user u, it is possible that an evalua-
+tion community will not be recommended back by ARM’s
+rules, because no rules for it apply to user u (based on his
+training set). In this case, we assign such a “ruleless” com-
+munity an inﬁnite negative score to be worst ranked. Last,
+for each user u, we order the k communities in his evaluation
+set by their predicted score to obtain a corresponding rank
+between 1 and k for each.
+
+Our objective is to ﬁnd the relative placement of each user
+u’s withheld community c. There are k possible ranks for
+c, ranging from the best rank where no random community
+precedes c in the ordered list, to worst rank where all of
+the random communities appear before c. The best result
+we can hope for is that community c will precede the k − 1
+random communities in our ranking.
+5.1.3 Results
+We ﬁrst describe the parameter settings, and then present
+the experimental results. For ARM, we ran a grid search
+over diﬀerent support values (50, 100, 200, 500, 1000, and
+2000); for LDA, we searched a grid over the number of topics
+(30, 60, 90, 120, and 150) and a grid of number of iterations
+(100, 200, 300, 400, and 500), respectively. The default value
+of α is 50/K (K is the number of topics), and the default
+value of β is 0.1. We set k to be 1001, so that the number of
+random communities selected for ranking evaluation is 1000.
+Overall, there are 492, 104 communities withheld from Orkut
+data set (one community withheld for each user).
+
+We present the experimental results in three perspectives:
+1) top-k recommendation performance of applying LDA and
+ARM to the Orkut data set, 2) rank diﬀerences between
+LDA and ARM, and 3) the analysis of latent information
+learned from LDA.
+Top-k recommendation performance. Figure 3 shows
+the cumulative distributions of ranks for withheld communi-
+ties. For example, the 0% rank indicates that the withheld
+community is ranked 1 in the ordered list, while 100% indi-
+cates that it is ranked last in the list. The lower the rank,
+the more successful the recommendation. From the ﬁgure
+we can make the following three observations:
+
+• ARM achieves the best performance when the support
+value is 50. When the support value is higher, the
+
+WWW 2009 MADRID!Track: Social Networks and Web 2.0 / Session: Recommender Systems685(a) ARM: macro view of top-k performance
+
+(b) LDA: macro view of top-k performance
+
+Figure 3: The macro view (0% – 100%) of top-k recommendations performance: we plot the cumulative
+distributions of ranks for withheld communities in the ordered list. Here, the length of the ordered list is
+1001. The x -axis is the percentile rank for the withheld community; the lower the rank, the more successful
+the recommendation.
+
+(a) ARM: micro view of top-k performance
+
+(b) LDA: micro view of top-k performance
+
+Figure 4: The macro view (top 2%) of top-k recommendations performance. We plot the cumulative dis-
+tributions of ranks for withheld communities in the ordered list. The x -axis is the percentile rank for the
+withheld community; the lower the rank, the more successful the recommendation.
+
+recommendation performance deteriorates. This is be-
+cause when the support value is higher, there are fewer
+frequent itemsets being mined, and thus fewer rules are
+generated. Thus, the coverage of communities avail-
+able for recommendations becomes smaller. Note that
+a support value of 50, at 0.01% of the number of trans-
+actions, is already extremely low in the ARM domain.
+Rules discovered via ARM with support values lower
+than this would likely not be statistically signiﬁcant.
+• LDA achieves more consistent performance than ARM.
+The performance gap of LDA between diﬀerent num-
+ber of topics are very minor and thus the performance
+curves basically overlap.
+
+• ARM (with support values 50, 100, and 200) performs
+slightly better than LDA for the top 0% rank (the with-
+held community was ranked 1 in the ordered list of
+length 1001) and then LDA outperforms ARM for the
+
+rest of the ranks. Since recommender systems focus
+more on recommending top-ranked items to users, we
+zoom in on the top 2% performance for both LDA and
+ARM in Figure 4. We then can make two more ﬁnd-
+ings. First, ARM (with support value 50) performs
+slightly better than LDA only before the top 0.4%
+rank. After that, LDA’s performance curves climb
+more quickly than ARM’s. Second, the ARM curves
+do not grow much between 0.2% ranks and 2% ranks.
+That is, for the top 2% ranks, ARM leans toward ei-
+ther assigning the very top rank, or the rank after 20,
+to the withheld communities.
+
+These ﬁndings lead to two interesting questions: 1) for a
+withheld community, what is the rank diﬀerence between
+LDA and ARM, and how do their parameters aﬀect the dif-
+ferences? and 2) for what types of communities does LDA
+rank better or worse than ARM, and what are the character-
+
+0%10% 20% 30% 40% 50% 60% 70% 80% 90% 100%00.10.20.30.40.50.60.70.80.91RankCumulative Distribution  50 Support100 Support200 Support500 Support1000 Support2000 Support0%  10% 20% 30% 40% 50% 60% 70% 80% 90% 100%00.10.20.30.40.50.60.70.80.91RankCumulative Distribution  150 Topics120 Topics90 Topics60 Topics30 Topics0% 0.2%0.4%0.6%0.8%1%  1.2%1.4%1.6%1.8%2%  0.20.30.40.50.60.7RankCumulative Distribution  50 Support100 Support200 Support500 Support1000 Support2000 Support0%  0.2%0.4%0.6%0.8%1%  1.2%1.4%1.6%1.8%2%  0.20.30.40.50.60.7RankCumulative Distribution  150 Topics120 Topics90 Topics60 Topics30 TopicsWWW 2009 MADRID!Track: Social Networks and Web 2.0 / Session: Recommender Systems686(a) ARM-50 vs. LDA-30
+
+(b) ARM-50 vs. LDA-150
+
+(c) ARM-2000 vs. LDA-30
+
+(d) ARM-2000 vs. LDA-150
+
+(e) ARM-2000 vs. ARM-50
+
+(f) LDA-30 vs. LDA-150
+
+Figure 5: Histograms of each withheld community’s rank diﬀerence by various pairs of two algorithms. (a)
+ARM with support value 50 versus LDA with 30 topics; (b) ARM with support value 50 versus LDA with
+150 topics; (c) ARM with support value 2000 versus LDA with 30 topics; (d) ARM with support value 2000
+versus LDA with 150 topics; (e) ARM with support value 2000 versus support value 50; (f ) LDA with 30
+topics versus 150 topics. For each withheld community, the rank diﬀerence is calculated by subtracting the
+rank by the right-hand algorithm from the rank by the left-hand algorithm.
+
+istics of these communities and their corresponding users?
+How does the latent information learned from LDA inﬂuence
+the ranking performance? We address these questions next.
+
+Rank diﬀerences between LDA and ARM. We exam-
+ine each withheld community’s rank diﬀerence to plot the
+histograms shown in Figure 5. To calculate the rank diﬀer-
+ence, taking Figure 5 (a) for example, we subtract the rank
+by LDA-30-topics (the algorithm on the right-hand side)
+from the rank by ARM-50-support (the algorithm on the
+left-hand side). We obtained the remaining subﬁgures in a
+similar fashion.
+
+We compare the best-performing ARM to the worst and
+best LDA in Figure 5 (a) and (b), respectively. Most of the
+withheld communities have positive rank diﬀerence rather
+than negative rank diﬀerence. This means LDA ranked most
+of the communities better than ARM did. Moreover, when
+LDA is better than ARM, it is likely that LDA is much bet-
+ter than ARM (high variance for positive rank diﬀerences).
+On the other hand, when ARM is better than LDA, it is
+likely to be only a little better than LDA (low variance for
+negative rank diﬀerences). Besides, when LDA trains with
+more topics, the rank diﬀerences from ARM do not diﬀer
+much. This is expected, as LDA performs consistently with
+diﬀerent numbers of topics, as shown in Figure 3.
+
+We compare the worst-performing ARM to the worst and
+best LDA in Figure 5 (c) and (d), respectively. Comparing
+to Figure 5 (a) and (b), we observe a similar pattern, but
+fewer communities have rank diﬀerence zero. Instead, more
+communities have positive rank diﬀerences. This is due to
+
+ARM’s higher support value – ARM has fewer association
+rules that would include the withheld community in the rec-
+ommendation. Thus the withheld community is very likely
+to be assigned an inﬁnite negative score and ranked worst.
+Comparing the worst and best ARM in Figure 5 (e), we
+observe that there are far fewer communities with negative
+rank diﬀerences than positive rank diﬀerences. This again
+shows that ARM with a lower support value ranks better for
+the withheld communities, because it has more rules. Com-
+paring the worst and best LDA in Figure 5 (f), we observe
+that unlike ARM, there is a nearly equal number of commu-
+nities for positive and negative rank diﬀerences. Thus the
+performances of LDA with varying numbers of topics are
+similar.
+
+Analysis of latent information learned from LDA.
+To analyze the types of communities for which LDA ranks
+better or worse than ARM, we investigate the latent infor-
+mation learned from LDA. In Figure 6, we show the topic
+distributions of each community in a user’s training set on
+the left, and the topic distributions for the corresponding
+user and his withheld community on the right. We study
+four user cases:
+two where LDA ranks better, as shown
+in Figure 6 (a) to (d), and two for the opposite, as shown
+in Figure 6 (e) to (h). All user data were anonymized for
+safeguarding user privacy. We can make three observations
+about the type of community, similarity between communi-
+ties, and population of community.
+
+First, consider users Doe#1 and Doe#2, for whom LDA
+ranks better than ARM. The topic distributions of their
+
+−1000−800−600−400−2000200400600800100000.511.522.5x 105Rank DifferenceNumber of Communities−1000−800−600−400−2000200400600800100000.511.522.5x 105Rank DifferenceNumber of Communities−1000−800−600−400−2000200400600800100000.511.522.5x 105Rank DifferenceNumber of Communities−1000−800−600−400−2000200400600800100000.511.522.5x 105Rank DifferenceNumber of Communities−1000−800−600−400−20002004006008001000012345x 105Rank DifferenceNumber of Communities−1000−800−600−400−20002004006008001000012345x 105Rank DifferenceNumber of CommunitiesWWW 2009 MADRID!Track: Social Networks and Web 2.0 / Session: Recommender Systems687Table 5: The community information for user
+Doe#1. The category of each community is deﬁned
+on Orkut. Last community is the withheld commu-
+nity while the rest are joined communities.
+Category
+
+Community Name
+
+Community #
+
+59641
+102299
+18663
+104613
+95076
+111431
+31820
+53474
+
+“8085” microprocessor
+
+windows vista
+
+turbo C/C++ programming
+
+free books downloads
+
+ImageJ-Java image processing
+
+Novell
+
+Java reference
+
+web design
+
+Alumni/Schools
+
+Computers/Internet
+Computers/Internet
+Computers/Internet
+Computers/Internet
+Computers/Internet
+Computers/Internet
+Computers/Internet
+
+Table 7: The community information for user
+Doe#3. Last community is the withheld commu-
+nity while the rest are joined communities.
+Category
+
+Community Name
+
+Community #
+
+35049
+95173
+3541
+14470
+90730
+34939
+116805
+29789
+
+Illegal street racin in KHI
+
+May 1985
+
+CCD-law college road
+
+BMW enthusiasts
+
+17th May
+
+heights of laziness
+
+Honda-owners and lovers
+
+Automotive
+
+Cultures/Community
+
+Food/Drink/Wine
+
+Automotive
+Individuals
+
+Other
+
+Automotive
+
+I love to walk in the rain
+
+Romance/Relationships
+
+Table 6: The community information for user
+Doe#2. Last community is the withheld commu-
+nity while the rest are joined communities.
+Category
+
+Community #
+
+60640
+58344
+25422
+100953
+53474
+27999
+43431
+80441
+66948
+
+Community Name
+Java certification
+
+professor Ayaz Isazadeh
+
+persiancomputing
+
+Iranian J2EE developers
+
+web design
+
+Yazd sampad
+
+Tabriz university CS students
+
+C#
+
+Delphi
+
+Computers/Internet
+
+Alumni/Schools
+
+Computers/Internet
+Computers/Internet
+Computers/Internet
+Schools/Education
+
+Alumni/Schools
+
+Computers/Internet
+Computers/Internet
+
+Table 8: The community information for user
+Doe#4. Last community is the withheld commu-
+nity while the rest are joined communities.
+Category
+
+Community Name
+
+Community #
+
+50279
+44363
+109245
+111271
+38320
+15760
+8886
+77269
+51302
+68215
+
+Shahrukh Khan fan club
+
+girl power
+
+love never dies
+
+why friendz break our heart
+
+holy angels school
+
+why life is so unpredictable
+
+T20 WC champs
+
+star-one fame serial-remix
+
+left right left
+
+life is too short to live
+
+Individuals
+
+Religion/Beliefs
+
+Romance/Relationships
+Romance/Relationships
+
+Alumni/Schools
+
+Recreation/Sports
+
+Arts/Entertainment
+
+Other
+
+Other
+
+Other
+
+Size
+84
+
+7041
+198
+4190
+
+11
+504
+1015
+4598
+
+Size
+731
+19
+39
+297
+4598
+
+17
+13
+
+2247
+142
+
+Size
+8526
+381
+650
+
+191
+3895
+232
+4584
+
+32171
+
+Size
+50857
+1467
+22600
+10301
+
+95
+
+3878
+43662
+
+403
+
+13744
+8197
+
+joined communities tend to be more concentrated (Figure 6
+(a) and (c)), i.e., they have low entropy. To uncover the se-
+mantics behind these topics, we summarize the users’ com-
+munity information, such as name, category and size, in Ta-
+bles 5 and 6. We observe that these users are interested in
+communities related to Computer Technology. Even though
+the joined communities have diﬀerent names, these users
+essentially have similar interests. On the contrary, consider
+users Doe#3 and Doe#4, for whom ARM ranks better. The
+topic distributions of their joined communities tend to be
+more scattered (Figure 6 (e) and (g)), i.e., they have high
+entropy. We summarize these users’ community information
+in Tables 7 and 8. Note that they have joined communities
+of diﬀerent interests, such as Automotive, Culture, Food,
+Romance, and Education.
+
+Second, when LDA ranks better, the withheld community
+and joined communities have a common set of highest-peak
+topics. For user Doe#1 (Figure 6 (a) and (b)), her with-
+held community 53474 overlaps with her joined communi-
+ties at the peak topic 30. However, when ARM ranks better
+for a given user, there is no overlap at highest-peak topics
+between the withheld community and joined communities.
+Similarly, this is true for the topic distributions between a
+withheld community and its user. When LDA works better,
+user Doe#2 (Figure 6 (d)) has overlapped with his with-
+held community 66948 at peak topic 30; when ARM works
+better, user Doe#4 (Figure 6 (h)) has no overlap with his
+withheld community at peak topic 39.
+
+Third, ARM ranks better for users whose communities are
+relatively large. For example, users Doe#3 and Doe#4 have
+relatively larger communities than users Doe#1 and Doe#2.
+This is perhaps because when a joined community is larger,
+it more frequently co-occurs with the withheld community.
+Hence, ARM can work better.
+
+Overall, both LDA and ARM perform well for diﬀerent
+types of users. LDA performs better for users who have
+joined relatively small communities of concentrated inter-
+ests, and ARM is better for those who have joined relatively
+large communities of scattered interests.
+
+5.2 Scalability: Runtime Speedup in Distributed
+
+Environments
+
+Having demonstrated LDA’s promising performance for
+the community recommendation task, we then parallelize it
+to gain speedup. Our parallel LDA code was implemented in
+C++. To conduct our scalability experiments, we used the
+same Orkut data set as was used in Section 5.1. In analyzing
+the runtime speedup for parallel LDA, we trained LDA with
+150 topics and 500 iterations. Our experiments were run on
+up to 32 machines at our distributed data centers. While not
+all machines are identical, each machine is conﬁgured with
+a CPU faster than 2GHz and memory larger than 4GB.
+
+In Table 9 we report the speedup on the Orkut data set.
+We separate total running time into three parts: compu-
+tation time, communication time and synchronization time.
+Communication time is incurred when message-passing takes
+place between machines. Synchronization time is incurred
+when the root machine waits for task completion on the slow-
+est machine. Table 9 indicates that parallel LDA can achieve
+approximately linear speedup on up to 8 machines. Af-
+ter that, adding more machines yields diminishing returns.
+When we use 32 machines, the communication time takes
+up nearly half of the total running time. Hence, it is not
+worthwhile to add more machines after that.
+
+Figure 7 shows the speedup curves and overhead analysis.
+In the ﬁgure, we draw on the top the computation-only line
+(Comp), which approaches the linear speedup line. Compu-
+tation speedup can become sublinear when adding machines
+beyond a threshold. Note that other jobs may be run simul-
+taneously with ours on each machine, though we chose a
+data center with a light load. The result is expected due to
+Amdahl’s law: the speedup of a parallel algorithms is limited
+by the time needed for the sequential fraction of the algo-
+rithm (i.e., step 12 in Algorithm 1). When accounting for
+communication and synchronization overheads (the Comp
++ Comm line and the Comp + Comm + Sync line), the
+speedup deteriorates. Between the two overheads, the syn-
+chronization overhead has very little impact on the speedup
+compared to the communication overhead.
+
+WWW 2009 MADRID!Track: Social Networks and Web 2.0 / Session: Recommender Systems688(a) Topic distributions of 7 joined communities for
+user Doe#1.
+
+(b) Topic distributions for user Doe#1 and her
+withheld community 53474. The withheld commu-
+nity is ranked 1 by LDA and 438 by ARM.
+
+(c) Topic distributions of 8 joined communities for
+user Doe#2.
+
+(d) Topic distributions for user Doe#2 and his with-
+held community 66948. The withheld community is
+ranked 11 by LDA and 449 by ARM.
+
+(e) Topic distributions of 7 joined communities for
+user Doe#3.
+
+(f) Topic distributions for user Doe#3 and her with-
+held community 29789. The withheld community is
+ranked 8 by LDA and 1 by ARM.
+
+(g) Topic distributions of 9 joined communities for
+user Doe#4.
+
+(h) Topic distributions for user Doe#4 and his with-
+held community 68215. The withheld community is
+ranked 5 by LDA and 1 by ARM.
+
+Figure 6: The topic distributions of joined communities (on the left) and withheld communities (on the
+right) for four users. We also graph the topic distribution for each user. The number in parentheses for each
+community is its size.
+
+10203040506070809000.20.40.60.81Topic IndexProbability  Comm−59641 (84)Comm−102299 (7041)Comm−18663 (198)Comm−104613 (4190)Comm−95076 (11)Comm−111431 (504)Comm−31829 (1015)10203040506070809000.20.40.60.81Topic IndexProbability  Comm−53474 (4598)User−Doe#110203040506070809000.20.40.60.81Topic IndexProbability  Comm−60640 (731)Comm−58344 (19)Comm−25422 (39)Comm−100953 (297)Comm−53474 (4598)Comm−27999 (17)Comm−43431 (13)Comm−80441 (2247)10203040506070809000.20.40.60.81Topic IndexProbability  Comm−66948 (142)User−Doe#210203040506070809000.20.40.60.81Topic IndexProbability  Comm−35049 (8526)Comm−95173 (381)Comm−3541 (650)Comm−14470 (32171)Comm−90730 (191)Comm−34939 (3895)Comm−116805 (232)10203040506070809000.20.40.60.81Topic IndexProbability  Comm−29789 (4584)User−Doe#310203040506070809000.20.40.60.81Topic IndexProbability  Comm−50279 (50857)Comm−44363 (1467)Comm−109245 (22600)Comm−111271 (10301)Comm−38320 (95)Comm−15760 (3878)Comm−8886 (43662)Comm−77269 (403)Comm−51302 (13744)10203040506070809000.20.40.60.81Topic IndexProbability  Comm−68215 (8197)User−Doe#4WWW 2009 MADRID!Track: Social Networks and Web 2.0 / Session: Recommender Systems689Table 9: Orkut data set. Runtime for LDA using dif-
+ferent numbers of machines. 492,104 users, 118,002
+communities, 150 topics, α=0.33, β=0.1.
+
+Machines Comp Comm Sync
+
+1
+2
+4
+8
+16
+32
+
+28911s
+14543s
+7755s
+4560s
+2840s
+1553s
+
+0s
+
+417s
+686s
+949s
+1040s
+1158s
+
+0s
+1s
+1s
+2s
+1s
+2s
+
+Total
+28911s
+14961s
+8442s
+5511s
+3881s
+2713s
+
+Speedup
+
+1
+
+1.93
+3.42
+5.25
+7.45
+10.66
+
+Figure 7: Speedup and overhead analysis.
+
+6. CONCLUSIONS
+
+In this paper, we have compared ARM and LDA for the
+community recommendation task, and evaluated their per-
+formances using the top-k recommendations metric. Our
+empirical comparisons using the top-k recommendations met-
+ric show a surprisingly intuitive ﬁnding: that LDA performs
+consistently better than ARM for the community recom-
+mendation task when recommending a list of 4 or more
+communities. However, for recommendation lists of up to
+3 communities, ARM is still a bit better. We analyzed the
+latent information learned from LDA to illustrate why it is
+better at generating longer recommendation lists. To han-
+dle large-scale data sets eﬃciently, we parallelized LDA to
+take advantage of the distributed computing infrastructure
+of modern data centers [1]. Our scalability study on the
+same Orkut data set shows that our parallelization can re-
+duce the training time from 8 hours to less than 46 minutes
+using up to 32 machines.
+
+There are several directions for future research. First,
+our current user-community data is binary-valued to denote
+membership or non-membership (one or zero). We can con-
+sider extending our recommendation algorithms to handle
+integer-valued or real-valued relations. For example, to de-
+note the strength of relationship between a user and a com-
+munity, we can use either the number of posts from this user
+to that community’s forum, or the number of visits by the
+user to the community’s forum. Second, we can extend our
+ARM method to take multi-order rules into consideration
+rather than just ﬁrst-order rules.
+
+7. ACKNOWLEDGMENTS
+
+The authors would like to thank Ellen Spertus for provid-
+ing the Orkut data used in the experiments, and Feng Yan
+for his stimulating discussions and helpful comments.
+8. REFERENCES
+[1] Open source parallel lda. http://code.google.com/p/plda/.
+[2] R. Agrawal, T. Imieli´nski, and A. Swami. Mining
+
+association rules between sets of items in large databases.
+In Proc. of the 1993 ACM SIGMOD conference, pages
+207–216, 1993.
+
+[3] R. Agrawal and R. Srikant. Fast algorithms for mining
+
+association rules in large databases. In Proc. of the 20th
+VLDB conference, pages 487–499, 1994.
+
+[4] D. M. Blei and M. I. Jordan. Modeling annotated data. In
+Proc. of the 26th ACM SIGIR conference, pages 127–134,
+New York, NY, USA, 2003.
+
+[5] D. M. Blei, A. Y. Ng, and M. I. Jordan. Latent Dirichlet
+
+allocation. Journal of Machine Learning Research,
+3:993–1022, 2003.
+
+[6] J. Dean and S. Ghemawat. Mapreduce: simpliﬁed data
+
+processing on large clusters. Communications of the ACM,
+51(1):107–113, 2008.
+
+[7] T. L. Griﬃths and M. Steyvers. Finding scientiﬁc topics.
+
+Proceedings of the National Academy Science, 101 (suppl.
+1):5228–5235, April 2004.
+
+[8] W. Gropp, E. Lusk, and A. Skjellum. Using MPI-2:
+
+Advanced Features of the Message-Passing Interface. MIT
+Press, 1999.
+
+[9] J. Han, J. Pei, Y. Yin, and R. Mao. Mining frequent
+
+patterns without candidate generation: A frequent-pattern
+tree approach. Data Min. Knowl. Discov., 8(1):53–87, 2004.
+
+[10] K. J¨arvelin and J. Kek¨al¨ainen. Cumulated gain-based
+
+evaluation of IR techniques. ACM Transactions on
+Information Systems, 20(4):422–446, 2002.
+
+[11] Y. Koren. Factorization meets the neighborhood: a
+
+multifaceted collaborative ﬁltering model. In Proc. of the
+14th ACM SIGKDD conference, pages 426–434, 2008.
+
+[12] H. Li, Y. Wang, D. Zhang, M. Zhang, and E. Y. Chang.
+
+Pfp: parallel fp-growth for query recommendation. In Proc.
+of the 2008 ACM RecSys conference, pages 107–114, 2008.
+
+[13] A. McCallum, A. Corrada-Emmanuel, and X. Wang. The
+
+author-recipient-topic model for topic and role discovery in
+social networks: Experiments with enron and academic
+email. Technical report, Computer Science, University of
+Massachusetts Amherst, 2004.
+
+[14] J. J. Sandvig, B. Mobasher, and R. Burke. Robustness of
+
+collaborative recommendation based on association rule
+mining. In Proc. of the 2007 ACM Recommender Systems
+conference, pages 105–112, New York, NY, USA, 2007.
+ACM.
+
+[15] M.-L. Shyu, C. Haruechaiyasak, S.-C. Chen, and N. Zhao.
+
+Collaborative ﬁltering by mining association rules from user
+access sequences. In Proc. of the International workshop on
+Challenges in WIRI, pages 128–135, 2005.
+
+[16] M. Snir and S. Otto. MPI-The Complete Reference: The
+
+MPI Core. MIT Press, 1998.
+
+[17] E. Spertus, M. Sahami, and O. Buyukkokten. Evaluating
+
+similarity measures: a large-scale study in the orkut social
+network. In Proc. of the 11th ACM SIGKDD Conference,
+pages 678–684, 2005.
+
+[18] R. Srikant and R. Agrawal. Mining generalized association
+rules. Future Gener. Comput. Syst., 13(2-3):161–180, 1997.
+
+[19] M. Steyvers, P. Smyth, M. Rosen-Zvi, and T. Griﬃths.
+
+Probabilistic author-topic models for information discovery.
+In Proc. of the 10th ACM SIGKDD Conference, pages
+306–315, 2004.
+
+[20] R. Thakur, R. Rabenseinfer, and W. Gropp. Optimization
+
+of collective communication operations in MPICH.
+International Journal of High Performance Computing
+Applications, 19(1):49–66, 2005.
+
+100101100101Number of MachinesSpeedup  LinearCompComp+CommComp+Comm+SyncWWW 2009 MADRID!Track: Social Networks and Web 2.0 / Session: Recommender Systems690

@@ -1,0 +1,1588 @@
+Bridging the Gap Between OWL and Relational Databases∗
+
+Boris Motik
+
+University of Manchester
+
+Manchester, UK
+
+Ian Horrocks
+
+University of Manchester
+
+Manchester, UK
+
+Ulrike Sattler
+
+University of Manchester
+
+Manchester, UK
+
+ABSTRACT
+Schema statements in OWL are interpreted quite diﬀerently
+from analogous statements in relational databases. If these
+statements are meant to be interpreted as integrity con-
+straints (ICs), OWL’s interpretation may seem confusing
+and/or inappropriate. Therefore, we propose an extension
+of OWL with ICs that captures the intuition behind ICs in
+relational databases. We discuss the algorithms for checking
+IC satisfaction for diﬀerent types of knowledge bases, and
+show that, if the constraints are satisﬁed, we can disregard
+them while answering a broad range of positive queries.
+
+Categories and Subject Descriptors
+I.2.4 [Knowledge Representation Formalisms and
+Methods]: OWL
+
+General Terms
+Theory, Languages
+
+Keywords
+Semantic Web, Relational Databases, OWL
+
+1.
+
+INTRODUCTION
+
+The Web Ontology Language (OWL) is the W3C standard
+language for modeling ontologies in the Semantic Web. The
+logical underpinning for OWL is provided by description
+logics (DLs) [3]. OWL can be seen as an expressive schema
+language; however, its axioms have a diﬀerent meaning from
+analogous statements in relational databases. When OWL
+axioms are meant to be interpreted as integrity constraints
+(ICs), the formal semantics of OWL may seem confusing
+and/or inappropriate.
+
+To understand the nature of the problem, consider an ap-
+plication for managing tax returns in which each person is
+required to have a social security number. In a relational
+database, this would be captured by an inclusion depen-
+dency stating that a social security number must exist for
+each person. During database updates, such a dependency
+is interpreted as a check: whenever a person is added to the
+database, a check is performed whether that person’s social
+∗This work was funded by the EPSRC project REOL.
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2007, May 8–12, 2007, Banff, Alberta, Canada.
+ACM 978-1-59593-654-7/07/0005.
+
+security number has been speciﬁed as well; if not, the update
+is rejected. An analogous dependency can be expressed in
+OWL by means of an existential restriction, but will result
+in a quite diﬀerent behavior: adding a person without a so-
+cial security number to the ontology does not raise an error,
+but only leads to the inference that the person in question
+has some (unknown) social security number.
+
+In Section 2, we study this problem by comparing OWL
+with relational databases w.r.t. their schema languages, rea-
+soning problems, and constraint checking. Our analysis sug-
+gests that OWL ontologies can be understood as incomplete
+databases [15]. Many databases encountered in practice are,
+however, complete. To obtain a ﬂexible schema language, we
+would like to explicitly control the degree of incompleteness.
+Integrity constraints (ICs)—formulae that check whether all
+necessary information has been provided explicitly—seem to
+be the proper mechanism for this purpose.
+
+Extending logic-based KR formalisms with database-like
+ICs has already been considered in the literature. Reiter ob-
+served that ICs are not objective sentences about the world,
+but are epistemic sentences about the database state [23].
+Based on this idea, constraints have been added to DLs using
+nonmonotonic modal [11] or rule extensions [24, 20]. Such
+ICs, however, just constrain the shape of an ABox; they are
+not a part of the core conceptual model and do not aﬀect
+schema reasoning at all. In contrast, ICs have a dual role
+in relational databases: they describe the possible worlds as
+well as the states of the databases [1], so they are used both
+in data reasoning (e.g., for checking database integrity) and
+in schema reasoning (e.g., for computing query subsump-
+tion). The semantic relationship between these two roles of
+ICs is clear, which simpliﬁes their usage.
+
+In Section 3, we introduce extended DL knowledge bases,
+which allow a modeler to designate a subset of the TBox ax-
+ioms as ICs. For schema (TBox) reasoning, these axioms are
+treated as usual. For data (ABox) reasoning, these axioms
+do not derive new information; instead, they are interpreted
+as checks. Thus, the relationship between the interpreta-
+tions of ICs in TBox and ABox reasoning is clear, and is
+analogous to relational databases. In fact, in Section 4, we
+show that, if an ABox satisﬁes the ICs, we can disregard the
+ICs while answering positive ABox queries. In Section 5, we
+discuss the typical usage patterns of our approach. Finally,
+in Section 6, we discuss algorithms for checking IC satisfac-
+tion. Due to space limitations, we present only the intuition
+behind our algorithms; for details, please refer to [19].
+
+Our notion of ICs solves common problems of OWL-based
+applications: through constraint satisfaction checking, these
+
+applications can ensure that all required data has explicitly
+been speciﬁed in an ontology, and thus detect potential er-
+rors in the data. Furthermore, we expect signiﬁcant per-
+formance improvements in query answering, especially in
+applications that would use ICs extensively.
+
+We assume the reader to be familiar with the basics of
+OWL and DLs; please refer to [3] for an introduction. It is
+well-known that the OWL DL variant of OWL corresponds
+to the DL SHOIN (D). Because of that, in this paper we
+refer to OWL and DLs interchangeably.
+
+2. OWL VS. RELATIONAL DATABASES
+
+An obvious distinction between OWL/DLs and relational
+databases is that the former use open-world, whereas the
+latter use closed-word semantics. In this section, we argue
+that such a classiﬁcation is too superﬁcial; rather, we should
+see both semantics as complementary to each other.
+2.1 Schema Language
+
+The schema part of a DL knowledge base is typically called
+a TBox (terminology box), and is a ﬁnite set of (possibly re-
+stricted) universally quantiﬁed implications. For example, a
+TBox can state that each person has a social security num-
+ber (SSN), that a person can have at most one SSN, and
+that each SSN can be assigned to at most one individual.
+These statements are expressed using these TBox axioms:
+
+Person ⊑ ∃hasSSN .SSN
+Person ⊑ ≤ 1 hasSSN
+SSN ⊑ ≤ 1 hasSSN −
+
+(1)
+(2)
+
+(3)
+
+Most DLs can be seen as decidable fragments of ﬁrst-order
+logic [7]. Hence, the axioms (1)–(3) can be translated into
+the following ﬁrst-order formulae:
+
+∀x : [Person(x) → ∃y : hasSSN (x, y) ∧ SSN (y)]
+
+∀x, y1, y2 : [Person (x) ∧
+
+hasSSN (x, y1) ∧ hasSSN (x, y2) → y1 ≈ y2]
+
+∀x, y1, y2 : [SSN (x) ∧
+
+hasSSN (y1, x) ∧ hasSSN (y2, x) → y1 ≈ y2]
+
+(4)
+
+(5)
+
+(6)
+
+The schema of a relational database is deﬁned in terms of
+relations and dependencies. Diﬀerent types of dependencies
+have been considered, such as functional, inclusion, or join
+dependencies. As discussed in [1], most dependencies can
+be represented as ﬁrst-order formulae of the form (7), where
+ψ and ξ are conjunctions of function-free atoms:
+
+∀x1, . . . , xn : [ψ(x1, . . . , xn) →
+
+∃y1, . . . , ym : ξ(x1, . . . , xn, y1, . . . , ym)]
+
+(7)
+
+Although the expressivity of DLs underlying OWL and of
+relational dependencies is clearly diﬀerent, the schema lan-
+guages of the two are quite closely related. In fact, the for-
+mula (4) corresponds to an inclusion dependency, whereas
+(5) and (6) correspond to key dependencies.
+2.2 Interpreting the Schema
+
+DL TBoxes and relational schemas are interpreted accord-
+ing to standard ﬁrst-order semantics: they distinguish the
+legal from the illegal relational structures—that is, the struc-
+tures that satisfy all axioms from the structures that violate
+some axiom.
+In DLs, the legal structures are called mod-
+els, whereas in relational databases they are called database
+instances; the underlying principle is, however, the same.
+
+There is a slight technical diﬀerence between models and
+database instances: models can typically be inﬁnite, whereas
+database instances must typically be ﬁnite. The latter is
+due to the fact that only ﬁnite databases can be stored in
+practical systems. For certain classes of dependencies, the
+restriction to ﬁnite structures is not really relevant: when-
+ever an inﬁnite relational structure satisfying the schema
+exists, a ﬁnite structure exists as well (this is the so-called
+ﬁnite model property). For languages such as OWL, this
+does not necessarily hold: some ontologies are satisﬁed only
+in inﬁnite models [3]. Even though the complexity of ﬁnite
+model reasoning is, for numerous DLs, the same as the com-
+plexity of reasoning w.r.t. arbitrary models, the former is
+usually more involved [18]. Hence, in the rest of this pa-
+per, we drop the restriction to ﬁnite database instances and
+consider models and database instances to be synonymous.
+
+2.3 Domains and Typing
+
+Relational databases assign types to columns of relations;
+for example, the second position of hasSSN could be re-
+stricted to strings of a certain form. Typing is used in prac-
+tice to determine the physical layout of the database.
+In
+contrast, typing is often not considered in theory (e.g., in al-
+gorithms for checking query containment); rather, columns
+draw their values from a common countable domain set [1].
+To provide for explicit typing of relationships, the DLs
+underlying OWL have datatypes—a simpliﬁed variant of the
+so-called concrete domains [4].
+
+In this paper, we consider neither typed relational schemas
+nor DL knowledge bases with concrete domains, and simply
+interpret both relational schemata and TBoxes in ﬁrst-order
+logic. This simpliﬁes both formalisms signiﬁcantly. For ex-
+ample, adding key constraints to untyped DLs is not a prob-
+lem [8], whereas adding them to DLs with typed predicates
+is much more involved [17].
+
+2.4 Schema Reasoning
+
+Checking subsumption relationships between concepts has
+always been a central reasoning problem for DLs. A concept
+C is subsumed by a concept D w.r.t. a DL TBox T if the
+extension of C is included in the extension of D in each
+model I of T . This inference has many uses; for example, in
+ontology modeling, derived subsumption relationships can
+be used to detect modeling errors. Concept subsumption
+has been used to optimize query answering [13], especially
+when generalized to subsumption of conjunctive queries [10,
+12]. Another important TBox inference is checking concept
+satisﬁability—that is, determining whether a model of T
+exists in which a given concept has a nonempty extension.
+Concepts are usually unsatisﬁable due to modeling errors,
+so this inference is also useful in ontology modeling.
+
+Reasoning about the schema is certainly not the most
+prominent feature of relational databases, yet a signiﬁcant
+amount of research has been devoted to it. The most im-
+portant schema-related inference in databases is checking
+query containment [1]: a query Q1 is contained in a query
+Q2 w.r.t. a schema T if the answer of Q1 is contained in the
+answer of Q2 for each database instance that satisﬁes T .
+This inference is used by virtually all database systems to
+rewrite queries into equivalent ones that can be answered
+more eﬃciently. Another useful inference is dependency
+minimization—that is, computing a minimal schema that
+is equivalent to the given one.
+
+In both DLs and relational databases, schema reasoning
+problems correspond to checking whether some formula ϕ
+holds in each model (i.e., database instance) of T —that is,
+checking whether T |= ϕ. In other words, the terminological
+problems in both DLs and relational databases correspond
+to ﬁrst-order consequences of a ﬁrst-order theory. Since the
+problems are the same, it should not come as a surprise that
+the methods used to solve them are closely related. Namely,
+reasoning in DLs is typically performed by tableau algo-
+rithms [5], whereas the state-of-the-art reasoning technique
+in relational databases is chase [1]. Apart from notational
+diﬀerences, the principles underlying these two techniques
+are the same: they both try to construct a model that sat-
+isﬁes the schema T but not the formula ϕ.
+
+To summarize, DLs and databases treat schema reasoning
+problems in the same way. Thus, DLs can be understood as
+expressive but decidable database schema languages.
+
+2.5 Query Answering
+
+Apart from the schema (or TBox) part, a DL knowl-
+edge base K typically also has a data (or ABox) part. The
+main inference for ABoxes is instance checking—that is,
+checking whether an individual a is contained in the exten-
+sion of a concept C in each model of K, commonly written
+as K |= C(a). Instance checking can be generalized to an-
+swering conjunctive queries over DL knowledge bases [10,
+12]. Thus, a DL query can be viewed as a ﬁrst-order for-
+mula ϕ with free variables x1, . . . , xn. Like schema reason-
+ing, the semantics of query answering in DLs is deﬁned as
+ﬁrst-order entailment; hence, it takes into account all mod-
+els of K: a tuple a1, . . . , an is an answer to ϕ over K if
+K |= ϕ[a1/x1, . . . , an/xn], where the formula ϕ[a/x] is ob-
+tained by replacing in ϕ all free occurrences of x with a.
+
+Queries in relational databases are ﬁrst-order formulae
+(restricted in a way to make them domain independent) [1],
+so they are similar to queries in DLs. A signiﬁcant diﬀerence
+between DLs and relational databases is the way in which
+the queries are evaluated. Let ϕ be a ﬁrst-order formula with
+the free variables x1, . . . , xn. A tuple a1, . . . , an is an answer
+to ϕ over a database instance I if I |= ϕ[a1/x1, . . . , an/xn].
+Hence, unlike in DLs, query answering in relational data-
+bases does not consider all databases instances that satisfy
+the knowledge base K; instead, it considers only the given
+instance I.
+In other words, query answering in relational
+databases is not deﬁned as entailment, but as model check-
+ing, where the model is the given database instance.
+
+Although the deﬁnition of query answering in relational
+databases from the previous paragraph is the most widely
+used one, a signiﬁcant amount of research has also been de-
+voted to answering queries over incomplete databases [15]—
+a problem that is particularly interesting in information in-
+tegration. An incomplete database K is described by a set
+A of incomplete extensions of the schema relations and a set
+T of dependencies specifying how the incomplete extensions
+relate to the actual database instance. Queries in incomplete
+databases are also (possibly restricted) ﬁrst-order formulae.
+In contrast to complete databases, a tuple a1, . . . , an is a
+certain answer to ϕ over K if I |= ϕ[a1/x1, . . . , an/xn] for
+each database instance I that satisﬁes A and T . In other
+words, query answering in incomplete databases is deﬁned
+as ﬁrst-order entailment, exactly as in DLs. Consequently,
+DL query answering can be understood as answering queries
+in incomplete databases.
+
+2.6 Constraint Checking
+
+In DLs, one can check whether an ABox A is consistent
+with a TBox T —that is, whether a model I of both A and T
+exists—and thus detect possible contradictions in A and T .
+This inference is not, however, a suitable basis for constraint
+checking. For example, let T contain the axioms (1)–(3),
+and let A contain only the following axiom:
+
+Person(Peter )
+
+(8)
+
+If (1) were interpreted as an integrity constraint, we would
+expect it to be violated by A ∪ T : the ABox states that
+Peter is a person without specifying his social security num-
+ber. The knowledge base A ∪ T is, however, satisﬁable: the
+axiom (1) is not interpreted as a check; rather, it implies
+the existence of some (unknown) SSN. Thus, T describes
+the legal models, but not the legal ABoxes.
+In fact, the
+DLs underlying OWL do not provide any means to express
+database-like integrity constraints.
+
+In contrast, constraints play a central role in relational
+databases, where they are used to ensure the integrity of
+data. As in DLs, a relational schema T is a set of formulae
+that must hold for any database instance. A relational data-
+base instance, however, corresponds to exactly one model,
+whereas a DL ABox typically has inﬁnitely many models.
+Just like query answering, constraint checking in relational
+databases corresponds to model checking: given a database
+instance I, a relational database checks the satisfaction of
+the schema constraints T by checking whether I |= T .1 In
+our example, if the ABox A is taken as the database in-
+stance I, then, clearly, I 6|= T —as expected, the integrity
+constraints are not satisﬁed.
+2.7 Discussion
+
+OWL users have frequently complained about the “open-
+world semantics of OWL” or “the unintuitive constraints in
+OWL.” From our experience, this is often due to incorrect
+interpretation of the fundamental assumptions behind OWL
+and relational databases, respectively.
+
+From the standpoint of conceptual modeling, DLs pro-
+vide a very expressive, but still decidable language that has
+proven to be implementable in practice. The open-world se-
+mantics is natural for a schema language since a schema se-
+lects the legal database instances. In fact, when computing
+the subsumption relationship between concepts or queries,
+we do not have a ﬁxed instance. Therefore, we cannot inter-
+pret the schema in either OWL or the relational databases
+under closed-world assumption; rather, we must employ the
+open-world semantics in order to consider all instances.
+
+In our experience, complaints from OWL users are most
+common in data-centric applications—that is, applications
+that focus on the management of large volumes of data. In
+practice, relational databases are typically complete: any
+missing information is either encoded metalogically (e.g.,
+users often include ﬁelds such as hasSpeciﬁedSSN to signal
+that particular data has been supplied in the database), or it
+is represented by null-values (which are also interpreted out-
+side ﬁrst-order logic). In contrast, ABoxes in DLs are closely
+related to incomplete (relational) databases. Clearly, prob-
+lems may arise if certain aspects of the information about
+
+1In practice, constraints are incrementally checked after
+database updates; these dynamic aspects are, however, not
+important for this discussion.
+
+individuals in ABoxes are expected to be complete. To un-
+derstand the problems that occur in such cases, consider the
+following example. Biopax2 is an ontology used for data ex-
+change between biological databases. It deﬁnes a property
+NAME and states its domain to be the union of bioSource ,
+entity , and dataSource :
+
+∃NAME .⊤ ⊑ bioSource ⊔ entity ⊔ dataSource
+
+(9)
+
+The intention behind this axiom is to deﬁne which objects
+can be named—that is, to ensure that a name is stated only
+for objects of the appropriate type. In fact, the data in the
+Biopax ontology is complete w.r.t. this constraint: each ob-
+ject with a name is also typed (sometimes indirectly through
+the class hierarchy) to at least one of the required classes.
+The axiom (9), however, does not act as a constraint; in-
+stead, it says that, if some object has a name, then it can be
+inferred to be either a bioSource, an entity , or a dataSource .
+Therefore, (9) cannot be used to check whether all data is
+correctly typed. Furthermore, since the concept in the con-
+sequent is a disjunction, the axiom (9) requires reasoning
+by case, which is one of the reasons why DL reasoning is
+intractable [3, Chapter 3 ]. Hence, the axiom (9) causes two
+types of problems: on the one hand, it does not have the
+desired semantics and, on the other hand, it introduces a
+performance penalty during reasoning.
+
+Representing incomplete information is, however, needed
+in many applications. Consider the following axiom stating
+that married people are eligible for a tax cut:
+
+∃marriedTo.⊤ ⊑ TaxCut
+
+(10)
+
+To apply this axiom, we do not necessarily need to know
+the name of the spouse; we only need to know that a spouse
+exists. Thus, we may state the following fact:
+
+Section 2 to DLs.
+In such an approach, an ABox would
+be interpreted as a single model and the TBox axioms as
+formulae that must be satisﬁed in a model; the constraints
+would be satisﬁed if A |= T . Such an approach, however,
+is not satisfactory, as it requires an “all-or-nothing” choice:
+we then have to assume that all information in the ABox is
+complete; furthermore, TBox axioms could only be used to
+check whether an ABox is of an appropriate form and would
+not imply new facts. To obtain a more versatile formal-
+ism, we propose a combination of inferencing and constraint
+checking. For example, let A1 be the following ABox:
+
+Student (Peter )
+hasSSN (Peter , nr12345 )
+SSN (nr12345 )
+Student (Paul )
+
+Furthermore, let T1 be the following TBox:
+
+Student ⊑ Person
+Person ⊑ ∃hasSSN .SSN
+
+(12)
+(13)
+(14)
+(15)
+
+(16)
+(17)
+
+Let us assume that we want to treat (17) as a constraint,
+but (16) as a normal axiom. Then, we derive Person(Peter )
+and Person(Paul) by (16). The constraint (17) is satisﬁed
+for Peter due to (12), (13), and (14); however, an SSN has
+not been speciﬁed for Paul, so we expect (17) to be violated.
+Following this intuition, we deﬁne extended DL knowl-
+edge bases to distinguish the axioms that imply new facts
+from the ones that check whether all necessary information
+is derivable. Our deﬁnition is applicable to any DL.
+
+Definition 3.1. An extended DL knowledge base is a
+
+triple K = (S, C, A) such that
+
+(∃marriedTo.Woman)(Peter )
+
+(11)
+
+• S is a ﬁnite set of standard TBox axioms,
+
+We are now able to derive that Peter is eligible for a tax
+cut even without knowing the name of his spouse. Provid-
+ing complete information can be understood as ﬁlling in a
+“Spouse name” box on a tax return, whereas providing in-
+complete information can be understood as just ticking the
+“Married” box. The existential quantiﬁer can be understood
+as a well-behaved version of null-values that explicitly speci-
+ﬁes the semantics of data incompleteness. For use cases that
+require reasoning with incomplete information, DLs provide
+a sound and well-understood foundation.
+
+Thus, one would ideally like to be able to explicitly con-
+trol “the amount of incompleteness” in an ontology. Such a
+mechanism would allow the ontology modeler to explicitly
+state which data must be fully speciﬁed and which can be
+left incomplete. This goal can be achieved through an ap-
+propriate form of integrity constraints that check whether all
+data has been speciﬁed as required. Transforming inappro-
+priate and/or erroneously introduced axioms into integrity
+constraints should also speed up query answering by elimi-
+nating unintended and potentially complex inferences.
+
+3. CONSTRAINTS FOR OWL
+
+In this section, we extend DL knowledge bases with ICs
+in order to overcome the problems discussed in the previous
+section. Since TBoxes are ﬁrst-order formulae, it is straight-
+forward to apply the model checking approach described in
+2http://www.biopax.org/
+
+• C is a ﬁnite set of constraint TBox axioms, and
+
+• A is a ﬁnite set of ABox assertions (¬)A(a), R(a, b),
+a ≈ b, or a 6≈ b, for A an atomic concept, R a role,
+and a and b individuals.
+
+In Deﬁnition 3.1, we restrict ourselves to ABoxes with
+only possibly negated atomic concepts. This does not result
+in any loss of generality because S can be used to introduce
+names for nonatomic concepts.
+
+Next, we discuss how to deﬁne an appropriate semantics
+for extended DL knowledge bases. The simplest solution is
+to interpret A ∪ S in the standard ﬁrst-order way and to
+require C to be satisﬁed in each model I for which we have
+I |= A ∪ S. The following example, however, shows that
+this does not satisfy our intuition. Let A2 contain only the
+fact (12), S2 = ∅, and let C2 contain only the axiom (17).
+The interpretation I = {Student (Peter ), Person(Peter )} is
+a model of A2 ∪ S2 that does not satisfy C2, which would
+make C2 not satisﬁed for A2 ∪ S2. Intuitively, though, the
+fact Person(Peter ) is not implied by A2 ∪ S2, so we should
+not check whether Peter has an SSN at all; C2 should hold
+only for the facts that are implied by A2 ∪ S2.
+
+These considerations might suggest that C should hold for
+all ﬁrst-order consequences of A ∪ S. In the example from
+the previous paragraph, this produces the desired behavior:
+Person(Peter ) is not a consequence of A2 ∪ S2, so the axiom
+from C2 should not be checked for Peter . Consider, however,
+the ABox A3 containing only the following axiom:
+
+Cat(ShereKahn )
+
+Furthermore, let S3 contain the following axiom:
+
+Cat ⊑ Tiger ⊔ Leopard
+
+Finally, let C3 contain the following two axioms:
+
+Tiger ⊑ Carnivore
+Leopard ⊑ Carnivore
+
+(18)
+
+(19)
+
+(20)
+(21)
+
+Now neither Tiger (ShereKahn) nor Leopard (ShereKahn ) is
+a ﬁrst-order consequence of A3 ∪ S3, which means that the
+axioms from C3 are satisﬁed; furthermore, we have
+
+A3 ∪ S3 6|= Carnivore(ShereKahn ).
+
+This answer does not satisfy our intuition: in each model of
+A3 ∪ S3, either Tiger (ShereKahn ) or Leopard (ShereKahn )
+holds, but Carnivore(ShereKahn ) does not necessarily hold
+in either case. Hence, by treating (20)–(21) as constraints
+and not as standard axioms, we neither get a constraint
+violation nor derive the consequence Carnivore(ShereKahn ).
+Intuitively, the constraints should check whether the facts
+derivable from A ∪ S ∪ C are also derivable using A ∪ S only.
+This notion seems to be nicely captured by minimal models;
+hence, we check C only w.r.t. the minimal models of A ∪ S.
+Roughly speaking, a model I with an interpretation domain
+△I of a formula ϕ is minimal if each interpretation I ′ over
+△I such that I ′ ⊂ I is not a model of ϕ, where we consider
+an interpretation to be represented by the set of all positive
+ground facts that are true in it. Consider again A2, S2, and
+C2. The fact Person(Peter ) is not derivable from A2 ∪ S2 in
+any minimal model (in fact, there is only a single minimal
+model), so the constraint axiom (17) is not violated.
+In
+contrast, A3 ∪ S3 has exactly two minimal models:
+
+I1 = {Cat(ShereKahn), Tiger (ShereKahn)}
+I2 = {Cat(ShereKahn), Leopard (ShereKahn)}
+
+These two models can be viewed as the minimal sets of deriv-
+able consequences. The constraint TBox C3 is not satisﬁed
+in all minimal models (in fact, it is violated in each of them).
+In contrast, let A4 = A3 and C4 = C3, and let S4 contain
+the following axiom:
+
+Cat ⊑ (Tiger ⊓ Carnivore) ⊔ (Leopard ⊓ Carnivore)
+
+(22)
+
+Now Carnivore(ShereKahn) is derivable whenever we can
+derive either Tiger (ShereKahn ) or Leopard (ShereKahn), so
+the constraints should be satisﬁed. Indeed, A4 ∪ S4 has the
+following two minimal models:
+
+I3 = I1 ∪ {Carnivore (ShereKahn)}
+I4 = I2 ∪ {Carnivore (ShereKahn)}
+
+Both I3 and I4 satisfy C4. Furthermore, we do not lose any
+consequences, despite the fact that we treat (20)–(21) as
+constraints, since the following holds:
+
+A4 ∪ S4 |= Carnivore(ShereKahn )
+
+Minimal models have been used, with minor diﬀerences,
+in an extension of DLs with circumscription [6] and in the
+semantics of open answer set programs [14]. Consider, how-
+ever, the following ABox A5:
+
+Woman(Alice)
+Man(Bob)
+
+(23)
+(24)
+
+Furthermore, let S = ∅ and C contain the following axiom:
+
+Woman ⊓ Man ⊑ ⊥
+
+(25)
+
+No axiom implies that Alice and Bob should be interpreted
+as the same individual, so we expect them to be diﬀer-
+ent “by default” and the constraint to be satisﬁed. Now
+the deﬁnitions from [6, 14] consider all interpretation do-
+mains, so let △I = {α}. Because △I contains only one ob-
+ject, we must interpret both Alice and Bob as α. Clearly,
+I = {Woman(α), Man(α)} is a minimal model of A5, and it
+does not satisfy C5.
+
+This problem might be remedied by making the unique
+name assumption (UNA)—that is, by requiring each con-
+stant to be interpreted as a diﬀerent individual. This is,
+however, rather restrictive, and is not compatible with OWL.
+Another solution is to interpret A ∪ S in a Herbrand model
+(i.e., a model in which each constant is interpreted by it-
+self) where ≈ is a congruence relation; then, we minimize
+the interpretation of ≈ together with all the other pred-
+In such a case, the only minimal model of A5 is
+icates.
+I ′ = {Woman(Alice), Man(Bob)} since the extension of ≈
+is empty due to minimization, so C5 is satisﬁed in I ′.
+
+Unfortunately, existential quantiﬁers pose a whole range
+
+of problems for constraints. Let A6 contain these axioms:
+
+HasChild (Peter )
+HasHappyChild (Peter )
+TwoChildren(Peter )
+
+Furthermore, let S6 contain these axioms:
+
+HasChild ⊑ ∃hasChild .Child
+
+HasHappyChild ⊑ ∃hasChild .(Child ⊓ Happy )
+
+Finally, let C6 contain the following constraint:
+
+(26)
+(27)
+(28)
+
+(29)
+(30)
+
+TwoChildren ⊑ ≥ 2 hasChild .Child
+
+(31)
+
+It seems intuitive for C6 to be satisﬁed in A ∪ S6: no axiom
+in S6 forces the children of Peter —the two individuals whose
+existence is implied by (29) and (30)—to be the same, so we
+might conclude that they are diﬀerent.
+
+Now consider the following quite similar example. Let
+
+C7 = C6, and let A7 contain the following axioms:
+
+HasChild(Peter )
+
+TwoChildren(Peter )
+
+(32)
+
+(33)
+
+Furthermore, let S7 contain the following axiom:
+
+HasChild ⊑ ∃hasChild.Child ⊓ ∃hasChild.Child
+
+(34)
+
+As in the previous example, C7 is satisﬁed in A7 ∪ S7 since
+(34) introduces two (possibly identical) individuals in the
+extension of Child. Let S ′
+7 be a standard TBox containing
+only the axiom (35):
+
+HasChild ⊑ ∃hasChild .Child
+
+(35)
+
+Now C7 is not satisﬁed in A ∪ S ′
+7 since (35) implies the exis-
+tence of only one child. Given that S ′
+7 is semantically equiv-
+alent to S7, this is rather unsatisfactory; furthermore, it
+suggests that C7 should not be satisﬁed in A7 ∪ S7, since
+(34) requires the existence of only one individual. Recall,
+however, that S6 and S7 are quite closely related: the eﬀect
+of (34) with respect to Child is the same as that of (29) and
+(30). Hence, if (34) should introduce only one individual,
+
+then (29) and (30) should do so as well, which is in conﬂict
+with our intuition that C6 should be satisﬁed in A6 ∪ S6.
+
+Thus, our intuition does not give us a clear answer as
+to the appropriate treatment of existential quantiﬁers in the
+standard TBox: the names of the concepts and the structure
+of the axioms suggest that the existential quantiﬁers in (29)
+and (30) should introduce diﬀerent individuals, whereas the
+existential quantiﬁers in (34) should “reuse” the same indi-
+vidual. These two readings pull in opposite directions, so a
+choice between the two should be based on other criteria.
+
+The example involving S7 and S ′
+
+7 reveals an important
+disadvantage of one possible choice: if we require each exis-
+tential quantiﬁer to introduce a distinct individual, then it
+is possible for a constraint TBox C to be satisﬁed in A ∪ S,
+but not in A ∪ S ′, even though S and S ′ are semantically
+equivalent. As we have seen, C7 is satisﬁed in A7 ∪ S7, but
+not in A7 ∪ S ′
+7 are equivalent. It
+is clearly undesirable for IC satisfaction to depend on the
+syntactic structure of the standard TBox.
+
+7, even though S7 and S ′
+
+Introducing distinct individuals for each existential quan-
+tiﬁer can be justiﬁed by skolemization [21], the well-known
+process of representing existential quantiﬁers with new func-
+tion symbols. For example, for ϕ = ∃y : [R(x, y) ∧ C(y)], by
+skolemization we obtain sk(ϕ) = R(x, f (x)) ∧ C(f (x)): the
+variable y is replaced by a term f (x), for f a new func-
+tion symbol. Skolemized formulae are usually interpreted
+in Herbrand models, whose domain consists of all ground
+terms built from constants and function symbols in the for-
+mula. If the formula contains at least one function symbol,
+then Herbrand models are inﬁnite; furthermore, the models
+of DL axioms are forest-like (i.e., they can be viewed as trees
+possibly interconnected at roots). We use these properties
+in our procedure for checking IC satisfaction in Section 6.
+
+Definition 3.2. Let ϕ be a ﬁrst-order formula and sk(ϕ)
+the formula obtained by outer skolemization of ϕ [21]. A
+Herbrand interpretation w.r.t. ϕ is a Herbrand interpreta-
+tion deﬁned over the signature of sk(ϕ). A Herbrand in-
+terpretation I w.r.t. ϕ is a model of ϕ, written I |= ϕ, if
+it satisﬁes ϕ in the usual sense. A Herbrand model I of
+ϕ is minimal if I ′ 6|= ϕ for each Herbrand interpretation I ′
+such that I ′ ⊂ I. We write sk(ϕ) |=MM ψ if I |= ψ for each
+minimal Herbrand model I of ϕ.
+
+We now deﬁne the notion of IC satisfaction. We use an
+operator π that translates a set of DL axioms S into an
+equivalent formula π(S) of ﬁrst-order logic with equality and
+counting quantiﬁers [3, 7].
+
+Definition 3.3. Let K = (S, C, A) be an extended DL
+knowledge base. The constraint TBox C is satisﬁed in K if
+sk(π(A ∪ S)) |=MM π(C). By an abuse of notation, we often
+omit π and simply write sk(A ∪ S) |=MM C.
+
+Note that the addition of constraints does not change the
+semantics of DLs or OWL: Deﬁnition 3.3 is only concerned
+with the semantics of constraints, and a traditional knowl-
+edge base (T , A) can be seen as an extended knowledge base
+(T , ∅, A). For subsumption and concept satisﬁability tests,
+we can use S ∪ C together as the schema, as usual. As dis-
+cussed above, skolemization introduces a new function sym-
+bol for each existential quantiﬁer, which eﬀectively intro-
+duces a new individual for each quantiﬁer. We invite the
+reader to convince himself that Deﬁnition 3.3 closely follows
+
+our intuition on the examples presented thus far. Further-
+more, in Section 4 we show that, if the constraints are sat-
+isﬁed, we can throw them away without losing any positive
+consequences; that is, we can answer positive queries by tak-
+ing into account only A and S. We take this as conﬁrmation
+that our semantics of IC satisfaction is intuitive.
+
+We now discuss a nonobvious consequence of our seman-
+
+tics. Let A8 be an ABox with only the following axioms:
+
+Vegetarian (Ian)
+eats (Ian, soup)
+
+(36)
+(37)
+
+Furthermore, let S8 = ∅, and let C8 contain only the follow-
+ing constraint:
+
+Vegetarian ⊑ ∀eats.¬Meat
+
+(38)
+
+One might intuitively expect C8 not to be satisﬁed for A8
+since the ABox does not state ¬Meat (soup). Contrary to
+our intuition, C8 is satisﬁed in A8: the interpretation I con-
+taining only the facts (36) and (37) is the only minimal
+Herbrand model of A8 and I |= C8. In fact, the axiom (38)
+is equivalent to the following axiom:
+
+Vegetarian ⊓ ∃eats.Meat ⊑ ⊥
+
+(39)
+
+When written in the latter form, the axiom should be intu-
+itively satisﬁed, since Meat (soup) is not derivable.
+
+As this example illustrates, the intuitive meaning of con-
+straints is easier to grasp if we transform them into the
+form C ⊑ D, where both C and D are negation-free con-
+cepts. Namely, our constraints check the positive facts. To
+check negative facts, we must give them atomic names. Let
+A9 = A8; furthermore, let S9 contain the following axiom:
+
+NotMeat ≡ ¬Meat
+
+Finally, let C9 contain the following axiom:
+
+Vegetarian ⊑ ∀eats.NotMeat
+
+(40)
+
+(41)
+
+The constraint (40) is now of the “positive” form C ⊑ D, so
+it is easier to understand the intuition behind it: everything
+that is eaten by an instance of Vegetarian should provably
+be NotMeat . Now, A9 ∪ S9 has the following two minimal
+models, and I5 6|= C9, so C9 is not satisﬁed for A9:
+
+I5 = {Vegetarian (Ian), eats(Ian, soup), Meat (soup)}
+I6 = {Vegetarian (Ian), eats(Ian, soup), NotMeat (soup)}
+
+If we add to A9 the fact NotMeat (soup), then only I6 is
+a minimal model, and C9 becomes satisﬁed as expected.
+Hence, it is advisable to restrict constraints to positive for-
+mulae in order to avoid such misunderstandings.
+
+We ﬁnish this section with a note that diﬀerent appli-
+cations might choose to treat diﬀerent subsets of the same
+ontology as ICs. In practice, this might be addressed by a
+mechanism that allows one to create an application-speciﬁc
+view of an OWL ontology. The discussion of such a mecha-
+nism is, however, out of scope of this paper; here, we focus
+on the semantic and computational aspects of ICs.
+
+4. CONSTRAINTS AND QUERIES
+
+We now state an important result about answering unions
+of positive conjunctive queries in extended DL knowledge
+bases:
+if the ICs are satisﬁed, we need not consider them
+in query answering. This shows that our semantics of IC
+satisfaction is reasonable: constraints are checks and, if they
+
+are satisﬁed, we can discard them without losing relevant
+consequences. Moreover, this result is practically important
+because it simpliﬁes query answering. In Section 6, we show
+that, for certain types of OWL ontologies, both checking IC
+satisfaction and query answering can be easier than standard
+DL reasoning. Before proceeding, we ﬁrst remind the reader
+of the deﬁnition of unions of conjunctive queries.
+
+W
+
+Definition 4.1. Let x be a set of distinguished and y
+a set of nondistinguished variables. A conjunctive query
+Q(x, y) is a ﬁnite conjunction of positive atoms of the form
+A(t1, . . . , tm), where ti are either constants, distinguished,
+or nondistinguished variables.3 A union of n conjunctive
+i=1 ∃yi : Qi(x, yi). A tuple
+queries is the formula γ(x) =
+of constants c is an answer to γ(x) over a DL knowledge
+base K, written K |= γ(c), if π(K) |= γ(x)[c/x].
+
+n
+
+Our result is captured by the following theorem, whose
+
+proof can be found in [19]:
+
+Theorem 4.2. Let K be an extended DL knowledge base
+that satisﬁes C. Then, for any union of conjunctive queries
+γ(x) over K and any tuple of constants c, we have
+
+A ∪ S ∪ C |= γ(c) if and only if A ∪ S |= γ(c).
+
+Consider, for example, the following knowledge base. Let
+
+the standard TBox S10 contain the following axioms:
+
+Cat ⊑ Pet
+
+∃hasPet .Pet ⊑ PetOwner
+
+(42)
+(43)
+
+Let the constraint TBox C10 contain the following axiom:
+
+CatOwner ⊑ ∃hasPet .Cat
+
+(44)
+
+Finally, let the ABox A10 contain the following assertions:
+
+CatOwner (John)
+hasPet (John, Garﬁeld )
+Cat(Garﬁeld )
+
+(45)
+(46)
+(47)
+
+Under the standard semantics, we can draw the following
+conclusion from K:
+
+S10 ∪ C10 ∪ A10 |= PetOwner (John)
+
+Furthermore, it is easy to see that the constraint (44) is
+satisﬁed in K: the only derivable fact about CatOwner is
+CatOwner (John) and the ABox contains the explicit infor-
+mation that John owns Garﬁeld who is a Cat. Therefore,
+we do not need the axiom (44) to imply the existence of the
+owned cat: whenever we can derive CatOwner (x) for some
+x, we can derive the information about the cat of x as well.
+Hence, we can disregard (44) during query answering, but
+our conclusion holds just the same:
+
+S10 ∪ A10 |= PetOwner (John)
+
+Note that both entailments in Theorem 4.2 use the stan-
+dard semantics of DLs; that is, we do not assume a closed-
+world semantics for query answering. Furthermore, The-
+orem 4.2 does not guarantee preservation of negative con-
+sequences; in fact, such consequences may change, as the
+
+3The predicate A can be the equality predicate ≈, an atomic
+concept, a role, or an n-ary predicate in case of n-ary DLs.
+
+following example demonstrates. Let S11 = ∅, C11 contain
+the axiom
+
+Cat ⊓ Dog ⊑ ⊥
+
+(48)
+
+and A11 contain the axiom (47). By taking S11 into account,
+we get the following inference:
+
+S11 ∪ C11 ∪ A11 |= ¬Dog(Garﬁeld )
+
+Furthermore, the constraint is satisﬁed; however, if we dis-
+regard C11, we lose this consequence:
+
+S11 ∪ A11 6|= ¬Dog(Garﬁeld )
+
+A similar example can be given for queries containing uni-
+versal quantiﬁers.
+
+Theorem 4.2 has an important implication with respect to
+TBox reasoning. Let γ1(x) and γ2(x) be unions of conjunc-
+tive queries such that π(K) |= ∀x : [γ1(x) → γ2(x)]. Pro-
+vided that C is satisﬁed in K, each answer to γ1(x) w.r.t.
+A ∪ S is also an answer to γ2(x) w.r.t. A ∪ S. To summa-
+rize, we can check subsumption of unions of conjunctive as
+usual, by treating C ∪ S as an ordinary DL TBox. Subse-
+quently, for knowledge bases that satisfy C, we can ignore C
+when answering queries, but query answers will still satisfy
+the established subsumption relationships between queries.
+
+5. TYPICAL USAGE PATTERNS
+
+The notion of ICs from Section 3 is very general. To
+provide practical guidance for modelers, we discuss in this
+section the typical usage patterns.
+5.1 Participation Constraints
+
+Participation constraints involve two concepts C and D
+and a relation R between them, and they state that each in-
+stance of C must participate in one or more R-relationships
+with instances of D; often, they also deﬁne the cardinality of
+the relationship. The general form of such constraints is as
+follows, where ⊲⊳ ∈ {≤, ≥, =} and n is a nonnegative integer:
+
+C ⊑ ⊲⊳ n R.D
+
+(49)
+
+Participation constraints are similar to inclusion dependen-
+cies in relational databases.
+
+A typical participation constraint is the axiom (1), which
+states that each person must have an explicitly speciﬁed
+SSN. Another example is the following statement, which al-
+lowes each person to have at most one spouse:
+
+Person ⊑ ≤ 1 marriedTo.Person
+
+(50)
+
+To understand the diﬀerence in treating (50) as a standard
+axiom or a constraint, consider the following ABox A:
+
+Person(Peter )
+marriedTo(Peter , Ann)
+marriedTo(Peter , Mary )
+
+(51)
+(52)
+(53)
+
+If (50) were a part of the standard TBox S, then A ∪ S
+would be satisﬁable; furthermore, due to (50), we would de-
+rive Ann ≈ Mary. If we put (50) into the constraint TBox C,
+then the only minimal model of A contains exactly the facts
+(51)–(53). Namely, the equality predicate ≈ is minimized as
+well, so Ann is diﬀerent from Mary. This matches our intu-
+ition because no other knowledge requires Ann and Mary to
+be the same. Thus, Peter is married to two diﬀerent people,
+so the constraint (50) is not satisﬁed in A.
+
+5.2 Typing Constraints
+
+Constraints can be used to check whether objects are cor-
+rectly typed. A typical example of such constraints are do-
+main and range restrictions: for a role R and a concept C,
+they state that R-links can only point from or to objects that
+are explicitly typed as C. In this way, these constraints act
+as checks, saying that R-relationships can be asserted only
+for objects in C. The general form of domain constraints is
+
+∃R.⊤ ⊑ C
+
+whereas for range constraints it is
+
+⊤ ⊑ ∀R.C.
+
+(54)
+
+(55)
+
+A typical example of a domain constraint is (9), which
+ensures that a name can be given only to objects that are
+either bioSource, entity , or dataSource . Another example is
+the following axiom, which states that it is only possible to
+be married to a Person:
+
+⊤ ⊑ ∀marriedTo.Person
+
+(56)
+
+To understand the diﬀerence in treating (56) as a standard
+axiom or a constraint, consider an ABox A containing only
+the fact (52). If (56) were a part of the standard TBox S,
+then A ∪ S would be satisﬁable; furthermore, due to (56),
+we would derive Person(Ann). If we put (56) into the con-
+straint TBox C, then the only minimal model of A contains
+only the fact (52). Thus, Ann is not explicitly typed to be
+a Person , so the IC (56) is not satisﬁed in A.
+5.3 Restrictions to Known Individuals
+
+Sometimes, we might want to check whether certain ob-
+jects are known by name. For example, an application for
+the management of tax returns might deal with two types of
+people: those who have submitted a tax return for process-
+ing, and those who are somehow related to the people from
+the ﬁrst group (e.g., their spouses or children). For the ap-
+plication to function properly, it might not be necessary to
+explicitly specify the SSN for all people; only the SSNs for
+the people from the ﬁrst group are of importance. In such
+an application, we might use axioms (1)–(3) not as ICs, but
+as elements of the standard TBox S. Furthermore, to distin-
+guish people who have submitted the tax return, we would
+introduce a concept PersonTR for persons with a tax return
+and would make it a subset of Person in S:
+
+PersonTR ⊑ Person
+
+(57)
+
+Two things should hold for each instance of PersonTR:
+ﬁrst, we might require each such person to be explicitly
+known by name, and second, we might require the SSN of
+each such person to be known by name as well. Although
+ICs can be used to check whether an individual is present in
+an interpretation, they cannot distinguish named (known)
+from unnamed (unknown) individuals. We can, however,
+solve this problem using the following “trick.” We can use a
+special concept O to denote all individuals known by name
+and state the following two constraints:
+
+PersonTR ⊑ O
+PersonTR ⊑ ∃hasSSN .(O ⊓ SSN )
+
+(58)
+(59)
+
+Furthermore, we add the following ABox assertion for each
+individual a occurring in an ABox:
+
+O(a)
+
+(60)
+
+Now in any minimal model of S ∪ A, the assertions of the
+form (60) ensure that O is interpreted exactly as the set of
+all known objects. Hence, (58) ensures that each PersonTR
+is known, and (59) ensures that the social security number
+for each person is known as well.
+
+One can object that this solution is not completely model-
+theoretic: it requires asserting (60) for each known individ-
+ual, which is a form of procedural preprocessing. We agree
+that our solution is not completely clean in that sense; how-
+ever, we believe that it is simple to understand and imple-
+ment and is therefore acceptable.
+
+For TBox reasoning, statements of the form (60) are, by
+deﬁnition, not taken into account. Finally, instead of the ax-
+ioms (60), one could be tempted to use the following state-
+ment, where ai are all individuals from the ABox:
+
+O ≡ {a1, . . . , an}
+
+(61)
+
+This, however, requires nominals in the DL language, which
+makes reasoning more diﬃcult [25]. Furthermore, since O
+occurs only in the constraint axioms, the axioms of the form
+(60) are suﬃcient: the minimal model semantics ensures
+that O contains exactly the individuals a1, . . . , an.
+
+6. CHECKING IC SATISFACTION
+
+We now present an algorithm for checking IC satisfaction.
+Our algorithm uses an alternative characterization of Deﬁ-
+nition 3.3 based on logic programming. Note that, since the
+semantics of other reasoning problems is deﬁned as usual,
+they can be solved using existing algorithms.
+
+Definition 6.1. Let K = (S, C, A) be an extended DL
+knowledge base, ϕ = sk(π(S)),4 and ϕ′ be the result of trans-
+forming ϕ into conjunctive normal form.
+
+Then, LP(S) is the logic program obtained by ( i) con-
+verting each clause ¬A1 ∨ . . . ∨ ¬An ∨ B1 ∨ . . . ∨ Bm from
+ϕ′ into a rule A1 ∧ . . . ∧ An → B1 ∨ . . . ∨ Bm; ( ii) adding
+an atom HU (x) to the body of each rule in which the vari-
+able x occurs in the head but not in the body; ( iii) adding a
+fact HU (c) for each constant c; and ( iv) adding the follow-
+ing rule for each n-ary function symbol f :
+
+HU (x1) ∧ . . . ∧ HU (xn) → HU (f (x1, . . . , xn))
+
+[
+
+Furthermore, CN(ϕ) is the stratiﬁed datalog program de-
+
+ﬁned as follows, where µ and sub are deﬁned in Table 1:
+
+CN(ϕ) = µ(ϕ) ∪
+
+CN(ψ)
+
+ψ∈sub(ϕ)
+
+Finally, let CN(C) = CN(π(C)) and EC = Eπ(C).
+
+The following theorem, whose proof is given in [19], shows
+that IC satisfaction can be checked using logic programming.
+
+Theorem 6.2. The constraint TBox C is satisﬁed in an
+an extended DL knowledge base K = (S, C, A) if and only if
+A ∪ LP(S) ∪ CN(C) |=c EC.
+
+The program LP(S) is obtained by translating S into a
+ﬁrst-order formula π(S), skolemizing it, and translating the
+result into conjunctive normal form. The last step does not
+
+4Please remember that π is an operator that translates a set
+of DL axioms into a ﬁrst-order formula.
+
+kV
+
+4
+
+5
+6
+
+7
+
+ψ1 ∨ ψ2
+
+∃y : ψ
+∀y : ψ
+
+∃≥ky : ψ
+
+V
+
+Table 1: Translating Formulae into Constraints
+
+ϕ
+
+µ(ϕ)
+
+1 A(t1, . . . , tm) A(t1, . . . , tm) → Eϕ(x1, . . . , xn)
+2
+3
+
+ψ1 ∧ ψ2
+
+¬ψ
+
+HU (x1) ∧ . . . ∧ HU (xn) ∧ not Eψ(x1, . . . , xn) → Eϕ(x1, . . . , xn)
+Eψ1 (y1, . . . , ym) ∧ Eψ2 (z1, . . . , zk) → Eϕ(x1, . . . , xn)
+HU (x1) ∧ . . . ∧ HU (xn) ∧ Eψ1 (y1, . . . , ym) → Eϕ(x1, . . . , xn)
+HU (x1) ∧ . . . ∧ HU (xn) ∧ Eψ2 (z1, . . . , zk) → Eϕ(x1, . . . , xn)
+Eψ(y1, . . . , ym) → Eϕ(x1, . . . , xn)
+HU (x1) ∧ . . . ∧ HU (xn) ∧ not E∃y:¬ψ(x1, . . . , xn) → Eϕ(x1, . . . , xn)
+
+Eψ(y1, . . . , ym)[yi/y] ∧
+
+not yi ≈ yj → Eϕ(x1, . . . , xn)
+
+sub(ϕ)
+
+∅
+
+{ψ}
+
+{ψ1, ψ2}
+
+{ψ1, ψ2}
+
+{ψ}
+
+{∃y : ¬ψ}
+
+{ψ}
+
+∃≤ky : ψ
+
+i=1
+HU (x1) ∧ . . . ∧ HU (xn) ∧ not E∃≥k+1y:¬ψ(x1, . . . , xn) → Eϕ(x1, . . . , xn)
+
+{∃≥k+1y : ¬ψ}
+8
+Note: For ϕ a ﬁrst-order formula, x1, . . . , xn are the free variables of ϕ, and Eϕ is a fresh n-ary predicate
+unique for ϕ. Furthermore, y1, . . . , ym are the free variables of ψ and ψ1, and z1, . . . , zk are the free
+variables of ψ2. The predicate A can be ≈, and not is the negation-as-failure of logic programs.
+
+1≤i<j≤k
+
+change the models, so the minimal models of LP(S) are in
+a one-to-one correspondence with the minimal models of
+sk(π(S)). The only diﬀerence between them is that each
+model of LP(S) contains an enumeration of the entire Her-
+brand universe in the predicate HU ; this is used to make the
+rules from LP(S) and CN(C) safe (i.e., to ensure that each
+variable occurring in a rule also occurs in a positive body
+atom). The program LP(S) can be exponentially larger than
+S, so in [19] we discuss possible ways of avoiding this.
+
+The program CN(C) from Deﬁnition 6.1 is similar to the
+Lloyd-Topor transformation [16], which transforms logic pro-
+grams with ﬁrst-order formulae in rule bodies into ordinary
+logic programs. Given an interpretation I and an n-tuple of
+constants a1, . . . , an, we have I |= Eϕ(a1, . . . , an) if and only
+if I |= ϕ[a1/x1, . . . , an/xn]. Hence, CN(C) “evaluates” C in
+I; furthermore, π(C) is a quantiﬁer-free formula, so I |= C if
+and only if I |= EC.
+
+Theorem 6.2 is now a simple consequence of the following
+two facts: the minimal models of A ∪ LP(S) correspond to
+the minimal models of sk(π(S ∪ A)), in which CN(C) “eval-
+uates” the ICs; thus, the ICs are satisﬁed if and only if each
+such “evaluation” derives EC.
+
+The diﬃculty in applying Theorem 6.2 is primarily de-
+termined by the complexity of the standard TBox S. To
+pinpoint the main source of diﬃculty, we use the following
+deﬁnition: a standard TBox S is existential-free if no axiom
+in S contains either a existential quantiﬁer under positive or
+a universal quantiﬁer under negative polarity. For example,
+such a TBox may contain (62), but not (63):
+
+∃R.C ⊑ D
+C ⊑ ∃R.D.
+
+(62)
+(63)
+
+The axioms of existential-free TBoxes cannot imply the exis-
+tence of unknown individuals. For example, the axiom (62)
+only checks whether there is an R-link to an object in C,
+whereas, for each individual in C, the axiom (63) implies
+the existence of an R-link to some (unknown) individual in
+D. For an existential-free TBox S, the program LP(S) does
+not contain function symbols, so we can limit our attention
+to the individuals explicitly mentioned in A ∪ S. For ﬁnite
+ontologies, the number of such individuals is ﬁnite, which
+implies that checking IC satisfaction is decidable.
+
+It is easy to see that CN(C) is stratiﬁed, so the complex-
+ity of IC satisfaction checking is determined by the program
+LP(S). If the latter is nondisjunctive, then constraint check-
+ing and, by Theorem 4.2, answering positive queries can be
+performed in polynomial time; this holds even if S ∪ C is ex-
+pressed in a DL such as SHOIN (D). Thus, our approach
+allows for eﬃcient query answering for languages beyond ex-
+isting polynomial DLs (e.g., DL-lite [9] or EL++ [2]), pro-
+vided that the “diﬃcult” axioms occur only as ICs.
+
+If we apply this algorithm to S10, C10, and A10 from Sec-
+
+tion 4, we obtain the following program CN(S10):
+
+Pet (x) ← Cat(x)
+PetOwner (x) ← hasPet (x, y) ∧ Pet (y)
+
+(64)
+(65)
+
+Furthermore, we obtain CN(C10) as follows (for readability,
+we omit certain intermediate rules):
+
+E1(x) ← hasPet (x, y) ∧ Cat(y)
+E2 ← CatOwner (x) ∧ not E1(x)
+EC ← not E2
+
+(66)
+(67)
+(68)
+
+Now A10 ∪ S10 |=c EC, so the constraints are satisﬁed.
+
+If S is not existential-free, then LP(S) contains function
+symbols; eﬀectively, this means that S has only inﬁnite Her-
+brand models. Due to skolemization, however, we can re-
+strict our attention to inﬁnite forest-like models, which con-
+sist of inﬁnite trees possibly connected at their roots. To ob-
+tain a decision procedure, we clearly cannot examine such
+structures in their entirety. In [19], we present a decision
+procedure for checking IC satisfaction if S is an ALCHI
+knowledge base. The algorithm is based on a reduction of
+our problem to the problem of checking satisﬁability of an
+SkS formula—a monadic second-order formula on k-ary in-
+ﬁnite trees [22]. Intuitively, we encode K in an SkS formula
+ϕ such that the forest-like models of K correspond to the
+models of ϕ. To enforce minimality of models, we use the
+second-order quantiﬁcation of SkS . Due to its high compu-
+tational complexity, we do not expect this algorithm to be
+used in practice; rather, it should be taken as evidence that
+constraint satisfaction checking is possible for nontrivial log-
+ics. We shall try to establish tight complexity bounds and
+derive a practical algorithm in future.
+
+7. CONCLUSION
+
+Motivated by the problems encountered in the applica-
+tions of OWL to data-centric problems, we have compared
+OWL and relational databases w.r.t. their approaches to
+schema modeling, schema and data reasoning problems, and
+constraint checking. We have seen that both databases and
+DLs employ the standard ﬁrst-order semantics for schema
+reasoning. The diﬀerences between the two become appar-
+ent when we consider data reasoning problems. In relational
+databases, answering queries and IC satisfaction checking
+correspond to model checking whereas, in DLs, the only form
+of constraint checking available is checking satisﬁability of an
+ABox w.r.t. a TBox—a problem that is not concerned with
+the form of the data. This often causes misunderstandings
+in practice: OWL ontologies can be understood as incom-
+plete databases, while the databases encountered in practice
+are usually complete.
+
+To control the degree of incompleteness in an ontology, we
+have proposed the notion of extended DL knowledge bases,
+in which a certain subset of TBox axioms can be designated
+as constraints. For TBox reasoning, constraints behave just
+like normal TBox axioms; for ABox reasoning, however, they
+are interpreted in the spirit of relational databases. We de-
+ﬁne the semantics of IC satisfaction in such a way that they
+indeed check whether all mandatory assertions are entailed
+by the given ABox and TBox.
+We have also shown that,
+
+if the constraints are satis-
+ﬁed, we can disregard them while answering positive queries.
+This indicates that our semantics of constraint satisfaction
+is indeed reasonable, and means that answering queries un-
+der constraints may be computationally easier since we may
+have a smaller input TBox. Finally, we have sketched algo-
+rithms for checking IC satisfaction.
+
+In future, we will try to obtain tight complexity bounds
+for constraint checking in the case of knowledge bases that
+are not existential-free. Furthermore, we plan to implement
+our approach in the OWL reasoner KAON2 and test its
+usefulness on practical problems.
+
+8. REFERENCES
+[1] S. Abiteboul, R. Hull, and V. Vianu. Foundations of
+
+Databases. Addison Wesley, 1995.
+
+[2] F. Baader, S. Brandt, and C. Lutz. Pushing the EL
+
+Envelope. In Proc. IJCAI 2005, pages 364–369,
+Edinburgh, UK, 2005.
+
+[3] F. Baader, D. Calvanese, D. McGuinness, D. Nardi,
+and P. F. Patel-Schneider, editors. The Description
+Logic Handbook: Theory, Implementation and
+Applications. Cambridge University Press, 2003.
+
+[4] F. Baader and P. Hanschke. A Scheme for Integrating
+
+Concrete Domains into Concept Languages. In Proc.
+IJCAI ’91, pages 452–457, Sydney, Australia, 1991.
+[5] F. Baader and U. Sattler. An Overview of Tableau
+
+Algorithms for Description Logics. Studia Logica,
+69:5–40, 2001.
+
+[6] P. Bonatti, C. Lutz, and F. Wolter. Description Logics
+
+with Circumscription. In Proc. KR 2006, pages
+400–410, Lake District, UK, 2006.
+
+[7] A. Borgida. On the Relative Expressiveness of
+
+Description Logics and Predicate Logics. Artiﬁcial
+Intelligence, 82(1–2):353–367, 1996.
+
+[8] D. Calvanese, D. D. Giacomo, and M. Lenzerini. Keys
+
+for free in description logics. In Proc. DL 2000,
+Aachen, Germany, 2000.
+
+[9] D. Calvanese, G. D. Giacomo, D. Lembo,
+
+M. Lenzerini, and R. Rosati. Data Complexity of
+Query Answering in Description Logics. In Proc. KR
+2006, pages 260–270, Lake District, UK, 2006.
+
+[10] D. Calvanese, G. D. Giacomo, and M. Lenzerini. On
+
+the Decidability of Query Containment under
+Constraints. In Proc. PODS ’98, pages 149–158,
+Seattle, WA, USA, 1998.
+
+[11] F. M. Donini, D. Nardi, and R. Rosati. Description
+
+Logics of Minimal Knowledge and Negation as Failure.
+ACM Transactions on Computational Logic,
+3(2):177–225, 2002.
+
+[12] B. Glimm, I. Horrocks, C. Lutz, and U. Sattler.
+
+Conjunctive Query Answering for the Description
+Logic SHIQ. In Proc. IJCAI 2007, India, 2007.
+
+[13] V. Haarslev and R. M¨oller. Incremental Query
+
+Answering for Implementing Document Retrieval
+Services. In Proc. DL 2003, Rome, Italy, 2003.
+
+[14] S. Heymans, D. V. Nieuwenborgh, and D. Vermeir.
+Conceptual Logic Programs. Annals of Mathematics
+and Artiﬁcial Intelligence, 2006. To appear.
+
+[15] A. Y. Levy. Obtaining Complete Answers from
+
+Incomplete Databases. In Proc. VLDB ’96, pages
+402–412, Mumbai, India, 1996.
+
+[16] J. W. Lloyd and R. W. Topor. Making Prolog More
+
+Expressive. Journal of Logic Programming,
+1(3):225–240, 1984.
+
+[17] C. Lutz, C. Areces, I. Horrocks, and U. Sattler. Keys,
+
+Nominals, and Concrete Domains. Journal of
+Artiﬁcial Intelligence Research, 23:667–726, 2005.
+
+[18] C. Lutz, U. Sattler, and L. Tendera. The Complexity
+
+of Finite Model Reasoning in Description Logics.
+Information and Computation, 199:132–171, 2005.
+[19] B. Motik, I. Horrocks, and U. Sattler. Integrating
+
+Description Logics and Relational Databases.
+Technical report, University of Manchester, UK, 2006.
+
+[20] B. Motik and R. Rosati. A Faithful Integration of
+
+Description Logics with Logic Programming. In Proc.
+IJCAI 2007, Hyderabad, India, 2007.
+
+[21] A. Nonnengart and C. Weidenbach. Computing Small
+
+Clause Normal Forms. In Handbook of Automated
+Reasoning, volume I, chapter 6, pages 335–367.
+Elsevier Science, 2001.
+
+[22] M. O. Rabin. Decidability of second-order theories
+and automata on inﬁnite trees. Transations of the
+American Mathematical Society, 141:1–35, 1969.
+
+[23] R. Reiter. What Should a Database Know? Journal of
+
+Logic Programming, 14(1–2):127–153, 1992.
+[24] R. Rosati. DL + log: A Tight Integration of
+
+Description Logics and Disjunctive Datalog. In Proc.
+KR 2006, pages 68–78, Lake District, UK, 2006.
+
+[25] S. Tobies. Complexity Results and Practical
+
+Algorithms for Logics in Knowledge Representation.
+PhD thesis, RWTH Aachen, Germany, 2001.
+
+

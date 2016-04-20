@@ -1,0 +1,453 @@
+In contrast to traditional search where search ranking is primarily based on document-based relevance and quality measures such as tf-idf [17] or PageRank [21],  Social Search  also takes into account the social graph of the person issuing the query, normally by giving a higher rank to content generated or consumed by proximate users in the social graph.
+This type of search not only has applications such as name, entity, or content search on social networks [29], and social question and answering [13], it is also very e ective for personalization of web search [4, 2].
+The rapid rise of user generated content (on online social networks, blogs, forums, and social bookmarking or tagging systems) has added to the importance of social search.
+This is re ected not only in the growing literature on the topic [4, 13, 29, 31, 1], but also in the attempts made by both major and small Internet companies, such as Google, Microsoft, Twitter, Aardvark, etc.
+to develop social search technologies.
+With the massive scale of today s social data, e.g.
+on online social networks, and noting the fact that social content is being constantly generated, an ideal social search engine needs to have the following properties:   Very high e ciency and speed at query time   Real-time updatability, to keep up with content being generated or modi ed   Capability to mix social-graph-based personalization with more traditional (e.g.
+document-based) relevance and quality measures   High scalability Given the number of users in a typical social network, and the volume of updates, any solution to the above problem must be amenable to a distributed computation.
+In this paper, we will assume that the underlying computational substrate is an Active DHT.
+A DHT (Distributed Hash Table) is a distributed (Key, Value) store which allows Lookups, Inserts, and Deletes on the basis of the  Key .
+The term Active refers to the fact that, in addition to these DHT operations, can be executed on a (Key, Value) pair.
+The Active DHT model is broad enough to act as a distributed stream processing system and as a continuous version of Map-Reduce.
+Yahoo s S4 [20] and Twitter s Storm are two examples of Active DHTs which are now gaining widespread use.
+We will implicitly assume that all the (Key, Value) pairs in a node of the active DHT are stored in main memory; this is equivalent to assuming that no one (Key, Value) pair is too large and that the distributed deployment has su cient number of nodes.
+In this paper, we present the  Partitioned Multi-Indexing  scheme for indexing graph structured data which as we will show, when applied to the problem of social search, satis es all the above-mentioned properties.
+At the core, the scheme is an indexing method which, for any query, allows for very quickly  nding the closest nodes (to the node issuing the query) in a social graph which answer the query.
+While our scheme handles what we call social index operations (search, content addition, and content deletion) in real-time, it does not handle social graph updates in real-time; we assume that the social graph is pre-processed (perhaps daily) in a separate initialization step.
+The paper is organized as follows.
+First, we present some background, the formal statement of the problem, an overview of our scheme, and a summary of our results in the rest of this section.
+Section 2 presents the preliminaries necessary for presenting our main algorithms.
+In section 3, we present the basic partitioned multi-indexing scheme, including the algorithms and space and time complexity analyses.
+In the same section, we will also present the extension of the basic scheme to directed graphs, its integration with document-based relevance measures, and the distributed implementation of the scheme.
+In section 4, we present the results of our experiments.
+With the rapid rise of social data in recent years, the social search problem has gained increasingly more attention both in the academic literature [29, 22, 30, 31, 4, 13, 11], and in industry.
+Yahia et al. [30] study the problem of ranking search results in collaborative tagging networks.
+Vieira et al.
+[29] focus on ranking name search results on social networks.
+Horowitz et al. [13] focus on social question and answering.
+Carmel et al.
+[4] consider personalization of search results based on the user s social network, show its much higher quality in comparison with topic-based personalization, and provide heuristic methods to re-rank the search results based on the social graph.
+Similarly, Yin et al.
+[31] show the high e ectiveness of social search for personalization of web search.
+Shortest path distances have been proposed as the main proxy for social graph based personalization [29, 26, 30, 22].
+Clearly, any social search system based on this proxy needs a way to compute or approximate shortest path distances, which has also been an active area of research [32, 28, 24,
+  approximate distance oracles  [9, 28, 8, 32] are best suited for the social search application.
+The methods in this family preprocess the graph such that any subsequent distance query can be answered very quickly.
+To solve the social search problem, even given a fast distance oracle, one still needs to  nd the closest nodes to the querying node which answer the query.
+The basic method of using the oracle to  nd the distances to all the candidates and then  nding the closest ones does not scale to today s massive social networks where the number of search result candidates itself can be very large.
+The previous works in the social search literature (e.g., [29, 26, 30, 22]) provide no additional e ciency compared to this basic scheme.
+We introduce a method for indexing graph structured data, called partitioned multi-indexing, based on the oracle introduced by Das Sarma et al.
+[8] (that is similar to Bourgain s embeddings [3]), which allows for a very e cient search scheme.
+Our scheme inherits two parameters k, r from Das Sarma et al. s oracle, which, to provide approximation guarantees, need to be set to r = log2 n, k =  O(1).
+With r = 0, this oracle reduces to the landmark-based distance approximation [22, 7], and our indexing method reduces to an e cient way of  nding the search results based on landmark-based approximate distances.
+In this case, there is no theoretical guarantee on the approximation quality, and our experiments also show that landmark-based approximate distances perform poorly in social search.
+Potamias et al. [22] study a number of heuristics for landmark selection, and report a centrality-based heuristic to work best across their experiments.
+We also implemented this scheme but did not observe any improvement in search quality, compared to the random landmark selection scheme.
+With r > 0, the partitioning property that we prove for our scheme allows for maintaining space and time e ciency while using whole seed sets instead of single node landmarks to approximate the distances.
+This leads to signi cantly higher quality search results.
+Our method can be also compared to the family of Approximating and Eliminating Search Algorithms (AESA) for metric space near neighbor search [23, 18, 25].
+The algorithm proposed by Vidal [23] requires quadratic space and preprocessing time which is clearly infeasible.
+The methods proposed by Shapiro [25] and Mic o et al.
+[18] address this issue; however, in a graph with n nodes, they may need to compute, at query time, the distance from the querying node to up to ( n) nodes, which is clearly infeasible.
+Even without distance computations, they can not provide any e ciency guarantees.
+Also, without exact distance computations, they can not provide any guarantees on the quality (i.e., approximation factor) of the results they  nd.
+Finally, our scheme can also be considered as a member of the  distance-based indexing  methods for metric space similarity searching.
+Ch avez et al.
+[6] and Hjaltason et al.
+[12] provide great surveys of these methods.
+To the best of our knowledge, ours is the only scheme to provide theoretical guarantees on approximation factor, preprocessing space and time complexity, and query time complexity, and also scale up to today s social networks.
+Before presenting an overview of our scheme, we  rst present, in the next section, the formal statement of the problem we study.
+We have a (social) graph G = (V, E) with |V | = n,|E| = m. The nodes of this graph may represent people, documents, entities, etc., and the edges may represent friendships, page visits, or any other social interactions.
+For now, we assume G to be undirected.
+In section 3.1, we will also study the case of directed graphs.
+Also, our scheme works antees for graphs with weighted edges.
+So, for simplicity of presentation, we will assume in the rest of the paper that the edges are not weighted.
+We also have a corpus C =< Cv >v V , where for each v   V , Cv is the document(s) (e.g.
+tags, bookmarks, tweets, etc.)
+associated with node v. In this paper, we will assume that Cv is a set of words.
+Also, even though we start with an initial corpus, we will allow words to be added to or deleted from any document over time.
+This corresponds to, e.g., receiving new tweets, bookmarks, or wall posts.
+For each word  , we will denote: I( ) ={ v   V |     Cv} and let l( ) = |I( )|.
+Furthermore, we denote: |C| :=!v V |Cv| = ! v Cv l( ) We also have an approximate distance oracle, which for any two nodes u, v   V , outputs  d(u, v), an approximation of the shortest path distance d(u, v) between u and v. For now, we do not restrict the choice of this oracle, but later in the paper, we will base our algorithms on the oracle introduced by Das Sarma et al. [8].
+We will need to answer search queries of the form (u,  , J), where u   V is the node issuing the query,   is the word being queried, and J   0, an integer, is the desired number of search results for the query.
+Each search result is a node v   I( ), and we would like to  nd, among all such nodes, the J nodes having the smallest approximate distances to u (as measured by  d(u, )), and return them in a ranked list sorted in the increasing order of approximate distance to u.
+We will assume that J   l( ), as l( ) is clearly the maximum possible number of search results for the query.
+Having set all the necessary notation, the problem statement is then as follows: Real-Time Social Search Problem: Preprocess the social graph G and the corpus C in a space and time e cient way to construct a data structure that allows for:
+
+
+ added to or deleted from any document Having presented the formal statement of the basic problem, we will next present an overview of our solution scheme; we will consider extensions of our scheme later in the paper.
+In this section, we give a high level overview of our scheme, called partitioned multi-indexing.
+Our scheme has an o ine phase and a query phase.
+In the o ine phase:
+   V .
+The number of these sets, h, and the cardinality of each set will be speci ed later in the paper.
+u among all the nodes in Si, and Di[u] = d(u, Li[u]).
+This can be accomplished using O(h) calls to a breadth  rst search subroutine.
+Ii,x, over all documents stored at nodes v   V which are closer to x than to any other node in Si.
+For each indexed word  , the corresponding list of nodes, Ii,x( ), will be kept in the increasing order of distances to x, and these distances will also be stored in this list.
+Then, at query time, when a node u issues a query, we use the indexes Ii,Li[u] (0   i   h  1), i.e., intuitively speaking, the closest indices to u, to  nd the search results.
+We will see that since u is closer to Li[u] than to any other node inS i, and also the nodes in each entry of Ii,Li[u] are sorted in terms of their distance to Li[u], then at query time, we can  nd the search results by sweeping through the beginning nodes in the index entries being looked up.
+This will result in a very fast search algorithm at query time.
+We will, furthermore, show that our index allows for very fast incremental updates upon addition or deletion of words.
+Note that, for each 0   i < h, any node x   Si indexes a di erent part of the graph (i.e., the part closer to x than to any other node in Si), and also, every node u in the graph is indexed at one (and only one) node of Si, i.e., the one closest to u.
+This means that the union of the indexes constructed at the nodes in each Si (0   i < h) constitutes a full inverted index of the graph, partitioned across di erent nodes of Si.
+Thus, in the o ine phase, we construct h inverted indexes, each partitioned across the nodes of one seed set.
+Hence, the name partitioned multi-indexing for our scheme.
+Quite interestingly, this schemes maps naturally to an Active DHT.
+Consider (for illustration) the common scenario where the reverse index corresponding to any word has size much smaller than the amount of main memory of each individual node in the Active DHT.
+Then we can use the query word w as the key used to store the part of each index Ii,v which pertains to w. This allows us to perform social index operations using just two network calls, without any corresponding increase in the total processing time.
+This is important, because small network data transfers such as the one needed here are often much more expensive than large network transfers in terms of data rate.
+This careful mapping of the social search problem onto a practically feasible distributed computing platform is one of our main contributions.
+We present the partitioned multi-indexing scheme for indexing graph structured data, which not only has strong theoretical guarantees, but also when applied to the social search problem, satis es all the properties mentioned in section 1 for an ideal social search engine.
+Our scheme consists of an o ine preprocessing phase and an online query phase.
+We show that given a (social) graph G and a corpus C as in section 1.2, the preprocessing phase requires  O(m + |C|)1 time and  O(n + |C|) space.
+After preprocess-ing, whenever any node u queries for any word  , the top J personalized results can be found in  O(J) time.
+Also, in the distributed setting, the number of network accesses and the total amount of communication needed to answer the query are, respectively, 2 and  O(J).
+Also, our index can be very quickly updated whenever a word is added to or deleted from a document in the corpus.
+in m.
+or deletion can be done in  O(1) time, and in the distributed setting, the total number of network accesses and the total amount of communication required per update are, respectively, 2 and  O(1).
+Super cially, it might seem that this work is incremental over that of Das Sarma et al. [8].
+However, as we mentioned before, there are many shortest path oracles, and it was not clear up front which of these, if any, could be extended to social search, specially with the constraints of distributed implementation, real-time index updates, and mixing in other relevance features; the novelty of this work lies in identifying the right oracle and carefully adapting it to obtain each of the desired properties, with strong theoretical guarantees.
+In addition to theoretical bounds, we also perform an empirical study of our scheme, to evaluate both its e ciency and its quality.
+We use synthetic data as well as data from the social network Twitter.
+On both sets of networks, and for both evaluation criteria, our scheme performs much better than the (already strong) theoretical bounds would suggest.
+Hence, we believe that our scheme can indeed facilitate large scale, real-time social search.
+As explained in section 1.2, one of the ingredients of the social search problem is an approximate distance oracle  d( , ).
+Given such an oracle, to solve the social search problem, we still need to very quickly  nd the nodes answering the query which have the smallest approximate distances to the querying node.
+To do so, one can de ne a basic personalized social search scheme as follows.
+Baseline Social Search Scheme: The scheme is composed of an o ine phase and a query phase.
+At the o ine phase, a single inverted index I is constructed, which maps each word   to the list I( ) of all the nodes v having   in their associated document Cv.
+At query time, receiving a query (u,  , J) issued by the node u for the word  , one goes through the list at the entry I( ) of the precom-puted index, for each node v   I( ) uses the oracle to compute  d(u, v), and keeps the top results in a priority queue of size J.
+This baseline scheme is clearly ine cient for query processing; however, it is a useful benchmark to compare the pre-processing e ciency and the quality of our scheme against.
+Das Sarma et al. s Distance Oracle: This oracle has two integer parameters k   1, 0   r   log2 n. It  rst pre-processes the graph o ine.
+The preprocessing, presented in Algorithm 1, picks a number, h = k(r + 1), of random subsets Si (0   i < h) of the graph, and by performing a BFS from each one, computes, for each node u   V , the closest node to u in Si, Li[u], as well as Di[u] = d(u, Li[u]).
+Note that, since each BFS takes O(m) time (assuming m = ( n), which is the case in all networks of our interest), the time and space complexity of Algorithm 1 are, respectively, O(hm) and O(hn).
+Afterwards, for any two nodes u, v   V , their approximate distance is computed as follows:  d(u, v) = min{Di[u]+D i[v]| 0   i < h, Li[u] =L i[v]} (2.1) In the rest of the paper, we will always denote h = k(r+1).
+For this oracle, independent of the choice of parameters k, r, we clearly have   u, v   V :  d(u, v)   d(u, v).
+If r = 0, this Algorithm 1 Distance Sketching Algorithm.
+3: for i = 0 to h   1 do Sample, uniformly at random, a subset Si   V of size
+ |Si| = 2i mod (r+1).
+argminx Si{d(u, x)}, and Di[u] =d (u, Li[u]).
+6: end for
+ E[u] =< (L0[u], D0[u]), .
+.
+.
+,(L h 1[u], Dh 1[u]) >.
+oracle reduces to the landmark-based distance approximation [22, 14, 29, 27].
+Kleinberg et al. [14] prove approximation guarantees for this case (even with small values of k), but their result, which assumes the graph to have a bounded doubling dimension, does not apply to social graphs which exhibit expander properties.
+However, increasing the value of r clearly makes the approximation tighter, and Das Sarma et al. [8] prove the following theorem: Theorem 1.
+For  d( , ) de ned in equation 2.1, with r =  log2 n( and k =  O(n1/c) (with any c >1 ), with high probability (i.e., probability at least 1  1/nO(1)), we have for any two nodes u, v: d(u, v)    d(u, v)   (2c   1)d(u, v) Letting c = O(log n), this gives: Corollary 2.
+To guarantee an O(log n) approximation factor for the oracle de ned by Algorithm 1 and formula 2.1, one can choose r =  log2 n(, andk =  O(1).
+Das Sarma et al. [8] observe that in practice this scheme (with r, k chosen as in corollary 2) provides much better approximation factors than is guaranteed in theory.
+This means one can expect that ranking the search results based on this oracle will also result in high quality search results.
+Our experiments presented in section 4 verify this.
+We already presented an overview of our scheme in section
+ In this section, we present our scheme, called Partitioned Multi-Indexing, in detail and analyze its algorithms.
+Before presenting the scheme, we need a de nition: Definition 3.
+For any 0   i < h, node z   Si, and word  , de ne: Ii,z( ) :={ v   V |     Cv, Li[v] =z } and let li,z( ) =|I i,z( )|.
+We will denote Ii,z( ) ={ xr i,z( ))   d(z, x2 i,z( )}1 r li,z ( ) i,z( ))   .
+.
+.
+  d(z, xli,z ( ) i,z where d(z, x1 ( )).
+The scheme is composed of an o ine phase and a query phase.
+The o ine phase of our scheme constructs a map (i.e., an index) P M I which, for any 0   i < h, node z   Si, and word  , such that Ii,z( ) )=  , maps (i, z,  ) to the list of nodes in Ii,z( ), sorted in the increasing order of distance to z.
+This is presented in Algorithm 2.
+Later in this section, fast query answering algorithm.
+But, before that, we analyze the space and time complexities of the o ine phase.
+O ine Phase Analysis: We analyze the space and time complexity of Algorithm 2.
+We start by a small lemma: Lemma 4.
+For any 0   i < h, and word  , {Ii,z( )}z Si partitions I( ), that is   z Si Ii,z( ) = I( )   z, z&   Si, z )= z& : Ii,z( )   Ii,z!
+( ) =   Proof.
+The result follows from the observation that any node v   I( ), appears in Ii,Li[v]( ), and in no other Ii,z( ) (z   Si).
+Using this lemma, we have the following result: Proposition 5.
+For Algorithm 2:   The space complexity is O(h|C|) l( ) log l( ))   The time complexity is O(h" v Cv Proof.
+Fix an 0   i < h. For any node z   Si and word      vCv, the space and time used to construct P M I[i, z,  ] are, respectively, equal to O(li,z( )) and O(li,z( ) log li,z( )).
+Hence, by the previous lemma, the total space and time used to construct all queues P M I[i, z,  ] ( z   Si,     vCv), are, respectively, O( ! v Cv !z Si O( ! v Cv !z Si li,z( )) = O( ! v Cv li,z( ) log li,z( )) = O( ! v Cv and l( )) = O(|C|) l( ) log l( )) Then, considering all 0   i < h proves the proposition.
+Choosing the values of r, k as in corollary 2, we get that both space and time complexities of our indexing scheme are within  O(1) factor of the baseline indexing method.
+Furthermore, we will next show that our index leads to a sig-ni cantly faster search algorithm at query time.
+The search algorithm is presented in Algorithm 3.
+Brie y speaking, upon receiving a query (u,  , J), we sweep through the queues P M I[i, Li[u],  ] (0   i < h) until we  nd the top J results.
+More elaborately, upon receiving the query, we initiate a priority queue H, that will keep track of the (next) top result candidates, as well as h pointers pi (0   i < h), where pi points to the beginning of the sorted list P M I[i, Li[u],  ], i.e., the node x1 i,Li[u]( ), which we add, with priority Di[u] +D i[x1 i,Li[u]( )], to H. Then, we pop the node with the lowest priority, say x1 i1,Li1 [u]( ), from H, report it as the top search result, forward pi1 , and add the node it is now pointing to, i.e., x2 i1,Li1 [u]( ) to H, with priority Di1 [u] +D i1 [x2 i1,Li1 [u]( )].
+We then pop the node with the lowest priority from H, report it as the second top result (unless it happens to be the same as the  rst result), forward the corresponding pointer, and so on.
+We continue in this way till we  nd J results.
+Next, we analyze this algorithm.
+Query Phase Analysis: We  rst prove that the search algorithm 3 actually works correctly.
+We start with a de -nition.
+Algorithm 2 Partitioned Multi-Indexing Algorithm.
+sketches {E[u]}u V word  , P M I[i, z,  ] is an empty priority queue.
+7: end for for 0   i < h,    Cv do end for Insert v into P M I[i, Li[v],  ] with priority Di[v].
+index P M I, and a query (u,  , J) Algorithm 3 Partitioned Multi-Index Query Algorithm.
+4: for 0   i < h do
+ i,Li[u]( )] into H with priority Di[u] + i,Li[u]( ) Pop the node with the smallest priority from H, and let s := argmin0 i<h{Di[u] + Di[xpi if ( j& < j : xps s,Ls[u]( ) )= vj! )
+then i,Li[u]( )]} Insert xpi Di[xpi 6: end for
+
+
+
+
+
+
+
+
+ vj := xps j = j + 1 s,Ls[u]( ) end if ps = ps + 1 Insert xps Ds[xps s,Ls[u]( )].
+s,Ls[u]( ) into H with priority Ds[u] + 16: end while
+ Definition 6.
+For a query (u,  , J), we say two sets of ranked results {vj}1 j J and {v&j}1 j J , are equivalent, and we write {vj}1 j J  { v&j}1 j J , if   1   j   J :  d(u, vj) =  d(u, v&j).
+Essentially, an equivalent pair of search result sets are equally good and can not be distinguished, as far as (approximate) distances to the querying node are concerned.
+Now, we prove the correctness of Algorithm 3.
+Theorem 7.
+For a query (u,  , J), assume { vj}1 j J , is the true ranked list of search results according to  d(u, ), and {vj}1 j J is de ned as in Algorithm 3.
+Then, {vj}1 j J  {  vj}1 j J .
+Proof.
+We need to prove that   1   j   J :  d(u, vj) =  d(u,  vj).
+We  rst prove this for j = 1.
+Let: i1 = argmin{Di[u] + Di[ v1]| 0   i < h, Li[u] = Li[ v1]} Then, we have:  d(u,  v1) = Di1 [u] +D i1 [ v1]   Di1 [u] +D i1 [x1    d(u, x1 i1,Li1 [u]( ))    d(u, v1)    d(u,  v1) i1,Li1 [u]( )] i1,Li1 [u]( ), the third is by de nition of i1,Li1 [u]( )), the fourth is by de nition of v1, and the is by de nition of x1  d(u, x1 last is by de nition of  v1.
+Therefore,  d(u, v1) =  d(u,  v1), that is, v1 indeed has the smallest approximate distance to u among all the nodes in I( ).
+Now, notice that to  nd v2, the algorithm is essentially removing v1 from I( ), and  nding the node having the smallest distance to u among the rest of the nodes in I( ), in exactly the same way as it found v1.
+A simple induction then proves the result for general 1   j   J.
+Hence, Algorithm 3 outputs a correct ranking.
+Next, we analyze the time complexity of this algorithm.
+Proposition 8.
+The worst case running time of Algorithm 3 is O(Jh(log l( ) + log h)).
+Proof.
+Reading each node from P M I takes O(log l( )) time.
+Also, adding a node to or popping a node from H takes O(log h) time.
+During the run of algorithm, each search result is read from P M I, and added to or popped from H at most h times.
+Also, the total number of nodes that get read from P M I and added to H but do not show up in the search results is at most h. Hence, the total running time of the algorithm is at most O(Jh(log l( ) + log h)) + O(h(log l( ) + log h)) = O(Jh(log l( ) + log h)).
+Remark 9.
+Choosing r, k as in corollary 2, we get that the total query time is just  O(J).
+Using the baseline scheme, presented in section 2, with the same oracle, the query time, as analyzed in section 2, would be  O(l( )).
+In today s huge social networks, one can easily expect l( ), i.e. the number of nodes the word   appears on, to be much (even orders of magnitude) larger than J.
+For instance, in a name search application on a huge social network, there may be tens or hundreds of thousands of people sharing a same name, but the querying node may be interested only in at most the top
+ icantly faster at query time in practice.
+Our experimental results, presented later in the paper, verify this as well.
+Remark 10.
+The same analysis as in proposition 8 shows that if we have already found the  rst J results, then by keeping the values of the pointers in the algorithm,  nding the next J& results will take only O(J&h(log l( ) + log h)).
+This feature can be useful in practice.
+For instance, the search engine can  rst generate the results to be presented on the  rst results page, and then only if the user decides to proceed to the next page, it can, at that time, quickly compute the results to be presented in the next page, and so on.
+Having analyzed the query phase of our scheme, we will next show that our indexing scheme also allows for very fast incremental updates upon addition or deletion of words to the documents.
+Incremental Updates: So far we focused on the case where the documents were static, that is, the sets Cv did not change over time.
+Here, we show that any changes to these sets can be e ciently re ected in our index.
+This is more formally stated in the following proposition: Proposition 11.
+If a word   is added to (or removed from) Cv, for some v   V , the index can be updated in O(h log l( )) time to incorporate this insertion (or deletion).
+Proof.
+To update the index, we only need to update the queues P M I[i, Li[v],  ] (0   i < h), by adding (or removing) v with priority Di[v].
+Updating the queue P M I[i, Li[v],  ] takes O(log li,Li[v]( )) = O(log l( )) time.
+Hence, the total update time is O(h log l( )).
+Choosing the parameters r, k as in corollary 2, we see that the update time is just  O(1).
+Hence, our index can be updated very quickly as soon as any of the documents in the network gets modi ed.
+This wraps up the analysis of our scheme.
+We will now discuss several interesting extensions.
+Directed Graphs: So far, we assumed the social graph G to be undirected.
+However, our scheme can be extended to directed graphs, though with no theoretical approximation factor guarantees.
+Our experiments show our scheme also works very well for directed graphs.
+The sketching algorithm, presented in Algorithm 1, gets modi ed such that instead of computing Li[u], Di[u] using a single BFS, at line 5, we compute Lo i [u] via a BFS along incoming edges, and Li i[u] via a BFS along outgoing edges.
+We can then use the quantities Li i[u] at indexing time and the quantities Lo i [u] at query time to obtain a heuristic solution for directed graphs.
+We omit the details of the implementation from this version; simulation results show that this heuristic works well in practice.
+i [u], Do i[u], Di i[u], Di i [u], Do Combining Personalization with Other Relevance Measures: So far, we focused on ranking the search results only based on their distance to the querying node.
+However, in practice a combination of distance and other relevance measures is used to rank the results.
+These relevance measures can be text-based scores such as tf-idf [17], link-based authority scores such as PageRank [21], or, in a real-time setting (where more recent results are of more interest) the recency of the document.
+Here, we show how our scheme can be extended to allow for elegantly combining all such measures with the distance-based personalization, without any change in space or time e ciency.
+Assume that associated with each v   V and     Cv is a score  v( ) (a real number), and hence the following combined score is used to rank search results: su, (v) = d (u, v) + (1    ) v( ) For a query (u,  , J), we need to  nd the J nodes v   I( ) with the smallest values of su, (v).
+Here,     [0, 1] is a weight trading o  between distance-based personalization and document-based scores, and in practice is learned from the data to optimize the search quality.
+Replacing the exact distance with its approximation, the following approximate scores can be used:  su, (v) =   d(u, v) + (1   ) v( ) However, from equation 2.1 we have:  su, (v) = min{ Di[u] + ( Di[v] + (1   ) v( ))} Where, as before, min is over {0   i < h| Li[u] = Li[v]}.
+To rank based on this score, we modify the indexing Algorithm 2 such that at line 5, v is inserted into P M I[i, Li[v],  ] with priority  v( ) = D i[v] + (1   ) v( ) priority of each xpi i,Li[u]( ) inH is  Di[u] +  v( ) = D i[u] + D i[v] + (1    ) v( ) Then, a similar analysis as in theorem 7 shows that these modi ed algorithms, rank the results based on  su, (v).
+The space and time complexities of these algorithms are also exactly the same as Algorithms 2, 3.
+Example 12.
+The scores  v( ) can represent a whole range of document-based scores.
+Here, we consider the real-time search scenario, where associated with each node v   V and word     Cv is a timestamp tv( ) representing the time instance at which the word   was added to Cv, and upon receiving a query (u,  , J) at time t, we would like to not only personalize the results but also bias the results towards the more recent documents.
+At the time of query, the recency of   on v   I( ), is t tv( ) (note that tv( )   t, as   is already in Cv when the query arrives).
+Hence, we would like to rank the results based on  d(u, v) + (1    )(t   tv( )).
+Since t is independent of v, ranking based on this score is exactly the same as ranking based on  d(u, v) + (1   )( tv( )).
+Hence, letting  v( ) =  tv( ), we can use the framework explained above to do the search and ranking.
+This together with the possibility of quick incremental index updates explained earlier in the paper (which lets each new word     Cv to be indexed as soon as it arrives, i.e., at time tv( )), allows for a real-time personalized social search system.
+Distributed Implementation: In order to scale up our scheme to today s huge social networks, one would want to implement it in a distributed fashion.
+Since  nding the sketches, using Algorithm 1, only requires a number of BFS s, it can easily adopt a distributed implementation, e.g., using MapReduce [16].
+Hence, we focus on implementing the rest of the scheme in a distributed fashion, on an Active DHT.
+Note that the o ine index construction can be regarded as a sequence of word additions.
+So, if real-time updates can be done e ciently, the o ine phase can be done e ciently as well.
+Hence, we will  rst focus on e cient distributed implementation of query and update algorithms.
+Later, we will show that the o ine phase can be done even more e ciently than through a sequence of real-time updates.
+For a distributed implementation of our scheme, we need to shard both the distance sketches and the index entries across a number of machines in an Active DHT, using appropriate (Key, Value) pairs.
+As pointed out above, we would like to shard in a way that not only the loads (in terms of space) on di erent machines are balanced, but also answering queries or updating the index can be done with little network usage, i.e., both few network accesses and small amount of communications.
+We will show that sharding the distance sketch using the id of the querying social graph node as the Key, and the inverted index using the word   as the Key, satis es all these properties, and results in surprising e ciency bounds.
+To formalize this, we consider the following architecture: we have one master machine, which interfaces the outside world, and a set of M machines, labeled 0, 1, .
+.
+.
+, M   1, which can be used to distribute the data structures.
+We will use two hash functions f : V   [M ], g :  vCv   [M ] (where [M ] ={ 0, 1, .
+.
+.
+, M   1}) to distribute our data structures as follows:   The entry E[u] of the distance sketch is kept on machine f (u)   For any      vCv, all the entries P M I[i, x,  ] of the index, where 0   i < h, x  Si, are kept on machine g( ) We assume f, g to be random hash functions.
+We will further assume that the reverse index corresponding to any word   is much smaller than the amount of memory at any compute node2.
+Then, a simple Cherno  bound [19] shows that, with high probability, the load (i.e., space used) on each machine is ( h(n+|C|) M ).
+Hence, the load is very well balanced across di erent machines.
+Also, note that choosing r, k as in corollary 2, this is just  ((n + |C|)/M ), which is close to what would be needed to only distribute the corpus across the machines.
+Next, we show that answering queries and updating the index can be done with little network usage.
+At query time, when the master machine receives a query (u,  , J), it will  rst retrieve E[u] by accessing the machine f (u) once.
+Note that, by Algorithm 3, the top J results for the query are de nitely in the set {xj i,Li[u]( )| 0   i   h   1, 1   j   J} Hence, after retrieving E[u], the master machine can retrieve the above set by sending the query along with {Li[u]|
+ set, the master machine can then just run Algorithm 3 to  nd and rank the search results.
+Hence, the total number of network accesses and the total amount of communication needed to answer the query are, respectively, 2 and O(Jh).
+Note that choosing r, k as in corollary 2 bounds the total amount of communication at  O(J), which is only slightly more than what would be needed to just communicate the search results (i.e.  (J))!
+This implementation can be done on top of a Distributed Hash Table such as memcached.
+Further improvements can be obtained by assuming that the DHT is Active; in this case, the set E[u] can be directly communicated to the compute node g( ) which will perform the search operation, resulting in a total network transfer of O(J + h).
+Next, we consider the required network usage to update the index.
+If a word   is added to or deleted from the document at node u   V , i.e. Cu, then to update the index,  rst E[u] is retrieved from machine f (u), and then u and   are sent along with E[u] to machine g( ), which can then insert or delete u into or from all the queues P M I[i, Li[u],  ] (0   i < h).
+Hence, the total number of network accesses and the total amount of communication required to update the index are, respectively, 2 and O(h).
+Choosing r, k as in corollary 2 then bounds the total amount of communication at  O(1).
+As mentioned above, o ine index construction can be regarded as a sequence of index updates.
+Hence, directly using the above update scheme, the o ine phase can be done with
+ of the results; we can fan out the index for   into multiple nodes at the expense of an extra network call if needed.
+tions.
+However, by accessing the sketch of each node only once, the o ine phase can be done even more e ciently: for each node u, we retrieve E[u] by communicating with machine f (u) once, and then for each word     Cu, we send u,  , and E[u] to machine g( ) to be indexed.
+Hence, the o ine phase can be done with only n +|C| network accesses and O(h|C|) total communications, which reduces to  O(|C|) communications, by choosing r, k as in corollary 2.
+We experimented with our scheme to study its quality and e ciency in practice, specially in comparison with the benchmarks from the related literature.
+In this section, we present the algorithms, datasets, and the methodology used in our experiments, as well as their results.
+As explained in section 2, landmark-based distance approximation, together with the baseline search scheme, has been proposed as a solution to the social search problem, in multiple previous works in the literature [22, 29].
+Thus, in our experiments, we compared the quality of our scheme with the landmark-based scheme.
+The simplest way of selecting landmarks is by picking them randomly from the graph.
+However, Potamias et al.
+[22] study di erent landmark selection methods, show that they in uence the quality of the approximations, and state that a centrality-based method, in which the nodes with the highest values of closeness centrality (i.e., smallest average distance to all nodes) are selected as landmarks, works best across all their experiments.
+Therefore, in addition to the random landmark selection method, we also implemented this centrality-based method, and used both as benchmarks to compare the quality of our scheme against.
+For e ciency, we compared our scheme with that of the baseline scheme (explained in section 2) using the same oracle as our scheme.
+This comparison will show the e ect of our partitioned multi-index structure on the e ciency of  nding and ranking the search results (as compared to using a simple inverted index).
+We used r =  log2 n( for our scheme in all the experiments.
+We experimented with four networks, two undirected and two directed, two synthetic and two from real-world data.
+Table 1 summarizes the networks that we used.
+Synthetic Real-world Undirected Twitter Directed Twitter Grid Undirected Directed ForestFire Table 1: Networks used in the experiments.
+We now explain each of these networks.
+The grid network we constructed was an 11-dimensional grid with side length
+ formly at random from a dictionary of 1000 words.
+This network had 411 > 4M nodes and around 70M edges.
+The ForestFire network, which had more than 1M nodes and around 2.5M edges, was generated using the ForestFire model [15], known to model many of the features of real world networks.
+Similar to the grid network, we associated each node with a single word chosen uniformly at random from a dictionary of 1000 words.
+The undirected Twitter network was a sample of more than 4M nodes from the social network Twitter, and all the reciprocated edges between them.
+The resulting sampled network had more than 100M edges.
+We associated with each node the words in the bio and the screen name of the corresponding user.
+The directed Twitter network was the giant connected component of a sample of the social network Twitter.
+The resulting graph had over 4M nodes and more than 380M edges.
+Similar to the undirected case, we associated with each node the words in the bio and the screen name of the corresponding user.
+The samples of the twitter graph were not chosen uniformly at random, and the two samples are not the same, since a random sample would allow inference about the density of the Twitter network which Twitter considers con -dential.
+Also, as explained below, our experiments methodology has the interesting feature that the evaluations are completely automated and do not require any human inspection of the search results, adding an additional layer of privacy and con dentiality.
+We performed experiments studying the quality and the e ciency of our scheme.
+Here, we present the methodology used in these experiments as well as their results.
+Before performing the experiments with each of our networks, we preprocessed the network, and constructed, for each node v, a subset C&v   Cv of its associated words.
+For our synthetic networks (having only a single word associated with each node), we simply let C&v = Cv.
+For the real-world networks (from Twitter), after computing, for each word  , the frequency (i.e., the fraction) of the nodes v having     Cv, we removed the 100 words with the largest frequencies, as stop words.
+Then, for each node v, we let C&v to be the set composed of the following three words: the lowest frequency nonstop word on v, the highest frequency nonstop word on v, and a random nonstop word on v. The sets C&v were going to later get used for constructing queries (as we will explain below), so we wanted to make sure, by including representatives from low-frequency, high-frequency, and randomly selected nonstop words, that our constructed queries would cover a wide range of possibilities.
+After this preprocessing, for each experiment, we generated a number of queries.
+Each of these queries, q, was constructed as follows: We  rst picked a length lq  { 2, 3}, and a random node uq from the graph.
+Then, we performed a random walk starting at uq for lq steps, to arrive at a node vq, and then we picked a random word  q from C&vq .
+Then, a query for word  q was issued by node uq.
+In each experiment, for half the queries, we used lq = 2, and for the other half, we used lq = 3.
+Each of these queries, in accordance with the random walk based intuition behind PageRank [21], simulates the behavior of a random social network user starting at his own page, browsing through random links for a few steps,  nding an interesting document, and then later searching for it in the hopes of  nding the same page or even closer pages (in terms of social graph proximity) related to that document.
+our experiments, we now explain, in further detail, each of our experiments as well as their results.
+Quality Experiments: For each network, we generated a set Q of 1000 queries, as explained above, and found the top J results, with J = 1, 5, 10, using our scheme, random landmark scheme, and central landmark scheme.
+For our scheme, we chose, as mentioned earlier in this section, r =  log2 n(, and let k to take all the values from 1 to 10.
+For each k, when comparing with the landmark-based schemes, we selected k(r + 1) landmarks, so they had the same prepro-cessing time and space as our scheme (ignoring the load of centrality computations for the central landmarks scheme).
+j}1 j J for each query q, we considered the set of failed queries to be: For each scheme,  nding the top J search results {vq F = {q   Q| d(uq, vq j ) > d(uq, vq)  1   j   J} Then, denoting, for each q   Q  F , the depth of the  rst good result as: jq = min{1   j   J| d(uq, vq j )   d(uq, vq)} we computed the fraction of failed queries (FFQ) and the average depth of the  rst good result (ADFGR) as our quality measures:
+
+ , ADFGR = "q Q F jq
+ Clearly, one would ideally like to have:
+ in which case, hundred percent of the queries get a good answer in the very  rst search result.
+Our experiments show that our scheme actually gets very close to these ideals.
+The fraction of failed queries in our experiments with our scheme and the landmark-based schemes, for J  { 1, 5, 10}, is presented in Figures 4.1, 4.2.
+These  gures show that our scheme consistently outperforms both landmark-based schemes across all the networks, and for all the values of J.
+Also, we note that selecting the landmarks using central-ities did not help the landmark-based scheme, and often even lowered its quality (as measured by FFQ).
+Furthermore, we note that increasing the number of seed sets (by increasing k) consistently improved the quality of our scheme, while increasing the number of landmarks usually did not help much with the quality of the landmark-based schemes.
+The results for ADFGR are also similar for di erent values of J, and hence we present them only for J = 10 in Figure
+ better than the landmark-based schemes.
+This, together with the results for FFQ, shows that not only our scheme  nds good answers to queries much more frequently, but also it does a much better job in ranking those good results higher in the list of results.
+E ciency Experiments: We compared the e ciency of our scheme against the benchmark provided by the baseline scheme explained in section 2.
+To do so, we generated a set of 20000 queries as explained earlier in this section.
+Letting r =  log2 n(, we generated the seed sets de ning the approximate distance oracle.
+Since the e ciencies of both our scheme and the baseline scheme are nearly linear in k, we used k = 1 in our e ciency experiments.
+Then, for our s e i r e u
+ d e l i a
+ f o n o i t c a r
+
+
+
+
+
+
+
+ s e i r e u
+ d e l i a
+ f o n o i t c a r
+
+
+
+
+
+
+
+
+
+ Grid Network,J=10 Grid Network,J=5 Grid Network,J=1 Our scheme Random landmarks Central landmarks
+
+
+
+
+ s e i r e u
+ d e l i a
+ f o n o i t c a r
+
+
+
+
+
+ s e i r e u
+ d e l i a
+ f o n o i t c a r
+
+
+
+
+ k
+
+
+
+ k
+ k Twitter Network,J=1
+
+
+
+
+ s e i r e u
+ d e l i a
+ f o n o i t c a r
+ Twitter Network,J=5 Twitter Network,J=10
+ s e i r e u
+ d e l i a
+ f o n o i t c a r
+
+
+
+
+
+
+
+ k
+ k
+
+
+
+ k
+
+ Figure 4.1: Fraction of failed queries for undirected networks scheme, we constructed the corresponding partitioned multi-index, and for the baseline scheme we constructed a simple inverted index of the whole network.
+Finally, using the constructed indices, we found the top 10 results for each query by each scheme.
+As e ciency measures, we measured the total preprocess-ing (sketching plus indexing) time, as well as the total query time (over 20000 queries) for each scheme.
+The results are presented in Tables 2, 3.
+As can be observed from these tables, even though the baseline scheme takes, of course, less preprocessing time, our scheme is still very e cient at preprocessing time.
+Note that unlike query time which, in practice, has a harsh deadline of few milliseconds, o ine preprocessing time is much more  exible.
+The real strength of our scheme is then evident from the query time results (Table 3), where our scheme is signi -cantly (i.e., depending on the network, 20 to 60 times) more e cient than the baseline scheme, and is insensitive to the size of the network, as predicted by our theoretical analyses.
+Our schme Baseline Grid Network Undirected Twitter Network ForestFire Network Directed Twitter Network
+
+
+
+
+
+
+
+ Table 2: Total preprocessing time (sec).

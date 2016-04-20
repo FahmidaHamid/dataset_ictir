@@ -1,0 +1,1670 @@
+Querying for Meta Knowledge
+
+Bernhard Schueler
+ISWeb — Information
+
+Sergej Sizov
+
+ISWeb — Information
+
+Steffen Staab
+
+ISWeb — Information
+
+Systems and Semantic Web
+University of Koblenz-Landau,
+
+Systems and Semantic Web
+University of Koblenz-Landau,
+
+Systems and Semantic Web
+University of Koblenz-Landau,
+
+Germany
+
+Germany
+
+Germany
+
+bernie@uni-koblenz.de
+
+sizov@uni-koblenz.de
+
+staab@uni-koblenz.de
+
+Duc Thanh Tran
+
+Institute AIFB
+
+University of Karlsruhe,
+
+Germany
+
+dtr@aifb.uni-karlsruhe.de
+
+ABSTRACT
+The Semantic Web is based on accessing and reusing RDF data
+from many diﬀerent sources, which one may assign diﬀerent lev-
+els of authority and credibility. Existing Semantic Web query lan-
+guages, like SPARQL, have targeted the retrieval, combination and
+reuse of facts, but have so far ignored all aspects of meta knowl-
+edge, such as origins, authorship, recency or certainty of data, to
+name but a few.
+
+In this paper, we present an original, generic, formalized and im-
+plemented approach for managing many dimensions of meta knowl-
+edge, like source, authorship, certainty and others. The approach
+re-uses existing RDF modeling possibilities in order to represent
+meta knowledge. Then, it extends SPARQL query processing in
+such a way that given a SPARQL query for data, one may request
+meta knowledge without modifying the original query. Thus, our
+approach achieves highly ﬂexible and automatically coordinated
+querying for data and meta knowledge, while completely separat-
+ing the two areas of concern.
+
+Categories and Subject Descriptors
+H.1.m [Information Systems]: Models and Principles;
+H.3.3 [Information Storage and Retrieval]: Information Search
+and Retrieval—Selection process, Query formulation
+
+General Terms
+Management, Design
+
+Keywords
+Semantic Web, SPARQL, RDF
+
+1.
+
+INTRODUCTION
+
+Integrating and re-using Semantic Web data becomes more and
+more fruitful and worthwhile in order to answer questions and de-
+liver results. Typically, engines like Swoogle provide points of
+access for RDF data, crawlers may fetch relevant RDF data, and
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2008, April 21–25, 2008, Beijing, China.
+ACM 978-1-60558-085-2/08/04.
+
+query languages like SPARQL with their corresponding query en-
+gines allow for selecting and re-using data in the appropriate for-
+mat. With the arrival of more and more data in the Semantic Web
+and more sophisticated processing through query and reasoning en-
+gines, one now, however, encounters challenging questions linked
+to meta knowledge about the data like:
+
+• Where is this data from?
+• Who provided the data?
+• When was this data provided?
+• Was the provider certain about the truth of this data?
+• Was the data believed by others, too?
+
+For instance, when querying the Semantic Web with the help of
+SPARQL for the aﬃliation of a person named of “James Hendler”,
+one ﬁnds (at least) two answers, i.e. “University of Maryland” and
+“Rensselaer Polytechnic Institute”. Without further indication as
+to where, by whom, when, etc. such information was given, it is
+impossible to decide which of the two aﬃliations is still valid.
+
+The problem might be remedied in several ways. First, an ideosyn-
+
+cratic solution by the search engine, such as returning the corre-
+sponding RDF ﬁles or links to sources of knowledge extraction (say
+http://www.cs.umd.edu/survey.pdf and http://www.rpi.
+edu/report.doc), might help in this special case. However, an
+ideosyncratic solution may not be appropriate in a second case in
+which the ‘when’ was more relevant than the ‘where’ or in a third
+case where such a piece of information had to be aggregated from
+several resources. Second, the person or system requesting the meta
+knowledge might manually extend the SPARQL query formalizing
+the request for the aﬃliation in order to return the where, the who
+and the when. Such a modiﬁcation will, however, be very tedious,
+as it will include a number of additional optional statements, and
+expressing it manually will be error prone. Also, it will not help
+in delivering meta knowledge that arises from joining several state-
+ments, e.g. meta knowledge about uncertainty that was based on
+several meta knowledge statements with diﬀerent values of uncer-
+tainty.
+
+Therefore, querying Semantic Web data requires a principled,
+generic approach to the treatment of meta knowledge that is able
+to adapt to many dimensions of meta knowledge and that is open
+to accommodate to new dimensions when the need arises. Such a
+principled, original framework is given in this paper. We start to
+
+625WWW 2008 / Refereed Track: Semantic / Data Web - Semantic Web IIIApril 21-25, 2008 · Beijing, Chinaexplain our approach with a discussion of important design choices
+in section 2. We model meta knowledge in existing RDF struc-
+tures by embedding a slightly more expressive language, which we
+call RDF+, into RDF1. We deﬁne the abstract syntax of RDF+, its
+semantics and its embedding in RDF in Section 4. In Section 5,
+we extend the SPARQL syntax and semantics to work on data and
+meta knowledge of RDF+. The extension allows the user to ex-
+tend a given conventional SPARQL query by a keyword for meta
+knowledge triggering the construction of meta knowledge by the
+query processor. Section 6 summarizes the overall use and process-
+ing of SPARQL queries with meta knowledge. Section 7 reports on
+initial graceful results for meta knowledge processing from a theo-
+retic point of view and Section 8 provides pointers to the prototype
+implementation of the system.
+
+2. SCENARIO
+
+In our sample application scenario, we assume that the user uti-
+lizes knowledge which has been initially extracted from Web pages
+of Computer Science departments and stored in form of RDF triples
+in his personal “active space" [16], backed by a local RDF repos-
+itory. Example 2.1 shows the relevant facts that may have been
+obtained from departments of diﬀerent universities. For better read-
+ability, we use for our examples in this paper the RDF triple lan-
+guage TriG [1] with Named Graphs [2] in a simpliﬁed form that
+abstracts from default namespaces.
+
+Example 2.1. Extracted Knowledge and SPARQL query
+
+G1 { JamesHendler researchTopic SemanticWeb .
+
+JamesHendler affiliatedWith RensselaerPI }
+
+G2 { JamesHendler researchTopic Robotics .
+
+JamesHendler affiliatedWith UnivMaryland .
+RudiStuder researchTopic SemanticWeb .
+RudiStuder affiliatedWith UnivKarlsruhe }
+
+The extracted knowledge comes from diﬀerent sources, at diﬀer-
+ent timepoints, and with diﬀerent degrees of extraction conﬁdence.
+This information is also captured and stored into the same RDF
+repository as shown in example 2.2, using the notion of Named
+RDF Graphs [2, 5].
+
+Example 2.2. Associated meta knowledge
+
+G3 { G1 mk:source <www.rpi.edu/report.doc> .
+
+G1 mk:certainty "0.9" .
+G1 mk:timestamp "5/5/2007" }
+
+G4 { G2 mk:source <www.cs.umd.edu/survey.pdf> .
+
+G2 mk:certainty "0.6" .
+G2 mk:timestamp "6/6/2001" }
+
+In our scenario, the sample user aims to explore the knowledge
+and meta knowledge using the RDF query language SPARQL. We
+assume that he aims to ﬁnd experts in the domain of Semantic Web
+and their aﬃliations. The corresponding SPARQL query is shown
+in example 2.3. In addition, the user wants to exploit meta knowl-
+edge from example 2.2 for obtaining results with best certainty and
+for analyzing contradictive answers (e.g. diﬀerent aﬃliations for
+the same person “James Hendler” in example 2.1).
+
+1This proposal is a completely revised and extended version of [17]. Ma-
+jor revisions include a novel formal model, discussion of the design space,
+complexity analysis, and prototype implementation.
+
+Example 2.3. Extracted Knowledge and SPARQL query
+
+CONSTRUCT {?x worksAt ?z}
+FROM NAMED G1
+FROM NAMED G2
+WHERE { GRAPH ?g {?x affiliatedWith ?z .
+
+?x researchTopic SemanticWeb}
+
+}
+
+3. DESIGN CHOICES
+
+This section summarizes and shortly motivates the design choices
+
+for our meta knowledge framework.
+
+Reiﬁcation. Establishing relationships between knowledge and
+meta knowledge requires appropriate reiﬁcation mechanisms for
+supporting statements about statements. Our general objective is
+to execute queries on original data (i.e. without meta knowledge)
+directly, without complex transformations. For compliance with
+existing applications that access the repository in a common way
+(e.g. using SPARQL queries), we do not modify existing user data.
+This requirement does not allow us to use mechanisms like RDF
+reiﬁcation, which decompose existing triples and fully change the
+representational model. In our framework described in section 4,
+we adopt the notion of Named RDF Graphs for meta knowledge
+representation [2, 5].
+
+Storage mechanisms. Following the overall philosophy of RDF,
+we do not separate meta knowledge from “normal” user knowledge
+in the repository. Following this paradigm, a user or developer has
+unlimited access to all contents of the triple store and can manipu-
+late meta knowledge directly. In other words, the user can directly
+access meta knowledge (e.g. using suitable SPARQL queries). Be-
+yond explicitly designed queries for meta knowledge access, in
+Section 5 we describe the extension of SPARQL that allows us to
+access meta knowledge about the result set automatically without
+user intervention.
+
+Dimensions of Meta Knowledge. An important point for the ap-
+plication design is the deﬁnition of relevant meta knowledge prop-
+erties and their suitable interpretation for arbitrary complex query
+patterns. In general, these properties are application dependent and
+must be carefully chosen by the system administrator. In our sce-
+nario (sections 2 and 6) we discuss common and widely used prop-
+erties, such as timestamp, source, and (un)certainty, and show ways
+of deﬁning and utilizing them in our framework.
+
+Syntax extensions. Seamlessly integrated access to meta knowl-
+edge requires corresponding extensions of existing querying mech-
+anisms. These can be realized at diﬀerent levels, for instance at the
+level of query languages (e.g. SPARQL) or at the level of applica-
+tion-speciﬁc interfaces (e.g. Sesame API). In Section 5 we describe
+our SPARQL extension for constructing query results with asso-
+ciated meta knowledge. It is system-independent and not related
+to some particular implementation of the RDF repository. Further-
+more, it fully supports the existing SPARQL syntax and semantics.
+Compliance with existing established standards makes the integra-
+tion with existing applications and interfaces substantially easier.
+
+4. SYNTAX AND SEMANTICS FOR RDF
+
+WITH META KNOWLEDGE
+
+In the course of representing and reasoning with meta knowl-
+edge we embed a language with meta knowledge reasoning, i.e.
+RDF+, in a language without such speciﬁc facilities, i.e. in RDF.
+This embedding implies that we may consider an RDF snippet in
+
+626WWW 2008 / Refereed Track: Semantic / Data Web - Semantic Web IIIApril 21-25, 2008 · Beijing, Chinaits literal sense and we may possibly interpret it as making a meta
+knowledge statement. Embedding meta knowledge in RDF is not
+the most expressive means to deal with all needs of meta knowl-
+edge processing, but it retains upward compatibility with existing
+usage of the language and corresponding tools and methods, which
+is a major concern for Semantic Web approaches.
+
+Though we denote meta knowledge in RDF, we must distinguish
+the notation of RDF with only implicit notation of meta knowledge,
+but no semantic consequences speciﬁcally due to this meta knowl-
+edge, from a formally extended model of RDF with explicit nota-
+tion of meta knowledge. The following deﬁnition of RDF+ helps
+us to draw this line very clearly and concisely. The abstract syntax
+for this embedded language, RDF+, is given in Section 4.1 and its
+semantics in Section 4.2. Eventually in this section, we show how
+to embed RDF+ in RDF with named graphs.
+4.1 An Abstract Syntax for RDF+
+
+The abstract syntax of RDF+ is based on the same building blocks
+
+as RDF:
+
+• U are Uniform Resource Identiﬁers (URIs).
+• L are all RDF literals.
+• G ⊆ U is the set of graph names.
+• P ⊆ U is the set of properties.
+
+In addition, we must be able to refer to statements directly without
+use of reiﬁcation. For this purpose, we introduce statement identi-
+ﬁers:
+
+• Θ is a set of statement identiﬁers, which is disjoint from U
+and L.
+
+Now, we may deﬁne RDF+ literal statements that are placed in
+named graphs and have, in addition to RDF, a globally unique state-
+ment identity.
+
+Definition 4.1
+
+(RDF+ Literal Statements).
+
+The set of all RDF+ literal statements, S, is deﬁned as quintuples
+by:
+S := {(g, s, p, o, θ) | g ∈ G, s ∈ U, p ∈ P, o ∈ U ∪ L, θ ∈ Θ}.
+Thereby, θ and (g, s, p, o) are keys such that there exists a bijec-
+tion f1 with f1(g, s, p, o) = θ ∧ f4(θ) := f
+−1(θ) = (g, s, p, o). More-
+over, we deﬁne the overloaded function f5 to return the complete
+quintuple given either θ or (g, s, p, o), i.e. f5(θ) := (g, s, p, o, θ) =:
+f5(g, s, p, o), when f1(g, s, p, o) = θ.
+
+The reader may note that we assume that f1 is ﬁxed and given
+before any statement is deﬁned. Furthermore, this deﬁnition of lit-
+eral statements and the rest of this paper abstracts from RDF blank
+nodes in order to keep the formalization more concise. However,
+we do not see any conceptual problem in extending our treatments
+to blank notes, too.
+
+The two statements of Graph G1 of Example 2.1 may now be
+
+represented in RDF+ in the following way.
+
+Example 4.1.
+
+S ⊇ K ⊇ {
+(G1, JamesHendler, researchTopic, SemanticWeb, θ1),
+(G1, JamesHendler, affiliatedWith, RensselaerPI, θ2) }
+
+Thereby, the exact form of statement identiﬁers in Θ is up to the
+implementation, as they are only used for internal processing.
+
+Having represented the literal interpretation of RDF statements
+in RDF+, we may now address the representation of selected RDF
+statements as RDF+ meta knowledge. This is done using a structure
+of RDF+ meta knowledge statements, M, that is separate from the
+set of RDF+ literal statements:
+
+Definition 4.2
+
+(RDF+ Meta Knowledge Statements).
+
+Let Π ⊆ P be the set of meta knowledge properties. Let Ωπ, with π ∈
+Π, be sets providing possible value ranges for the meta knowledge
+properties π ∈ Π.
+Then, the set of all RDF+ meta knowledge statements, M, is de-
+ﬁned by: M := {(θ, π, ω) | θ ∈ Θ, π ∈ Π, ω ∈ Ωπ)}.
+
+The following example partially demonstrates the target repre-
+sentation of the ﬁrst two meta knowledge statements of graph G3
+from Example 2.2.
+
+Example 4.2.
+
+M ⊇ M ⊇ {
+(θ1, mk:source, {<www.rpi.edu/report.doc>}),
+(θ1, mk:certainty, 0.9)}
+
+Together we may now deﬁne a RDF+ theory.
+
+Definition 4.3
+
+(RDF+ Theory).
+
+A RDF+ theory of literal statements and associated meta knowledge
+statements is a pair (K, M) referring to a set of literal statements
+K ⊆ S and a set of meta knowledge statements M ⊆ M.
+
+A (partial) example for such a theory is given by the pair (K, M)
+with deﬁnitions for K and M as given in examples 4.1 and 4.2,
+respectively.
+4.2 A Semantics for RDF+
+
+We now have an abstract syntax for representing RDF triples
+like JamesHendler researchTopic SemanticWeb as part of G1 and
+meta knowledge statements like the source of the statement that
+James Hendler’s research topic is Semantic Web is found in the
+document <www.rpi.edu/report.doc>. However, such an abstract
+syntax may remain remarkably ambiguous if it cannot be linked to
+a formal semantics. Assume two meta knowledge statements:
+
+(θ1, mk:source, {<www.rpi.edu/draftReport.doc>}) and
+
+(θ1, mk:source,{<www.rpi.edu/finalReport.doc>})
+
+for the same literal statement identiﬁed by θ1, the question may
+arise whether this means a disjunction, i.e. one of the two docu-
+ments has provided the fact, or a conjunction, i.e. both documents
+have provided the fact, or a collective reading, i.e. the two docu-
+ments together gave rise to the fact, or whether this situation con-
+stitutes invalid meta knowledge.
+
+In order to prevent such ambiguities we introduce a generic se-
+mantic framework for meta knowledge in RDF+. However, the
+framework must also be able to reproduce the literal interpretations
+found in RDF. For the latter purpose, we ﬁrst deﬁne a ‘standard’
+model for a RDF+ theory.
+
+Definition 4.4
+A standard interpretation Is : S → {(cid:8),⊥} for a structure (K, M)
+assigns truth values to all statements2 in K.
+
+(Standard Interpretation and Model).
+
+A standard interpretation is a standard model if and only if it
+
+makes all statements in K become true.
+2Note
+there
+(g, s, p, o, θ1), (g, s, p, o, θ2), where θ1 (cid:2) θ2.
+standard interpretation is independent of the identiﬁers θ1, θ2.
+
+because
+
+ﬁxed
+
+that
+
+f1
+
+is
+
+no
+
+are
+This implies that
+
+two
+
+tuples
+the
+
+627WWW 2008 / Refereed Track: Semantic / Data Web - Semantic Web IIIApril 21-25, 2008 · Beijing, ChinaFor instance, any standard model Is for (K, M) in example 4.1 would
+include (G1, JamesHendler, researchTopic, SemanticWeb, θ1) in its
+set of literal statements evaluating to (cid:8).
+In order to address the level of meta knowledge we foresee an ad-
+ditional model layer that provides a diﬀerent interpretation to each
+meta knowledge property.
+
+Note that this step is necessary in order to achieve upward and –
+limited – downward compatibility between RDF+ and RDF.
+
+The interpretation of statements, like the ones found in G3, also
+require an interpretation as meta knowledge. This is achieved by
+mapping RDF statements with designated properties from Π like
+mk:source and mk:certainty to the additional meta knowledge layer:
+
+(Π-Interpretation and Model).
+
+Definition 4.5
+A Π-interpretation Iπ : S (cid:5) Ωπ for a property π ∈ Π is a partial
+function mapping statements into the allowed value range of π.
+A Π-interpretation Iπ is a Π-model for (K, M) if and only if for all
+meta knowledge statements (θ, π, ω) ∈ M where f1(θ) = (g, s, p, o)
+the value of the interpretation coincides with ω, i.e. Iπ((g, s, p, o, θ)) =
+ω.
+
+As an example, consider the certainty interpretation Icertainty of the
+literal statement (G1, JamesHendler, researchTopic, SemanticWeb,
+θ1) from Examples 4.1 and 4.2. A model I would map this literal
+statement using Icertainty onto 0.9.
+
+The literal and the meta knowledge interpretations may now be
+
+combined to deﬁne what an overall, unambiguous model is:
+
+Definition 4.6
+
+(meta knowledge Interpretation and Model).
+A meta knowledge interpretation I is a set including a standard in-
+terpretation Is and the Π-interpretations Iπ for all meta knowledge
+properties π ∈ Π.
+A meta knowledge interpretation I is a model for a theory (K, M)
+if and only if all its interpretations I ∈ I are a standard model or
+Π-models for (K, M).
+4.3 Mapping between RDF and RDF+
+
+The mapping between RDF and RDF+ needs to be deﬁned in two
+directions. First, one must be able to map from RDF as given in the
+examples from Section 2 to RDF+. Second, one must be able to
+map from RDF+ to RDF. Because RDF+ is more ﬁne-grained than
+RDF the ﬁrst direction will be easy. For the second a compromise
+on the granularity of the representation has to be made.
+
+4.3.1 From RDF to RDF+
+
+The examples of Section 2 reify groups of statements, i.e. the
+ones found in G1 and G2, in order to associate meta knowledge,
+such as given in G3 and G4. In order to allow for an interpretation
+of the meta knowledge as deﬁned in the preceding section, we map
+RDF into RDF+. For all RDF statements, including statements in
+graphs G1 and G2 of Example 2.1, the mapping performed is close
+to an identity mapping. One only needs to add statement identiﬁers.
+The result for G1 in RDF+ is:
+
+Example 4.3.
+
+K ⊇ { (G1, JamesHendler, researchTopic, SemanticWeb, θ1),
+(G1, JamesHendler, affiliatedWith, RensselaerPI, θ2) },
+with
+θ1 := f1(G1, JamesHendler, researchTopic, SemanticWeb) and
+θ2 := f1(G1, JamesHendler, affiliatedWith, RensselaerPI)
+
+The same mapping – close to the identity mapping – is performed
+for meta knowledge statements like statements of graph G3, result-
+ing in their representation as literal statements:
+
+Example 4.4.
+
+K ⊇ {
+(G3, G1, mk:source, <www.rpi.edu/report.doc>, θ3),
+(G3, G1, mk:certainty, "0.9", θ4), ...}
+
+Example 4.5.
+
+M ⊇ {
+(θ1, mk:certainty, "0.9"),
+(θ1, mk:source, {<www.rpi.edu/report.doc>}), . . .}
+
+The mapping of predicates of these meta knowledge statements
+from RDF to RDF+ is obvious, they are mapped to itself. Objects
+are mapped to the corresponding elements of the value ranges Ωπ.
+For the subjects, however, there arise modeling choices. For in-
+stance, if mk:certainty were interpreted using probability theory,
+one might assign a distributive or a collective reading. In the dis-
+tributive reading, each fact in G1 receives the probability value of
+0.9 and, eventually, the distributive reading will assign a joint prob-
+ability of close to 0 for a large number of n stochastically indepen-
+dent facts, i.e. the joint probability 0.9n. In the collective reading,
+the collection of facts in G1 as a whole will receive the probability
+value 0.9. Therefore, the collective reading will assign an individ-
+ual certainty close to 1 for each individual fact, when the number
+√
+of facts is high and each fact is independent from the others, i.e.
+the individual probability would be n
+0.9. A priori, none of the
+two (and more) modeling choices is better than the other, but they
+constitute diﬀerent modeling targets.
+
+The mapping from RDF to RDF+ for the distributive reading of
+
+a meta property π is easy to achieve.
+
+Definition 4.7
+
+(Distributive Embedding).
+
+Given an RDF statement “G {S P O}” and an RDF meta knowledge
+statement “H {G π ω}”, a distributive embedding of RDF+ in RDF
+adds the meta knowledge statement
+
+{(θ, π, ω) | θ = f1(G, s, p, o) ∧ f5(θ) ∈ K}
+
+to M.
+
+This means that such a meta knowledge statement is applied indi-
+vidually to all statements in the graph to which it refers in RDF, as
+indicated in the example above. For certain π there might be several
+RDF meta knowledge statements H {G π ωi} which attach diﬀer-
+ent values ωi to a graph G via a single meta knowledge property
+π. In that case a set-valued range Ωπ has to be used in order to be
+consistent with Deﬁnition 4.5.
+
+4.3.2 From RDF+ to RDF
+
+The serialization of RDF+ data in the knowledge base K is straight-
+
+forward. Each quintuple (g, s, p, o, θ) is realized as a corresponding
+triple in a named graph and the tuple identiﬁer θ is discarded.
+
+Example 4.6.
+
+(G5, JamesHendler, researchTopic, SemanticWeb, θ)
+
+is mapped to
+
+G5 {JamesHendler researchTopic SemanticWeb }
+
+For meta knowledge statements the situation is more challeng-
+ing, because literal statements with diﬀerent statement identiﬁers
+may belong to only one named graph. Their corresponding meta
+knowledge statements may diﬀer, but the realization of the meta
+knowledge statements in RDF does not allow for retaining these
+ﬁne-grained distinctions – unless one chooses to change the mod-
+eling approach drastically, e.g. by assigning each literal statement
+
+628WWW 2008 / Refereed Track: Semantic / Data Web - Semantic Web IIIApril 21-25, 2008 · Beijing, Chinato a named graph of its own, which seems undesirable (cf. discus-
+sion in Section 3).
+
+We have preferred to pursue a more conventional modeling strat-
+egy for RDF with named graphs. Therefore, we weaken the associ-
+ation between meta knowledge statements and their corresponding
+literal statements when mapping to RDF. I.e. we group sets of meta
+knowledge property values into one complex value.
+
+Definition 4.8
+
+(Generating Grouped meta knowledge).
+
+Given an RDF+ theory (K, M), RDF meta knowledge is generated
+by grouping RDF+ meta knowledge statements as follows:
+Add the triple (g π ω(cid:11)
+
+:= hashGraph(g) for
+
+each
+
+(cid:11)
+) to the RDF graph g
+:= ω1 ∨π . . . ∨π ωn ,
+
+ω(cid:11)
+
+where (θ, π, ωi) ∈ M ∧ (g, S , P, O, θ) ∈ K. Further, hashGraph is a
+function mapping existing graph names onto graph names suitable
+for associating meta knowledge and ∨π is an operation deﬁned on
+Ωπ.
+If ω(cid:11)
+in order to
+represent ω(cid:11)
+. The suitability of hashGraph may be application spe-
+ciﬁc. A general strategy may map graph names g to graph names
+preﬁxed by <http://metaknowledge.semanticweb.org> in a deter-
+ministic manner. Operations on meta knowledge properties are dis-
+cussed in section 5.2.
+
+(cid:11)
+is set-valued then a set of triples is added to g
+
+compute and output all the meta knowledge statements deriveable
+by successful matches of RDF+ literal statements with the WHERE
+pattern.
+
+In order to determine which literal statements should be consid-
+ered we introduce a second modiﬁcation. We do not process FROM
+expressions with our meta knowledge framework, but only FROM
+NAMED. The reason is that FROM g expressions replicate all RDF
+triples of g into the default triple space of the query. Thereby, they
+remove the links between the RDF statements of g and possible
+meta knowledge. Hence, FROM expressions are not relevant for
+our treatment of meta knowledge, but of course they may still be
+processed using the standard SPARQL semantics.
+
+Thus, SPARQL queries on RDF+ have one of the two following
+
+overall forms:
+
+Definition 5.1
+
+(SPARQL SELECT Query).
+
+The structure of a SPARQL SELECT query has the following form:
+
+SELECT SelectExpression
+(WITH META MetaList)?
+(FROM NAMED GraphName)+
+WHERE P
+
+Definition 5.2
+
+(SPARQL CONSTRUCT Query).
+
+The structure of a SPARQL CONSTRUCT query has the following
+form:
+
+In the following example the grouping of meta knowledge values
+
+is illustrated.
+
+Example 4.7.
+
+CONSTRUCT ConstructExpression
+(WITH META MetaList)?
+(FROM NAMED GraphName)+
+WHERE P
+
+K:={
+(G5, JamesHendler, researchTopic, SemanticWeb, θ1),
+(G5, JamesHendler, affiliatedWith, UnivMaryland, θ2) },
+M:={
+(θ1, mk:source, {<www.rpi.edu/report.doc>}),
+(θ2, mk:source, {<www.cs.umd.edu/survey.pdf>}) }
+
+is mapped to
+
+G5 { JamesHendler researchTopic SemanticWeb .
+
+JamesHendler affiliatedWith UnivMaryland }
+
+G6 { G5 mk:source <www.rpi.edu/report.doc>,
+
+<www.cs.umd.edu/survey.pdf>.}
+
+In Example 4.7, the resulting grouped value is the set consisting of
+the two documents <report.doc> and <survey.pdf> which is rep-
+resented by two triples. For speciﬁc meta knowledge properties, an
+additional function may be necessary to provide a mechanism for
+representing grouped values in an appropriate RDF data structure.
+
+5. SPARQL FOR RDF AND META KNOWL-
+
+EDGE
+
+In this section we ﬁrst introduce a small extension to standard
+SPARQL syntax [15] and then deﬁne how SPARQL can be applied
+to an RDF+ knowledge base. The objective of our considerations is
+the derivation of meta knowledge about query results.
+5.1 SPARQL Syntax Revisited
+
+When using SPARQL to query RDF+ we propose only two mod-
+iﬁcations to obtain meta knowledge. First, we introduce one ad-
+ditional expression “WITH META MetaList”. This expression in-
+cludes the named graphs speciﬁed in MetaList for treatment as meta
+knowledge. This statement is optional. When it is present the
+SPARQL processor may digest the RDF+ meta knowledge state-
+ments derivable from the RDF named graphs appearing in the Meta-
+List. The SPARQL processor will then use this meta knowledge to
+
+In these deﬁnitions, P refers to a graph pattern that explains how
+RDF+ literal statements from named graphs speciﬁed using FROM
+NAMED statements are matched. Matches bind variables that are
+used for providing results according to the SelectExpression or the
+ConstructExpression.
+5.2 SPARQL Semantics Revisited
+
+In this subsection we deﬁne the semantics of SPARQL queries
+evaluated on an RDF+ theory. For our deﬁnitions we use two build-
+ing blocks: algebraic semantics of SPARQL [11, 13] and the how-
+provenance calculated via annotated relations (cf. [8]).
+
+|V|
+
+The algebraic semantics of SPARQL queries are given based on
+set-theoretic operations for sets of variable assignments (cf. [11,
+13]). Thereby, a variable assignment is a partial function μ : V →
+U ∪ L, where V is the set of variables given in a SPARQL query.
+A set of variable assignments can be represented by a relation φ
+over the domain (U ∪ L)
+, where the variables V are the attributes
+and assignments are the tuples of this relation. Such a set of as-
+signments may be assigned information about the so called how-
+provenance [8], i.e. the assignments may be annotated with for-
+mulae describing the individual derivation tree used to assign the
+variables. The how-provenance annotation may be represented by
+a function Φ : (U ∪ L)
+is the set of all
+tuples of the length |V| over the domain U ∪ L and F is the set of
+formulae annotating variable assignments. The set of formulae F
+is given by all Boolean formulas constructed over the set of literal
+statements S and including a bottom element ⊥ and a top element
+(cid:8). The formulae constitute an algebra (F,∧,∨,¬,⊥,(cid:8)). The spe-
+cial element ⊥ is used as annotation of variable assignments which
+are not in the relation φ. The special element (cid:8) may be omitted,
+but it allows for simpliﬁcation of complex formulas.
+
+|V| → F, where (U ∪ L)
+
+|V|
+
+Assume the following SPARQL query to be evaluated on the
+
+RDF+ knowledge base K:
+
+629WWW 2008 / Refereed Track: Semantic / Data Web - Semantic Web IIIApril 21-25, 2008 · Beijing, ChinaExample 5.1.
+
+SELECT ?g ?x ?y
+FROM NAMED G1
+FROM NAMED G2
+WHERE {
+
+GRAPH ?g {?x researchTopic ?y}
+
+}
+
+Example 5.2.
+
+K = {
+(G1, JamesHendler,researchTopic,SemanticWeb, θ1),
+(G1, JamesHendler,affiliatedWith,RensselaerPI, θ2),
+(G2, JamesHendler,researchTopic,Robotics, θ3),
+(G2, JamesHendler,affiliatedWith,UnivMaryland, θ4),
+(G2, RudiStuder,researchTopic,SemanticWeb θ5),
+(G2, RudiStuder,affiliatedWith,UnivKarlsruhe θ6) }
+
+For the query of example 5.1, we may ﬁnd the following variable
+assignments using standard SPARQL processing and we may in-
+dicate, which atomic formulae, i.e. RDF+ quintuples in this simple
+example, led to these variable assignments. This indication is given
+by the statement identiﬁers representing their statements.
+
+Example 5.3.
+
+Φ =
+
+?g
+G1
+G2
+G2
+
+?x
+JamesHendler
+JamesHendler
+RudiStuder
+
+?y
+SemanticWeb
+Robotics
+SemanticWeb
+
+F
+θ1
+θ3
+θ5
+
+This simple example of how a set of variable bindings has been
+produced is generalized to SPARQL queries of arbitrary complex-
+ity by a recursive deﬁnition of simultaneous query evaluation and
+computation of the annotations. The ﬁrst step in evaluating a graph
+pattern is to ﬁnd matches for the triple pattern contained in the
+query. Because the RDF+ knowledge base K consists of quintu-
+ples, we need to adapt the SPARQL evaluation procedures. The
+statement identiﬁers do not need to be matched, as they depend
+functionally on graph name, subject, predicate and object. There-
+fore, we consider matching of quadruple patterns (γ, α, β, δ). As
+a simpliﬁcation of our formalization we assume that the keyword
+GRAPH together with a URI or a graph variable is used in any
+given SPARQL query. If it is not used, we may expand a given
+SPARQL query to include it.
+
+Definition 5.3
+
+(Basic Quadruple Pattern Matching).
+
+Let K be a knowledge base of RDF+ literal statements and μ be a
+variable assignment.
+The evaluation of the SPARQL query ”GRAPH γ {α β δ}” over
+K, denoted by [[GRAPH γ {α β δ}]]K is deﬁned by the annotated re-
+lation Φ, dom(Φ) = {μ| dom(μ) = vars(GRAPH γ {α β δ})},
+if r(μ, (γ, α, β, δ)) = (g, s, p, o)∧
+(g, s, p, o, θ) ∈ K ∧ f1(g, s, p, o) = θ,
+
+Φ(μ) =
+
+θ
+
+⎧⎪⎪⎪⎨⎪⎪⎪⎩
+
+⊥ else
+
+where vars(P) denotes the variables contained in a pattern P and
+r(μ, (γ, α, β, δ)) is the quadruple obtained by replacing the vari-
+ables in (γ, α, β, δ) according to μ.
+
+An example for this deﬁnition is given by evaluating the query from
+Example 5.1 on the dataset of Example 5.2 delivering the result as
+indicated in example 5.3.
+
+Basic quadruple pattern matching is not directly applicable, if
+an expression “GRAPH γ” appears outside a complex triple pat-
+tern.
+In such a case, we ﬁrst need to distribute the expression
+
+“GRAPH γ” appropriately to atomic triple patterns in order to pre-
+scribe atomic SPARQL expressions accessible by basic quadruple
+pattern matching. Because named graphs cannot be nested, this dis-
+tribution is always possible and unambiguous. In the following we
+use the function quads(P) to denote the query resulting from this
+transformation. In example 5.4 this transformation is demonstrated
+on a conjunction of two triple patterns.
+
+Example 5.4.
+
+P1 =
+GRAPH ?src {
+
+{ ?x researchTopic ?y .}
+{ ?x affiliatedWith ?z .} }
+
+quads(P1) =
+GRAPH ?src { ?x researchTopic ?y .}
+GRAPH ?src { ?x affiliatedWith ?z .}
+
+Now we deﬁne the evaluation of complex graph patterns by op-
+
+erations on sets of variable assignments similar to [11, 13].
+
+Definition 5.4
+
+(Complex graph pattern matching).
+Let P1, P2 be complex graph patterns. The evaluation of graph
+patterns over K, denoted by [[·]]K, is deﬁned recursively:
+
+1. [[GRAPH γ {α β δ}]]K is given by deﬁnition 5.3,
+2. [[GRAPH g P1]]K = [[quads(P1)]]K,
+
+3.
+
+(a) [[P1 AND P2]]K = [[P1]]K  [[P2]]K,
+(b) [[P1 OPT P2]]K = [[P1]]K =(cid:11)(cid:12) [[P2]]K,
+(c) [[P1 UNION P2]]K = [[P1]]K ∪ [[P2]]K,
+
+4. [[P1 FILTER C]]K = σc([[P1]]K),
+
+The deﬁnition uses the operation AND. In standard SPARQL the
+operation AND is denoted by the absence of an operator. Like [11,
+13] we still use the explicit term AND in order to facilitate refer-
+encing to this operator.
+
+The recursion in the SPARQL query evaluation deﬁned here is in-
+deed identical to [11, 13]. Only the basic pattern matching has been
+changed slightly. Basic pattern matching now considers quadru-
+ples and it annotates variable assignments from basic matches with
+atomic statements from S and variable assignments from complex
+matches with Boolean formulae F ∈ F over S .
+As an example, consider the query from Example 5.5 evaluated
+
+on the knowledge base from Example 5.2.
+
+Example 5.5.
+
+SELECT ?h1 ?h2 ?x ?y
+FROM NAMED G1
+FROM NAMED G2
+WHERE {
+
+{GRAPH ?h1 {?x affiliatedWith ?y}} AND
+{GRAPH ?h2 {?x researchTopic SemanticWeb}}
+FILTER {?x=JamesHendler}
+
+}
+
+Let P be the graph pattern contained in the WHERE clause of the
+query. Then the evaluation of P is deﬁned by an algebraic expres-
+sion:
+
+[[P]]K = [[{P1 AND P2} FILTER {?x = JamesHendler}]]K
+
+= σ?x=JamesHendler([[P1 AND P2]]K)
+= σ?x=JamesHendler([[P1]]K  [[P2]]K)
+= σ?x=JamesHendler(Φ1  Φ2)
+
+630WWW 2008 / Refereed Track: Semantic / Data Web - Semantic Web IIIApril 21-25, 2008 · Beijing, Chinawhere Φ1 and Φ2 are relations representing variable assignments
+and their annotations. In this example and in the preceding deﬁni-
+tion we have used algebraic operations on sets of annotated bind-
+ings. However, we have not yet explained how these operations are
+used to construct formulas representing the how-provenance. The
+following deﬁnition will specify how complex formulae from F,
+which serve as annotations for results of matching complex graph
+pattern, will be derived.
+
+(cid:8)
+
+Definition 5.5
+
+(Algebra of Annotated Relations). Let Φ, Φ1
+and Φ2 be sets of annotated variable assignments. We deﬁne , ∪,
+\ and σ, =(cid:11)(cid:12) via operations on the annotations of the assignments
+as following:
+
+μi, Φ2(μi)(cid:2)⊥ Φ2(μi)
+
+, where ∀x ∈
+
+• (Φ1  Φ2)(μ) = Φ1(μ1) ∧ Φ2(μ2), where ∀x ∈ dom(μ1) ∩
+dom(μ2) : μ1(x) = μ2(x) and μ = μ1 ∪ μ2,
+• (Φ1 ∪ Φ2)(μ) = Φ1(μ) ∨ Φ2(μ),
+• (Φ1 \ Φ2)(μ) = Φ1(μ) ∧ ¬ (cid:6)(cid:7)
+dom(μi) ∩ dom(μ) : μi(x) = μ(x).
+• (σc(Φ))(μ) = Φ(μ) ∧ fc(μ), where fc(μ) denotes a function
+mapping μ to either (cid:8) or ⊥ according the condition c.
+• (Φ1 = Φ2)(μ) = (Φ1  Φ2)(μ) ∨ (Φ1 \ Φ2)(μ).
+Let us now continue the evaluation of the query speciﬁed in Ex-
+ample 5.5. In order to evaluate the expression σ?x=JamesHendler(Φ1 
+Φ2) we need to determine Φ1 and Φ2 using deﬁnition 5.3. The inter-
+mediate result is shown in example 5.6. To evaluate the conjunction
+of two quadruple patterns the operation  is applied, the result is
+shown in example 5.7. The annotation θ1 ∧ θ2 of the ﬁrst row repre-
+sents that this assignment has been derived from the conjunction of
+the two literal statements θ1 and θ2 (see example 5.2). Application
+of the σ-operation to the intermediate results gives the annotated
+relation shown in example 5.8.
+
+Example 5.6.
+?x
+JamesHendler
+JamesHendler UnivMaryland
+RudiStuder
+UnivKarlsruhe
+
+?y
+RensselaerPI
+
+?h1
+G1
+G2
+G2
+
+Φ1 =
+
+A1
+θ2
+θ4
+θ6
+
+Φ2 =
+
+?h2
+G1
+G2
+
+?y
+JamesHendler
+RudiStuder
+
+A2
+θ1
+θ5
+
+Example 5.7.
+?h1
+G1
+G1
+G2
+
+Φ1  Φ2 =
+
+Example 5.8.
+
+?h2
+G1
+G2
+G2
+
+?x
+JamesHendler
+JamesHendler UnivMaryland
+UnivKarlsruhe
+RudiStuder
+
+?y
+RensselaerPI
+
+A3
+θ1 ∧ θ2
+θ1 ∧ θ4
+θ5 ∧ θ6
+
+σ?x=JamesHendler(Φ1  Φ2) =
+?h1
+G1
+G1
+
+?h2
+G1
+G2
+
+?x
+JamesHendler
+JamesHendler UnivMaryland
+
+?y
+RensselaerPI
+
+A4
+(θ1 ∧ θ2) ∧ (cid:8)
+(θ1 ∧ θ4) ∧ (cid:8)
+
+The annotations Φ(μ) can now be used to assign truth values for
+μ. Is (see deﬁnition 4.4) assigns truth values to all atomic state-
+ments si ∈ K ⊆ S. We extend the interpretation Is to capture all the
+Boolean formulae over statements S.
+
+(Standard Interpretation of Formulae).
+
+Definition 5.6
+Let F, F1, F2 ∈ F be Boolean formulae over S, let Fa ∈ S be an
+atomic formula. We deﬁne the standard interpretation of formulae
+I f
+s as follows:
+
+• I f
+• I f
+• I f
+• I f
+
+s (Fa) := Is(Fa);
+s (¬F) := ⊥ if I f
+s (F1 ∧ F2) is (cid:8) if I f
+s (F1 ∨ F2) is (cid:8) if I f
+
+s (F) = (cid:8); I f
+s (F1) = I f
+s (F1) = (cid:8) or I f
+
+s (¬F) := (cid:8) if I f
+s (F) = ⊥;
+s (F2) = (cid:8), otherwise ⊥
+
+s (F2) = (cid:8), otherwise ⊥.
+s returns (cid:8) for the assignment shown in the ﬁrst row
+For instance, I f
+of Φ1  Φ2 from example 5.7, because the statements θ1 and θ2 are
+in the knowledge base.
+
+Analogously to I f
+s , we can extend a Π-interpretation Iπ over RDF+
+statements to a Π-interpretation I f
+π over formulae. Remember that
+meta knowledge interpretations allow for only one ω per θ ∈ Θ and
+π ∈ Π (Deﬁnition 4.5). In order to make use of the how-provenance
+represented by the annotations we require that for each meta knowl-
+edge property π an algebra (Ωπ,∧π,∨π,¬π,(cid:8)π,⊥π) with three oper-
+ations ∧π,∨π,¬π and two special elements (cid:8)π,⊥π ∈ Ωπ is deﬁned.
+The deﬁnition of the algebras can be supplied by a modeler ac-
+cording to the intended semantics of the diﬀerent meta knowledge
+properties.
+
+Definition 5.7
+
+Let F, F1, F2 ∈ F be Boolean formulae over S, let Fa ∈ S be an
+atomic formula. We deﬁne the interpretation I f
+
+(Π-Interpretation of Formulae).
+
+π as follows:
+
+• I f
+• I f
+• I f
+• I f
+
+π (Fa) := Iπ(Fa);
+π (¬F) is ¬πI f
+π (F);
+π (F1 ∧ F2) is I f
+π (F1) ∧π I f
+π (F1) ∨π I f
+π (F1 ∨ F2) is I f
+
+π (F2);
+
+π (F2);
+
+For illustration we consider in Example 5.9 the deﬁnition of fuzzy
+logic operations to calculate a possibility measure on variable as-
+signments, operations deﬁned on timestamps which calculate the
+time of the last modiﬁcation, and set operations deﬁned for source
+documents that construct the combined provenance.
+
+Example 5.9.
+
+certainty(x2))
+certainty(x2))
+
+certainty(x1)
+
+certainty(x1), I f
+certainty(x1), I f
+
+certainty(x1 ∧ x2) = min(I f
+I f
+certainty(x1 ∨ x2) = max(I f
+I f
+certainty(¬x1) = 1 − I f
+I f
+Ωcertainty = [0, 1]
+time(x1 ∧ x2) = max(I f
+I f
+time(x1 ∨ x2) = min(I f
+I f
+time(¬x1) = 0
+I f
+Ωtime = [0,∞)
+source(x1 ∧ x2) = I f
+I f
+source(x1 ∨ x2) = I f
+I f
+source(¬x1) = {}
+I f
+Ωsource = 2D, D the set of document URIs
+
+source(x1) ∪ I f
+source(x1) ∪ I f
+
+time(x1), I f
+time(x1), I f
+
+time(x2))
+time(x2))
+
+source(x2)
+source(x2)
+
+631WWW 2008 / Refereed Track: Semantic / Data Web - Semantic Web IIIApril 21-25, 2008 · Beijing, ChinaQuery forms. In standard SPARQL query forms, such as SE-
+LECT and CONSTRUCT, allow to specify how resulting variable
+bindings or RDF graphs, respectively, are formed based on the so-
+lutions from graph pattern matching [15]. Modiﬁers, e.g. for pro-
+jection and ordering, can be applied. The evaluation of SPARQL
+queries on RDF+ data diﬀers in that meta knowledge is attached to
+the results.
+
+The evaluation of SELECT queries on an RDF+ dataset is based
+on projectX([[P]]K), where X denotes the set of variables speciﬁed
+in the SelectExpression and project is deﬁned as following:
+
+Definition 5.8
+
+(Projection). Let Φ be a set of annotated vari-
+
+able assignments and X be a set of variables, then
+
+(projectX(Φ))(μ) =
+
+⎧⎪⎪⎪⎨⎪⎪⎪⎩
+
+(cid:7)
+
+∀x∈X:μ(x)=ν(x), Φ(ν)(cid:2)⊥ Φ(ν),
+function deﬁned only on X,
+⊥, else
+
+if μ is a partial
+
+If X forms a proper subset of the variables used in the graph pattern
+then the annotations of all bindings ν are aggregated. This aggre-
+gation is analog to the generation of grouped meta knowledge de-
+scribed in Deﬁnition 4.8. As an example consider the query shown
+in Example 5.10, which is a slight modiﬁcation of the query from
+Example 5.5, applied to the data shown in Example 5.2. For the
+result see Example 5.11. In contrast to Example 5.7 there is only
+one row for JamesHendler.
+
+Example 5.10.
+
+SELECT ?x
+WITH META G3, G4
+FROM NAMED G1
+FROM NAMED G2
+WHERE {
+
+{GRAPH ?h1 {?x affiliatedWith ?y}} AND
+{GRAPH ?h2 {?x researchTopic "SemanticWeb"}}
+
+}
+
+Example 5.11.
+
+project{?x}(Φ1  Φ2) =
+
+?x
+JamesHendler
+RudiStuder
+
+A5
+(θ1 ∧ θ2) ∨ (θ1 ∧ θ4)
+θ5 ∧ θ6
+
+The result of a SELECT query is a set of extended bindings.
+Such an extended binding contains values for the speciﬁed vari-
+ables and values for each meta knowledge property π ∈ Π which
+can be regarded as additional variables. For each binding μ these
+variables π are bound to I f
+π (projectX([[P]]K)(μi)), see Example 5.12.
+For this result the meta knowledge from Example 5.13 has been
+certainty((θ1 ∧ θ2) ∨ (θ1 ∧ θ4)) = 0.9. If no meta
+used. For instance I f
+knowledge statement (θ, π, ω) exists for a particular RDF+ literal
+statement f5(θ) and a particular meta knowledge property π then
+⊥π serves as default value. For the result of a SELECT query all
+bindings from projectX([[P]]K) are extended in this way.
+
+Example 5.12.
+?x
+JamesHendler
+RudiStuder
+
+certainty
+0.9
+0.7
+
+time
+5/5/2007
+8/8/2003
+
+Example 5.13.
+
+M = {
+(θ1, mk:certainty, 0.9),
+(θ1, mk:time, "5/5/2007"),
+(θ2, mk:certainty, 0.9),
+
+(θ2, mk:time, "5/5/2007"),
+(θ3, mk:certainty, 0.6),
+(θ3, mk:time, "6/6/2001"),
+(θ4, mk:certainty, 0.6),
+(θ4, mk:time, "6/6/2001"),
+(θ5, mk:certainty, 0.6),
+(θ5, mk:time, "6/6/2001"),
+(θ6, mk:certainty, 0.6),
+(θ6, mk:time, "6/6/2001")}
+
+Analogously to standard evaluation, the evaluation of a CON-
+STRUCT query on an RDF+ dataset results in a single RDF+ graph
+which is built using the graph template speciﬁed in the Construct-
+Expression (see Deﬁnition 5.2). This is in line with the fact that the
+graph template consists of a conjunction of triple patterns and thus
+quadruple patterns cannot be stated.3 Similar to the evaluation of
+SELECT queries the evaluation of CONSTRUCT queries is based
+on projectX([[P]]K), where X denotes the set of variables speciﬁed
+in the ConstructExpression. The RDF+ graph is constructed as de-
+scribed in the following:
+
+Let t j denote triple pattern j speciﬁed in the ConstructExpres-
+sion, P denote the graph pattern speciﬁed in the WHERE-clause,
+(si, j, pi, j, oi, j) denote the triple obtained by replacing the variables
+in t j according to a mapping μi and ˆg denote a new graph name.
+Then, for each binding μi ∈ projectX([[P]]K) and for each t j the
+quintuple (ˆg, si, j, pi, j, oi, j, θi, j) is added to S, where θi, j is the state-
+ment identiﬁer f1(ˆg, si, j, pi, j, oi, j). Further (θi, j, π, ωi, j) is added to
+M, where ωi, j = I f
+
+π (projectX([[P]]K)(μi)).
+
+Each new quintuple inherits the meta knowledge properties π as-
+sociated with the binding which has been used to create that quin-
+tuple. The value of ωi, j is determined by applying I f
+π to the formula
+which annotates the binding. Note that since projectX([[P]]K) and
+the interpretations I f
+π are functions and further the graph template
+in ConstructExpression is a set of triples the meta knowledge prop-
+erties (θi, j, π, ωi, j) are unique for a given θi, j.
+
+As an example for a CONSTRUCT statement consider Example
+5.14. Meta knowledge for some of the RDF+ statements presented
+in example 5.2 is speciﬁed in example 5.13. For graph pattern P
+contained in this query the result of projectX([[P]]K) is identical to
+the annotated relation shown in Example 5.7 except for the ﬁrst
+two columns. Based on the single triple pattern ?x worksAt ?y
+contained in the graph template and the two bindings contained in
+projectX([[P]]K) two quintuples are constructed and added to the
+RDF+ literal statements Kres as shown in Example 5.15. Mres con-
+tains the corresponding meta knowledge statements resulting from
+I f
+π (projectX([[P]]K)(μi)).
+
+Example 5.14.
+
+CONSTRUCT {?x worksAt ?y}
+WITH META G3, G4
+FROM NAMED G1
+FROM NAMED G2
+WHERE {
+
+{GRAPH ?h1 {?x affiliatedWith ?y}} AND
+{GRAPH ?h2 {?x researchTopic SemanticWeb}}
+
+}
+
+3Standard SPARQL does not allow for giving this graph a name. In order
+to associate meta knowledge, multiple named graphs as outputs are con-
+venient. In order to remain standard compliant, the SPARQL engine may
+however also return data and meta knowledge in two diﬀerent batches dis-
+tinguished by some implementation-speciﬁc mechanism.
+
+632WWW 2008 / Refereed Track: Semantic / Data Web - Semantic Web IIIApril 21-25, 2008 · Beijing, ChinaExample 5.15.
+
+Kres = {
+(Gnew, JamesHendler, worksAt, RensselaerPI, θnew1)
+(Gnew, JamesHendler, worksAt, UnivMaryland, θnew2)}
+(Gnew, RudiStuder, worksAt, UnivKarlsruhe, θnew3)}
+Mres = {
+(θnew1, mk:certainty, 0.9),
+(θnew1, mk:time, "5/5/2007"),
+(θnew2, mk:certainty, 0.6),
+(θnew2, mk:time, "6/6/2001")
+(θnew3, mk:certainty, 0.6),
+(θnew3, mk:time, "6/6/2001") }
+
+6. TASKS AND BENEFITS
+
+This section summarizes the discussed steps of meta knowledge
+representation and utilization for the sample scenario that was in-
+troduced in section 2.
+6.1 Tasks for the administrator
+
+In order to represent and utilize meta knowledge, the system ad-
+ministrator has to make some design choices.
+In particular, the
+application-speciﬁc meta knowledge properties must be deﬁned. In
+our sample scenario, we consider three meta knowledge properties:
+source, certainty, and timestamp.
+In the next step, the adminis-
+trator deﬁnes the intended semantics of these properties in order
+to facilitate query processing with complex expressions and pat-
+tern combinations. Using the notion from Section 5.1, we assume
+that corresponding deﬁnitions for meta knowledge properties are
+deﬁned according to previously discussed Example 5.9.
+
+Finally, data and available associated meta knowledge are rep-
+resented in RDF using named graphs [2, 5], and imported into our
+RDF+-based repository.
+
+6.2 Processing performed by the System
+
+We assume that the administrator manages the small sample knowl-
+
+edge base introduced in section 2. The knowledge base is trans-
+formed into the RDF+ quintuples shown in Example 5.2 as dis-
+cussed in section 4. Associated meta knowledge is transformed into
+further RDF+ literal statements and RDF+ meta knowledge state-
+ments. For the properties mk:time and mk:certainty the latter are
+shown in Example 5.13.
+
+Following our sample scenario, the query from Example 2.3 can
+be reformulated as the query from Example 5.14 which retrieves
+names of Semantic Web experts together with their aﬃliations. In-
+ternally, the query processor evaluates this query using graph pat-
+terns as discussed in 5.1. If P denotes the graph pattern from this
+query then all matches for all variables in P are given by [[P]]K.
+The resulting set of annotated variable assignments is shown in Ex-
+ample 5.7. It contains possible variable assignments, and the how-
+provenance (A3) that explains how these source statements have
+been used.
+
+By combining this information with deﬁnitions for meta knowl-
+edge properties and available meta knowledge statements, the query
+processor constructs the result shown in Example 5.15. This result
+is then serialized in RDF.
+6.3 Beneﬁts for the user/developer
+
+The user or application developer can access the knowledge stored
+in the RDF+-based repository in diﬀerent ways. On one hand, the
+repository does not change the existing SPARQL semantics and
+thus fully supports common SPARQL queries. This is an impor-
+tant advantage for compatibility with existing applications and in-
+
+terfaces. On the other hand, the repository supports the advanced
+SPARQL syntax with metaknowledge support (section 5.1). Thus,
+the user obtains additional access to valuable meta knowledge that
+can be used for relevance ranking, conﬂict resolution, or other ap-
+plications in connection with retrieved knowledge.
+
+In our application scenario, the user may realize that the query
+answer is potentially contradictive (James Hendler is aﬃliated with
+Rensselaer PI and University of Maryland). By inspecting the as-
+sociated meta knowledge, he would realize that the second fact
+was generated by mistake.
+In fact, it is based on outdated in-
+formation (knowledge from the document survey.pdf with times-
+tamp 6/6/2001) that was wrongly combined with knowledge from a
+more recent source (namely document report.doc with timestamp
+5/5/2007). It turns out that the aﬃliation of James Hendler has actu-
+ally changed from U Maryland to Rensselaer PI, and the erroneous
+tuple can be safely excluded from further processing.
+
+7. COMPLEXITY
+
+In this section we analyze how the construction of the annota-
+tions inﬂuences the complexity of the decision problem related to
+SPARQL. The decision problem associated with the evaluation of
+a SPARQL query can be stated as following [11]: Given an RDF
+dataset D, a graph pattern P and a mapping μ, determine whether μ
+is in the result of P applied to D. For this decision problem, which
+we denote by Eval, an analysis of the complexity is presented in
+[11, 12]. In the context of RDF+ datasets and annotated variable
+assignments we have a slightly diﬀerent decision problem: Given
+an RDF+ dataset D+, an RDF+ graph pattern P+, a variable as-
+signment μ and an annotation α determine whether α is the correct
+annotation of μ. We denote this problem by Eval+. An annotation
+is correct iﬀ it is identical to the formula obtained by evaluating P+
+as deﬁned in section 5.
+Since μ must have an annotation α (cid:2) ⊥ iﬀ μ is in the result
+the second decision problem includes the ﬁrst one. The key diﬀer-
+ence is to construct diﬀerent annotations for mappings which are in
+the result. With the following two theorems we show that for pat-
+tern which do not use the OPTIONAL operator Eval+ has the same
+complexity as Eval. For both theorems the same complexity results
+have been reported for processing RDF without meta knowledge
+[11, 12].
+
+Theorem 7.1. Eval+ can be solved in time O(|P|·|D|) for graph
+pattern expressions constructed by using only AND and FILTER
+operators.
+
+Theorem 7.2. Eval+ is NP-complete for graph pattern expres-
+sions constructed by using only AND, FILTER and UNION opera-
+tors.
+
+The theorems indicate that our treatment of meta knowledge does
+not add to the computational complexity of SPARQL. A proof for
+each of the theorems can be found at
+http://isweb.uni-koblenz.de/Research/MetaKnowledge.
+
+8.
+
+IMPLEMENTATION
+
+The framework described in this paper has been implemented
+and is available as an initial prototype. The prototype is available
+as an open source implementation at
+http://isweb.uni-koblenz.de/Research/MetaKnowledge
+together with example queries using artiﬁcial data from the LeHigh
+benchmark4.
+
+4available at http://swat.cse.lehigh.edu/projects/lubm/
+
+633WWW 2008 / Refereed Track: Semantic / Data Web - Semantic Web IIIApril 21-25, 2008 · Beijing, China[3] Peter Buneman, Sanjeev Khanna, and Wang Chiew Tan.
+
+Data Provenance: Some Basic Issues. 20th Conference on
+Foundations of Software Technology and Theoretical
+Computer Science (FSTTCS), New Delhi, India, pages
+87–93, 2000.
+
+[4] Peter Buneman, Sanjeev Khanna, and Wang Chiew Tan.
+
+Why and Where: A Characterization of Data Provenance.
+Proc. of ICDT, pages 316–330, 2001.
+
+[5] Jeremy J. Carroll and Patrick Stickler. TriX: RDF triples in
+
+XML. In Proceedings of the Extreme Markup Languages
+2004, Montreal, Canada, 2004.
+
+[6] Y. Cui and J. Widom. Practical Lineage Tracing in Data
+
+Warehouses. Proc. of ICDE, pages 367–378, 2000.
+
+[7] Li Ding, Pranam Kolari, Tim Finin, Anupam Joshi, Yun
+Peng, and Yelena Yesha. On Homeland Security and the
+Semantic Web: A Provenance and Trust Aware Inference
+Framework. In Proceedings of the AAAI Spring Symposium
+on AI Technologies for Homeland Security, 2005.
+
+[8] Todd J. Green, Gregory Karvounarakis, and Val Tannen.
+
+Provenance Semirings. In PODS, pages 31–40, 2007.
+[9] D. McGuinness and P. Pinheiro da Silva. Explaining
+Answers from the Semantic Web: the Inference Web
+Approach. J. Web Sem., 1(4):397–413, 2004.
+
+[10] W. Murdock, D. McGuinness, P. Pinheiro da Silva, C. Welty,
+
+and D. Ferrucci. Explaining Conclusions from Diverse
+Knowledge Sources. International Semantic Web Conference
+(ISWC), Athens, USA, pages 861–872, 2006.
+
+[11] Jorge Perez, Marcelo Arenas, and Claudio Gutierrez.
+
+Semantics and Complexity of SPARQL. In Proc. of ISWC,
+pages 30–43, 2006.
+
+[12] Jorge Perez, Marcelo Arenas, and Claudio Gutierrez.
+
+Semantics and Complexity of SPARQL. arXiv:cs/0605124v1
+[cs.DB], May 2006.
+
+[13] Jorge Perez, Marcelo Arenas, and Claudio Gutierrez.
+
+Semantics of SPARQL. Technical Report TR/DCC-2006-17,
+Universidad de Chile, October 2006.
+
+[14] P. Pinheiro da Silva, D. McGuinness, and R. Fikes. A Proof
+
+Markup Language for Semantic Web services. Inf. Syst.,
+31(4-5):381–395, 2006.
+
+[15] Eric Prud’hommeaux and Andy Seaborne. SPARQL query
+
+language for RDF. Working draft, W3C, March 2007.
+http://www.w3.org/TR/rdf-sparql-query/.
+
+[16] M. Schraefel, N. Shadbolt, N. Gibbins, S. Harris, and
+H. Glaser. CS AKTive Space: Representing Computer
+Science in the Semantic Web. Proc. of WWW, pages
+384–392, 2004.
+
+[17] Bernhard Schueler, Sergej Sizov, and Steﬀen Staab.
+
+Management of Meta Knowledge for RDF Repositories. In
+Int. Conf. on Semantic Computing (ICSC), pages 543–550,
+Irvine, CA, September 2007.
+
+9. RELATED WORK
+
+The importance of better understanding the ways by which the
+result came about is fundamental to many Semantic Web applica-
+tions and scenarios. The speciﬁcation of the Semantic Web proof
+layer was discussed in [10, 14, 9]. Our approach is focused on
+a diﬀerent language model (RDF) and provides ﬁne-grained meta
+knowledge management for retrieval queries with SPARQL that is
+not directly comparable with proof traces for OWL reasoning.
+
+In the area of database systems, meta knowledge is often rep-
+resented using an extension of the relational data model, coined
+annotated relations. Its purpose is primarily the description of data
+origins (provenance) and the process by which it arrived as a query
+answer [6, 3, 4, 7]. Basically, our methodology follows the same
+idea. However, our approach is specially designed for RDF graph
+models and not directly comparable to metadata models for rela-
+tional database systems. The same holds for the query language
+(SPARQL instead of SQL) and its semantics. An important dif-
+ference to isolated database solutions is the serialization ability of
+RDF and thus seamless exchanging and utilization of meta knowl-
+edge from our framework across the Semantic Web.
+
+10. CONCLUSION AND FUTURE WORK
+
+In this paper, we presented an original, generic, formalized and
+implemented approach for the management of many dimensions
+of meta knowledge, like source, authorship, certainty, and others,
+for RDF repositories. Our method re-uses existing RDF modeling
+possibilities in order to represent meta knowledge. Then, it extends
+SPARQL query processing in such a way that given a SPARQL
+query for data, one may request meta knowledge without modifying
+the query proper. We achieve highly ﬂexible and automatically co-
+ordinated querying for data and meta knowledge, while completely
+separating the two areas of concern. Our approach remains com-
+patible to existing standards and query languages and can be easily
+integrated with existing applications and interfaces.
+
+In the future, we will investigate the meta knowledge support for
+OWL-based knowledge bases with advanced reasoning capabili-
+ties. Due to the substantially higher complexity of inferencing and
+retrieval algorithms (e.g. reasoning in OWL-DL vs. RDF querying
+with SPARQL) and the distributed nature of knowledge sources
+in the Semantic Web, the notion of meta knowledge will require
+further, non-trivial justiﬁcation. Another interesting research is-
+sue is the support for nested meta knowledge (i.e. construction of
+meta knowledge for the result with respect to additional informa-
+tion about meta knowledge of its origins).
+
+Our long-term objective is the generic, eﬃcient and eﬀective in-
+frastructure for meta knowledge management as an integral part of
+the proof layer of the Semantic Web.
+
+Acknowledgements. This work was supported by the X-Media
+project (www.x-media-project.org) funded by the European Com-
+mission under EC grant number IST-FP6-026978 and by the project
+WeKnowIt (www.weknowit.eu) funded by the European Commis-
+sion under EC grant number FP7-215453.
+
+11. REFERENCES
+[1] Chris Bizer and Richard Cyganiak. The TriG Syntax. 2007.
+http://sites.wiwiss.fu-berlin.de/suhl/bizer/TriG/Spec/TriG-
+20070730/.
+
+[2] Christian Bizer and Jeremy J. Carroll. Modelling Context
+
+using Named Graphs. In W3C Semantic Web Interest Group
+Meeting, Cannes, France, 2004.
+
+634WWW 2008 / Refereed Track: Semantic / Data Web - Semantic Web IIIApril 21-25, 2008 · Beijing, China

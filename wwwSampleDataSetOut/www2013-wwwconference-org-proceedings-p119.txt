@@ -1,0 +1,1601 @@
+CopyCatch: Stopping Group Attacks by Spotting Lockstep
+
+Behavior in Social Networks
+
+∗
+Alex Beutel
+
+Carnegie Mellon University
+
+Pittsburgh, PA
+
+abeutel@cs.cmu.edu
+
+Wanhong Xu
+
+Facebook
+
+Menlo Park, CA
+xu@fb.com
+
+Venkatesan Guruswami
+Carnegie Mellon University
+
+Pittsburgh, PA
+
+guruswami@cmu.edu
+
+Christopher Palow
+
+Facebook
+London, UK
+
+cpalow@fb.com
+
+Christos Faloutsos
+
+Carnegie Mellon University
+
+Pittsburgh, PA
+
+christos@cs.cmu.edu
+
+ABSTRACT
+How can web services that depend on user generated con-
+tent discern fraudulent input by spammers from legitimate
+input? In this paper we focus on the social network Face-
+book and the problem of discerning ill-gotten Page Likes,
+made by spammers hoping to turn a proﬁt, from legitimate
+Page Likes. Our method, which we refer to as CopyCatch,
+detects lockstep Page Like patterns on Facebook by ana-
+lyzing only the social graph between users and Pages and
+the times at which the edges in the graph (the Likes) were
+created. We oﬀer the following contributions: (1) We give a
+novel problem formulation, with a simple concrete deﬁnition
+of suspicious behavior in terms of graph structure and edge
+constraints. (2) We oﬀer two algorithms to ﬁnd such suspi-
+cious lockstep behavior - one provably-convergent iterative
+algorithm and one approximate, scalable MapReduce im-
+plementation. (3) We show that our method severely limits
+“greedy attacks” and analyze the bounds from the applica-
+tion of the Zarankiewicz problem to our setting. Finally, we
+demonstrate and discuss the eﬀectiveness of CopyCatch
+at Facebook and on synthetic data, as well as potential ex-
+tensions to anomaly detection problems in other domains.
+CopyCatch is actively in use at Facebook, searching for
+attacks on Facebook’s social graph of over a billion users,
+many millions of Pages, and billions of Page Likes.
+
+Categories and Subject Descriptors
+I.5.3.
+tion—Clustering
+
+[Computing Methodologies]: Pattern Recogni-
+
+Keywords
+Anomaly detection; Social networks; Bipartite cores
+
+1.
+
+INTRODUCTION
+
+When on the web, how can we trust content generated
+by other users? As the web has become an increasingly
+integral part of our daily lives, from work to shopping to
+
+∗A portion of this work was done while working at Facebook.
+
+Copyright is held by the International World Wide Web Conference
+Committee (IW3C2). IW3C2 reserves the right to provide a hyperlink
+to the author’s site if the Material is used in electronic media.
+WWW 2013, May 13–17, 2013, Rio de Janeiro, Brazil.
+ACM 978-1-4503-2035-1/13/05.
+
+socializing, it has become a focus of spammers attempting
+to make money oﬀ Internet users, even if it takes dubious
+means.
+
+In recent years, web services have increasingly relied on
+social data to provide information to their users. For ex-
+ample, Facebook users discover content based on what their
+friends and other users like, and on Amazon users evaluate
+potential purchases based on other users’ reviews. Unfor-
+tunately, attackers attempt to skew content perception by
+oﬀering misleading feedback (through a variety of means),
+with the goal of increased distribution for their content. The
+challenge becomes distinguishing such “fake” feedback from
+legitimate user feedback. This is a challenge for all ser-
+vices that depend on user behavior for their algorithms and
+recommendations, from stories on Facebook to products on
+Amazon or reviews of businesses on TripAdvisor.
+
+On Facebook, Pages are used by organizations to interact
+with their fans. Users can “Like” a Page to let their friends
+know about their interests and to receive content from that
+Page in their News Feed, the primary distribution channel
+on Facebook. Other users may interpret a high Like count
+as a Page being popular and also will see their friends’ Page
+Likes in their News Feeds.
+
+Because of its utility as a distribution channel, attack-
+ers frequently attempt to boost Page Like counts to get in-
+creased distribution for their content. At Facebook, we have
+found that attackers have attempted to inﬂate Like counts
+through a variety of deceitful methods, including malware,
+credential stealing, social engineering, and fake accounts.
+We deﬁne an ill-gotten Like, including those from the meth-
+ods named previously, as “a Like that doesn’t come from
+someone truly interested in connecting with a Page” [12].
+As Facebook Security recently posted:
+
+Real identity, for both users and brands on Face-
+book, is important to not only Facebook’s mis-
+sion of helping the world share, but also the need
+for people and customers to authentically con-
+nect to the Pages they care about. When a Page
+and fan connect on Facebook, we want to ensure
+that connection involves a real person interested
+in hearing from a speciﬁc Page and engaging with
+that brand’s content. [12]
+
+In this paper we focus on the problem of detecting ill-gotten
+Page Likes on Facebook, and describe how our algorithm can
+
+119(a) Without CopyCatch
+
+(b) With CopyCatch
+
+(c) Graphical view
+
+Figure 1: A toy example of Page Likes over time with a subset of users and Pages organized to clearly show
+two detected attempts to inﬂate Page Like counts.
+
+also be used for detecting deceitful user feedback in many
+other online settings such as product reviews. For all of
+these problems the mission Facebook describes above holds
+- user generated content must be honest and legitimate if
+users are to trust and get value out of that web service.
+
+In solving this problem, we attack the spammers at their
+critical weakness. For spammers to be successful they need
+many users to Like their Pages. However, Facebook already
+has many anti-phishing [11] and anti-malware [10, 9] mech-
+anisms making it diﬃcult for real accounts to be compro-
+mised, and many algorithms to detect fake accounts [25].
+As a result, it is hard for an adversary to control many
+accounts, and instead they need to use the same few to
+Like many Pages. Therefore, we look for lockstep behavior
+- groups of users acting together, generally Liking the same
+Pages at around the same time. We call our algorithm to
+detect such behavior CopyCatch and describe a process of
+multi-user rate limiting where, because of our constraint on
+Like times, we limit the rate at which a group of users can
+perform actions together (much stricter than you can limit
+individual users). Figure 1 demonstrates the challenge and
+the strength of CopyCatch in detecting such behavior.
+
+To detect attackers attempting to deceive users, we take
+a graph based approach to the problem. As we see in Figure
+1(c), in the case of Facebook Page Likes, we have a bipartite
+graph between users and Pages, with the time at which each
+edge (Page Like) was created. Our algorithm searches for
+near-bipartite cores, where the same set of users Like the
+same set of Pages, and add constraints on the relationship
+between the edge properties (Like times) in this core. This
+can be extended to the bipartite graph of users to products
+where edges represent product reviews, or to general graphs
+such as the user to user connections of Instagram followers.
+Our paper oﬀers a number of contributions, which build
+
+toward solving this problem:
+
+1. Problem Formulation: We oﬀer a novel problem
+formulation to a relevant, real-world challenge realized
+at Facebook and relevant in many online settings. We
+call our approach CopyCatch.
+
+2. Algorithm: Pulling from work in one-class cluster-
+ing and subspace clustering, we oﬀer two algorithms
+to spot lockstep behavior: a provably-convergent se-
+
+rial iterative algorithm, and an approximate, scalable
+MapReduce implementation.
+
+3. Theoretical Analysis: We show that catching anoma-
+lous behavior, as we have deﬁned and as our algorithms
+detect, severely limits the damage an adversary can
+do when following a “greedy attack” strategy. We then
+apply research on the Zarankiewicz problem to our set-
+ting, showing that it is hard to ﬁnd an optimal strategy
+against CopyCatch.
+
+In Section 2 we describe related work in local clustering,
+subspace clustering, MapReduce, and anomaly detection. In
+Section 3 we give our problem formulation. In Section 4 we
+formulate the problem as an optimization problem, describe
+our serial algorithm, and prove that it converges. In Section
+5 we describe our MapReduce algorithm and implementa-
+tion. Finally in Section 6 we discuss the worst case damage
+an adversary could inﬂict, in Section 7 we oﬀer experiments
+demonstrating the usefulness of our implementation at Face-
+book and on synthetic data, and in Section 8 we discuss the
+applicability of our approach to problems in other domains.
+
+2. RELATED WORK
+
+Our work pulls from many diﬀerent ﬁelds of research. We
+
+describe a few below and mention others later in the text.
+2.1 Local clustering
+
+Clustering is one of the classic problems in both machine
+learning and data mining, with a wide range of methods still
+being developed. In this research, we build oﬀ Crammer et
+al.’s work on local one-class optimization and related work
+[6, 15], which focuses on ﬁnding dense clusters in noisy data
+through local search. Our algorithm also operates similarly
+to mean-shift clustering with a ﬂat kernel [5].
+2.2 Co-clustering and subspace clustering
+
+For our problem we aim to ﬁnd sets of users Liking the
+same set of Pages at around the same time. Given a data
+matrix of users × Pages, this requires clustering both the
+rows and columns of the matrix. The problem of parti-
+tioning both the rows and columns of a matrix is known
+as co-clustering or bi-clustering. The problem is NP-hard,
+so many approaches use an approximation of the problem.
+
+PagesUsers 0 10 20 30 40 50 60 70 80 90TimeBCDAEReordered Pages 4 3 2 1Reordered Users 0 10 20 30 40 50 60 70 80 90TimeUsersPagesABCDE123440Z120There has been extensive research on co-clustering includ-
+ing [3, 4, 8, 21], with applications ranging from collabora-
+tive ﬁltering [14] to anomaly and intrusion detection [20].
+Papadimitriou et al. [19] oﬀer an iterative distributed algo-
+rithm for performing co-clustering with MapReduce.
+
+Similarly, there has been much work on the general prob-
+lem of clustering high dimensional data. Within this work,
+subspace clustering focuses on ﬁnding subsets of features
+that are relevant for clustering a subset of the data.
+[16]
+gives a good comprehensive survey of the recent research in
+clustering high-dimensional data.
+2.3 MapReduce
+
+To make our algorithm scale to large, web-scale data, we
+implement our algorithm in the MapReduce framework [7].
+Hadoop [1] is an open source implementation of the MapRe-
+duce framework that is widely used. Facebook has a large
+Hadoop installation on which we built our implementation.
+In general, Hadoop and the Hadoop ﬁle system (HDFS) oﬀer
+a distributed platform to store data and run parallel algo-
+rithms over a cluster of computers. We will give more details
+about the data ﬂow and capabilities of Hadoop in Section 5.
+2.4 Graph-Based Anomaly Detection
+
+There has been extensive work in anomaly detection on
+web data, and much of it has focused on using graphs for
+spotting anomalies. For example, [17, 23] focus on ﬁnding
+novel subgraphs in large networks. In this work we focus on
+ﬁnding near bipartite cores with certain edge constraints.
+[18] uses belief propagation to ﬁnd near bipartite cores on
+the eBay graph, and [24] takes an SVD-like approach to ﬁnd
+similar interesting patterns in phone call data. Our problem
+formulation diﬀers from such prior work in our novel use of
+edge constraints to discern normal behavior from suspicious
+behavior.
+
+3. PROBLEM FORMULATION
+
+We now describe the mathematical details of our prob-
+lem. Table 1 gives a list of the diﬀerent symbols we will use
+throughout the paper. In general scalars will be denoted by
+italic letters e.g. N or ρ, vectors will be denoted by low-
+ercase boldface characters e.g. c, matrices will be denoted
+by uppercase boldface characters e.g. L, and sets will be
+denoted by script characters e.g. P. We use subscripts to
+index into vectors and matrices, where cj is the scalar in the
+jth position of c, Li,j is the scalar in the ith row and jth
+column of L, and Li,∗ is a vector of the ith row of L.
+
+As we previously described, Facebook has the challenge
+of preventing adversaries from artiﬁcially inﬂating a Page’s
+“Like count” in an eﬀort to try to improve the Page’s legiti-
+macy and get distribution through the site. Since each user
+can only Like each Page once, a Page’s Like count can only
+be increased through many users Liking the same Page.
+
+Unfortunately, there is no ground truth to whether any in-
+dividual Page Like is legitimate or not. Therefore, we take
+an unsupervised approach and only deﬁne suspicious behav-
+ior in terms of graph structure and edge creation times. Al-
+though our methods can be easily extended to many other
+settings, we will often describe the work in terms of Face-
+book users, Pages, and Likes for simplicity and clarity.
+
+Before deﬁning suspicious lockstep activity, we must give
+some notation surrounding our problem. We assume we have
+a set of users indexed from 1 to N , U = {i}N
+i=1 and a set
+
+Table 1: Symbols and Deﬁnitions
+
+L
+
+Deﬁnition and Description
+
+Symbol
+N and M Number of nodes on either side of the
+bipartite graph (users and Pages)
+N × M data matrix of edge data (Like
+times)
+N × M adjacency matrix
+Set of indices of rows and columns (in-
+dexed users and Pages)
+
+I
+U and P
+
+P(cid:48)
+
+2∆t
+ρ
+
+n and m Number of nodes necessary to be consid-
+ered suspicious for each side of the bipar-
+tite core
+Subset of columns (Pages) that are sus-
+picious
+Vector of times for each column around
+which there are suspicious rows (users)
+Width of time window
+Percent of P(cid:48) for which an suspicious
+user must be within the time window
+Thresholding function to compare two
+data points
+Number of clusters being search for in
+parallel
+Set of P(cid:48) for multiple clusters
+Set of c for multiple clusters
+
+P
+C
+
+c
+
+φ
+
+s
+
+of M pages P = {j}M
+j=1 similarly indexed. We deﬁne E as
+the set of edges in the graph, where (i, j) ∈ E is user i has
+Liked Page j. We also deﬁne an indicator matrix I such that
+Ii,j = 1 if (i, j) ∈ E, and Ii,j = 0 otherwise. Last, we deﬁne
+our data matrix L such that Li,j = ti,j for all (i, j) ∈ E,
+where ti,j is the time at which user i Liked Page j.
+
+We can now broadly deﬁne our problem as:
+
+Given: A graph of Likes between users and Pages I and the
+edge creation times L
+Find: Suspicious lockstep behavior - Bipartite cores of at
+least size (n, m) such that for each of the m Pages, all n
+users Liked that Page in a 2∆t time window. We call this
+an [n, m, ∆t]-temporally coherent bipartite core (TBC).
+
+We deﬁne suspicious lockstep behavior precisely below.
+Definition 1. We deﬁne an [n, m, ∆t]-temporally coher-
+ent bipartite core (TBC) as a set of users U(cid:48) ⊆ U and a set
+of Pages P(cid:48) ⊆ P such that
+|U(cid:48)| ≥ n
+|P(cid:48)| ≥ m
+(i, j) ∈ E ∀i ∈ U(cid:48)
+∃tj ∈ R s.t. |tj − Li,j|≤ ∆t ∀i ∈ U(cid:48)
+We consider users in an [n, m, ∆t]-TBC to be in lockstep
+behavior and thus suspicious.
+
+, j ∈ P(cid:48)
+, j ∈ P(cid:48)
+
+Complete (3)
+
+Temporal (4)
+
+Size (1)
+
+(2)
+
+This can be interpreted a number of diﬀerent ways, each
+of which we will use later in the paper. From the graphical
+perspective, our indicator matrix I is an adjacency matrix
+for the bipartite graph between users and Pages, and our
+data matrix L contains the edge creation time. A depiction
+of L pointing out clusters of users in near temporally coher-
+ent bipartite cores can be seen in Figure 1(a-b). In terms of
+the graph, we have deﬁned suspicious behavior to be bipar-
+tite cores of size greater than (n, m) in the Facebook graph
+where all edges going into the same Page were created in
+
+121center of our cluster, such that cj = tj where tj comes from
+Deﬁnition 1.
+
+We also relax our deﬁnition of suspicious lockstep behavior
+to include users that are part of temporally-coherent near
+bipartite cores (TNBC). We introduce the term ρ ∈ [0, 1],
+which broadly describes how many of the Page Likes a user
+must match (in time) to be considered suspicious. More
+precisely, we say that a user is suspicious if he Likes at least
+ρ|P(cid:48)| of the Pages in P(cid:48) in the designated time window. This
+is clearly a relaxation since all of the users in any [n, m, ∆t]-
+TBC would also be in a [n, m, ∆t, ρ]-TNBC. We give the
+formal deﬁnition of [n, m, ∆t, ρ]-TNBC below.
+Definition 2. A set of users U(cid:48) ⊆ U and a set of Pages
+P(cid:48) ⊆ P comprise an [n, m, ∆t, ρ]-temporally coherent near
+i ⊆ P(cid:48) for all i ∈ U(cid:48)
+bipartite core (TNBC) if there exists P(cid:48)
+such that:
+
+(6)
+
+Size (5)
+
+i| ≥ ρ|P(cid:48)| ∀i ∈ U(cid:48)
+
+|U(cid:48)| ≥ n
+|P(cid:48)| ≥ m
+|P(cid:48)
+(i, j) ∈ E ∀i ∈ U(cid:48)
+∃tj ∈ R s.t. |tj − Li,j|≤ ∆t ∀i ∈ U(cid:48)
+i Temporal (9)
+Given these deﬁnitions our goal broadly is to maximize
+the number of suspicious users and the number of Page Likes
+of suspicious users that are suspicious (fall within the desig-
+nated time window). Since we are ultimately trying to catch
+as many suspicious users as possible, we set |P(cid:48)| = m and
+only try to grow U(cid:48).
+
+, j ∈ P(cid:48)
+, j ∈ P(cid:48)
+
+Complete (8)
+
+Near (7)
+
+i
+
+The optimization problem is given speciﬁcally below:
+
+q(Li,∗|c,P(cid:48)
+
+)
+
+(10)
+
+max
+
+c,P(cid:48):|P(cid:48)|=m
+
+(cid:88)
+(cid:26) σ if σ =(cid:80)
+(cid:26) 1 if |tc − tu| ≤ ∆t
+
+otherwise
+
+0
+
+i
+
+0 otherwise
+
+where
+q(u|c,P(cid:48)
+
+) =
+
+φ(tc, tu) =
+
+j∈P(cid:48) Ii,jφ(cj, uj) ≥ ρ m
+
+(11)
+
+(12)
+
+This is a simple formulation of the problem described previ-
+ously. The diﬀerence is under this formulation we are trying
+to ﬁnd c and P(cid:48) to maximize the number of users and their
+Likes inside the cluster centered at c in subspace P(cid:48).
+
+Additionally, because we expect most users to not be en-
+gaging in fraudulent Liking, we frame the problem similar
+to one-class clustering literature or to a ﬂat kernel, where
+our optimization only focuses on data points in the cluster,
+and there is no penalty for data points outside the cluster.
+4.2 A Serial Algorithm
+To optimize this objective function, we must set both c
+and P(cid:48). Placing c is similar to many density-seeking clus-
+tering problems in machine learning and data mining. Like-
+wise, selecting P(cid:48) from P is similar to subspace clustering.
+Therefore, we oﬀer an iterative algorithm that in each step
+alternates between updating the center c and the subspace
+choice P(cid:48), while holding the other variable constant. Note,
+given c and P(cid:48), the users that fall within the cluster are fully
+determined. The algorithm can be seen in Algorithm 1.
+In the step UpdateCenter we keep P(cid:48) constant and up-
+date c. This update is performed iteratively over each di-
+mension j ∈ P(cid:48). For each such dimension, we ﬁnd all users
+
+Figure 2: An example of a subspace in which we ﬁnd
+a clear clustering of Page Likes in time. Blue dots
+are normal users and black dots are suspicious users
+part of a [8, 3, ∆t]-TBC.
+
+a small time window. This graphical view of the data and
+anomalous behavior is shown on a subset of the nodes in
+Figure 1(c).
+
+A second interpretation can be of L as a data matrix
+where each user represents a point in M dimensional space,
+Li,∗ ∈ RM . (Because users do not necessarily Like all Pages,
+they would often fall in a subspace of the M dimensional
+space, but thinking about each user as a point in the M
+dimensional space can provide good intuition.) We then
+consider a group of users to be part of an [n, m, ∆t]-TBC
+and suspicious if there exists a hypercube of width 2∆t in
+at least m dimensions such that at least n users fall within
+that hypercube. Framing the problem this way is more simi-
+lar to the standard clustering literature in machine learning
+and the subspace clustering problem. A depiction of a 3-
+dimensional subspace of the M dimensional space is shown
+in Figure 2, where a cluster of users are all found in the same
+small hypercube.
+
+Later, we will show experimentally that, for appropriate
+values of n, m, and ∆t, such behavior is extremely uncom-
+mon and thus in fact suspicious. We additionally will show
+the advantage of deﬁning it this particular way as compared
+to other formulations, such as only looking for bipartite cores
+where all edges come from one time window. This particular
+formulation, with constraints on the inbound edges of each
+node, is novel in the literature, includes these other formula-
+tions as special cases, and provides a number of advantages
+for preventing fraudulent behavior.
+
+4. METHODOLOGY
+
+With Deﬁnition 1 of suspicious lockstep behavior, the
+challenge remains to detect when it occurs. As shown in
+[22], ﬁnding bipartite cores in a graph is NP-hard. To cre-
+ate an algorithm to ﬁnd clusters of this type, we deﬁne the
+problem as an optimization problem. From here we oﬀer
+an iterative algorithm, which monotonically improves our
+results, and in Section 5 we oﬀer an approximate MapRe-
+duce implementation that searches for many bipartite cores
+in parallel.
+4.1 Optimization Formulation
+To formulate the problem succinctly we must add addi-
+tional notation. We deﬁne c ∈ RM to be a vector for the
+
+TimeToLikePageDTimeToLikePageCTimeToLikePageB2Dt020406080020406080020406080122U(cid:48) that fall within the cluster but loosen the width to β∆t
+for the current dimension we are adjusting, where β > 1 thus
+including users who are just outside of the time window in
+dimension j. Given these users we ﬁnd a new center in di-
+mension j with subroutine FindCenter. We can sort the
+points in U(cid:48) based on their position in dimension j, and then
+in one pass, weighting users by the number of Likes from P(cid:48)
+they have, ﬁnd the 2∆t span for which we capture the most
+users and the most Likes. We use this span to update cj.
+We note that UpdateCenter runs in O(m(mN + log(n)))
+where we assume clusters are on the order of O(n) in size.
+In the step UpdateSubspace we keep c constant and up-
+date P(cid:48). Given the previous values of c and P(cid:48) we can ﬁnd
+the users currently in the cluster and attempt to improve
+our choice of P(cid:48), such that more Likes are included for the
+same current set of users in the clusters. Here we take an
+incremental approach. For each j ∈ P(cid:48) we search among
+all j(cid:48) ∈ P. We say a user i is covered by a column j if
+Ii,jφ(cj, Li,j) = 1. We only consider those columns j(cid:48) for
+which every user covered by column j is also covered by col-
+umn j(cid:48). We can then replace column j by column j(cid:48) that has
+the most users covered. As such, any user that was covered
+previously will still be covered, but we can also be adding
+additional coverage (for more Likes) to other users. This is
+not necessarily the optimal choice, but it does improve our
+objective and runs in O(nmM ) time.
+We repeatedly update c and P(cid:48) until neither change and
+the algorithm has converged, or simply for some ﬁxed num-
+ber of rounds.
+4.3 Proof of Convergence
+
+We now prove that our algorithm converges. It should be
+clear that our objective function is bounded, as there are a
+limited number of users and Page Likes, and therefore there
+is a maximum or set of local maxima. Therefore, we must
+merely show that both UpdateCenter and UpdateSub-
+space monotonically improve our objective function.
+
+Lemma 1. UpdateCenter, as deﬁned in Algorithm 1,
+
+monotonically improves our objective function in (10).
+
+Proof. UpdateCenter works by updating each dimen-
+sion’s center one at a time, holding the others constant. For
+each update in each dimension, we take all the points within
+β∆t of the previous center and ﬁnd the center that will
+most improve our objective. Of course, all points previously
+covered will be included in this width of β∆t since β > 1.
+Since we ﬁnd the location for which we cover the most points
+weighted by the number of Likes for each point, we will only
+move the center if we ﬁnd a location that covers more points
+with more Likes than before. Therefore, if our center moves
+the objective function must increase, and if it does not move
+then the objective function stays constant.
+
+Lemma 2. UpdateSubspace, as deﬁned in Algorithm 1,
+
+monotonically improves our objective function in (10).
+
+Proof. As was described previously, UpdateSubspace
+only replaces a j ∈ P(cid:48) with a j(cid:48) if all Likes covered by Page j
+are also covered by Page j(cid:48). Therefore, we can only improve
+our objective function or stay constant. Therefore Update-
+Subspace monotonically improves our objective.
+
+Because UpdateCenter and UpdateSubspace mono-
+
+tonically improve our objective, the algorithm converges.
+
+(cid:96) // Run to convergence
+
+Algorithm 1 Serial CopyCatch
+function S-CopyCatch(x, j)
+Require: Preset parameters ∆t, n, m, and ρ
+Initialize c = x, P(cid:48) = {j}
+repeatP(cid:48)
+
+(cid:96) = P(cid:48)
+c(cid:96) = c
+c = UpdateCenter(c,P(cid:48))
+P(cid:48) = UpdateSubspace(c,P(cid:48))
+
+until c = c(cid:96) and P(cid:48) = P(cid:48)
+
+return [c,P]
+end function
+function UpdateCenter(c,P(cid:48))
+
+U(cid:48) = FindUsers(U, c,P(cid:48)) // Get current users
+Set c(cid:48) to the average of Li,∗ for all i ∈ U(cid:48)
+for j ∈ P(cid:48) do // Update center for each Page
+[U(cid:48), w] = FindUsers(U, c,P(cid:48), j, β∆t)
+[U(cid:48)(cid:48), tj] = FindCenter(U(cid:48), w, j)
+c(cid:48)
+j = tj
+end for
+return c(cid:48)
+end function
+function UpdateSubspace(c,P(cid:48)
+(cid:96))
+
+(cid:96)
+
+(cid:96) do
+
+(cid:96)) // Get current users
+
+P(cid:48) = P(cid:48)
+U(cid:48) = FindUsers(U, c,P(cid:48)
+for j(cid:48) ∈ P(cid:48)
+j(cid:48)(cid:48) = j(cid:48)
+j(cid:48)(cid:48) = FindUsers(U(cid:48), cj(cid:48)(cid:48) ,{j(cid:48)(cid:48)})
+U(cid:48)
+for j ∈ P \ P(cid:48) do // See if another Page is better
+U(cid:48)
+j = FindUsers(U(cid:48), cj,{j})
+j(cid:48)(cid:48) ⊂ U(cid:48)
+if U(cid:48)
+j(cid:48)(cid:48) = j, U(cid:48)
+
+j then
+
+j(cid:48)(cid:48) = U(cid:48)
+
+j
+
+end if
+
+end for
+P(cid:48) = (P(cid:48) \ {j(cid:48)}) ∪ {j(cid:48)(cid:48)}
+
+end for
+return P(cid:48)
+end function
+// Find weighted center of U in dimension jc
+function FindCenter(U, w, jc)
+
+Sort U by Li,jc for i ∈ U
+Scan sorted U for 2∆t-width subset U(cid:48)
+Set cj to the center of this subset U(cid:48)
+
+s.t. (cid:80)
+
+return [U(cid:48), cj]
+end function
+// Find users from U based on c and P(cid:48)
+function FindUsers(U, c,P(cid:48), jc, ∆t(cid:48))
+
+U(cid:48) = {}, w = 0
+for i ∈ U do
+for j ∈ P(cid:48) do
+
+i∈U(cid:48) wi is maximized
+
+if Ii,j = 1 ∧ (|cj, Li,j| < ∆t ∨
+
+(j = jc ∧ |cj, Li,j| < ∆t(cid:48))) then
+
+wi = wi + 1
+
+end if
+
+end for
+if wi ≥ ρm then
+U(cid:48) = U(cid:48) ∪ {i}
+
+end for
+
+end if
+return [U(cid:48), w]
+end function
+
+1235. A MAPREDUCE IMPLEMENTATION
+
+Although Algorithm 1 works well theoretically, it has in-
+eﬃciencies in both speed and convergence. To address these
+issues we oﬀer here a new algorithm similar to the serial al-
+gorithm, which operates in the MapReduce framework. This
+implementation operates under the trade-oﬀ of making the
+algorithm scalable to massive data sets and trivially paral-
+lelizable, such that we can search for many clusters simul-
+taneously, with the cost of the algorithm not provably con-
+verging. However, the heuristics used here have performed
+well in practice on real world data and converge quickly, as
+will be demonstrated in Section 7.
+
+Unlike many optimization problems, where the goal is to
+ﬁnd the global maximum, here we want to ﬁnd all local max-
+ima that meet our criteria (as there could be many attacks
+happening simultaneously with diﬀerent users on diﬀerent
+Pages). Therefore, the ability to run the algorithm from
+many starting points in parallel is both useful and more ef-
+ﬁcient than running from diﬀerent starting points serially.
+5.1 Algorithm
+
+k, both for k = 1 . . . s.
+
+Because we now would like to run the algorithm for mul-
+tiple clusters in parallel, we must introduce some additional
+notation. We deﬁne s to be the number of clusters being run
+simultaneously. Each cluster has a center c(k) ∈ RM and a
+k ⊆ P (each deﬁned as
+set of currently selected columns P(cid:48)
+before). We deﬁne C to be the set of all c(k) and P to be the
+set of all P(cid:48)
+Like the serial algorithm, the MapReduce CopyCatch
+algorithm operates by updating c and P(cid:48) iteratively. The
+core of the algorithm can be seen in Algorithm 2, where we
+note that we run one MapReduce job per iteration, each
+time updating C and P. As in the serial algorithm, we can
+keep iteratively updating C and P until no changes are made.
+In practice, we will merely run a ﬁxed number of iterations.
+MapReduce: It is worth taking a moment to note the
+data ﬂow in a MapReduce job before describing the details
+of our algorithm. In the Map step, our input is split among
+many mappers. Each mapper gets a pair of data of the
+form (cid:104)Keymap, Value(cid:105) and can output zero or more results
+of the form (cid:104)Keyreduce, Value(cid:105).
+In the reducer step, for
+each unique Keyreduce a reducer is formed which takes as
+an input (cid:104)Keyreduce, Values(cid:105), where Values is a set of the
+Value outputs from the mapper step which correspond to
+that reducer’s particular Keyreduce. The reducer can then
+output data to disk. Aside from this data ﬂow, we make use
+of Hadoop’s Distributed Cache, which lets us store data as
+global read-only data. For more information on MapReduce
+and Hadoop see [7, 1].
+
+In our implementation, the mapper for the MapReduce
+
+job UserMapper is shown in Procedure 3, the reducer
+AdjustCluster-Reducer is shown in Procedure 4, and C(cid:96)
+and P(cid:96) are stored in the Distributed Cache.
+
+UserMapper ﬁnds which users are currently in which
+clusters based on C and P and maps those users to a reducer
+based on which cluster it is within. More speciﬁcally, the
+Map step takes as input L and I, where each (Li,∗, Ii,∗) for
+all i ∈ U is input to a mapper. Each mapper checks the
+Li,∗ across all s clusters to see if it falls within that cluster
+following the deﬁnition given in our optimization objective
+(10).
+If it does, it emits an output where the key is the
+cluster ID k, and the value is the row (user) information
+Li,∗ and Ii,∗. Each mapper runs in O(sm) time, and since
+
+this is being run over all data the entire step takes O(smN )
+not taking into account parallelization.
+AdjustCluster-Reducer takes in all of the users cur-
+rently in a given cluster k and updates c(k) and P(cid:48)
+k. Each
+reducer takes as an input (cid:104)k,U(cid:48)(cid:105), where U(cid:48) here contains
+pairs (Li,∗, Ii,∗) for all users in the cluster (as was output by
+the mappers). As shown in Procedure 4, we must be care-
+ful to only use values from each user in the dimensions for
+which it falls within the cluster. However, beyond this, the
+update generally works fairly simply. The center c is up-
+dated by merely taking an average of the points in the clus-
+ter, similar to a mean-shift algorithm with a ﬂat kernel [5].
+The selected columns are chosen based on which columns
+cover the most users from the previous cluster parameters,
+and then by which columns have the lowest variance among
+these users. By using the previous centers for this update,
+we can do the calculation online, passing over each user only
+once. Because we assume each cluster is O(n) in size, each
+reducer takes O(nM ) time, and the reduce step as a whole
+takes O(snM ) when not considering parallelization. The
+reducers output the updated C and P to be placed in the
+Distributed Cache in subsequent iterations.
+
+Algorithm 2 MapReduce CopyCatch
+1: Require: Preset parameters ∆t, m, and ρ
+2: C, P = Initialize()
+3: repeat
+4:
+5:
+6: until C(cid:96) = C ∧ P(cid:96) = P
+7: return [C, P]
+
+C(cid:96) = C, P(cid:96) = P
+C, P = MapReduceJob(C(cid:96), P(cid:96))
+
+σ =(cid:80)
+
+Procedure 3 UserMapper((cid:104)Null, (Li,∗, Ii,∗)(cid:105))
+1: Globals: C, P
+2: for k = 1 . . . s do
+3:
+4:
+5:
+6:
+7: end for
+
+Ii,j · φ(c(k)
+k| then
+emit (cid:104)k, (Li,∗, Ii,∗)(cid:105)
+
+j∈P(cid:48)
+if σ ≥ ρ|P(cid:48)
+
+end if
+
+, Li,j)
+
+k
+
+j
+
+, Li,j) = 1 then
+
+for j = 1 . . . M do
+if Ii,j = 1 ∧ φ(c(k)
+j
+cj = cj + Li,j
+pj = pj + 1
+vj = vj + (c(k)
+
+Procedure 4 AdjustCluster-Reducer(k,U(cid:48))
+1: Globals: C, P
+2: Initialize c = 0, p = 0, v = 0
+3: for all map values (Li,∗, Ii,∗) ∈ U(cid:48) do
+4:
+5:
+6:
+7:
+8:
+9:
+10:
+11: end for
+12: c(k) = c/p
+13: v = v/p
+14: Sort {j}M
+15: Set P(cid:48)
+16: return Updated c(k) and P(cid:48)
+
+k to top m columns from previous sort
+
+j − Li,j)2
+
+end for
+
+end if
+
+k
+
+1 by p (decreasing), then v (increasing)
+
+1245.2 Implementation Optimizations
+
+While the description above gives the general overview of
+the algorithm, there are a number of implementation details
+that make the algorithm run eﬃciently on huge data sets.
+
+Data Format Because L is expected to be very large and
+sparse, we do not want to, nor need to, store the full data
+matrix. Instead, we store the matrix as an adjacency list.
+For each user i ∈ U, we store on one line the user ID i, a list
+of page IDs j where Ii,j = 1, and the value Li,j. As a result,
+Null values were Ii,j = 0 do not take up space or time.
+
+C and P are stored similarly where each line of a data ﬁle
+is indexed by the cluster ID k, and then contains the Page
+IDs j, the times c(k)
+
+and a 1 if j ∈ P(cid:48)
+k.
+
+j
+
+Seeds and Initial Iterations Figuring out where to
+start the clusters can be very diﬃcult. To avoid any bias,
+we sample seeds randomly from the list of all edges in the
+graph, using the edge’s Page and Like time to initialize both
+P(cid:48) and c. (While we could use suspicious users from one
+of Facebook’s many other security mechanisms, this would
+introduce prior assumptions about attackers that are unnec-
+essary and could make it easier for an adversary to hide.)
+
+As a result, in the initial iterations users only need to have
+Liked a single Page at around the same time, which is not
+uncommon. There are often so many users found in these
+initial iterations that we sample a small percentage of them
+at random to keep the algorithm eﬃcient. Even with the
+sampling, this method lets us quickly ﬁnd lots of users that
+Liked one Page around the same time, and then see what
+else they have in common. This sampling is performed in
+the ﬁrst two iterations until |P(cid:48)| = m.
+
+Page sampling Because C and P are stored in the Dis-
+tributed Cache, they are passed to every MapReduce node.
+This communication time slows the algorithm down if the
+data becomes too large. To avoid this we limit the length of
+c(k) by including only Pages from P(cid:48)
+k, Pages that were close
+to being in P(cid:48)
+k in the last iteration, and a random sampling
+of the other Pages. With this method we can still ﬁnd users
+that are similar, but without the risk of becoming too slow.
+6. AN ADVERSARIAL CHALLENGE
+
+Given our deﬁnition of suspicious lockstep behavior and
+our approach to detecting spam, how much damage could an
+adversary do without appearing suspicious? We will again
+discuss this in the context of Facebook, although it can be
+extended to other applications.
+To be more concrete, we can frame the question as follows:
+If an adversary controls N(cid:48) accounts and wants to Like M(cid:48)
+Pages, for N (cid:29) N(cid:48) (cid:29) n and M (cid:29) M(cid:48) (cid:29) m, how long
+would it take the adversary to Like all M(cid:48) Pages with all
+N(cid:48) accounts without creating an [n, m, ∆t, ρ]-TNBC? (For
+this analysis we assume that we catch all lockstep behavior
+meeting Deﬁnition 2.) It turns out this is an extension of
+an old open problem in extremal graph theory. We analyze
+below a couple diﬀerent approaches to this problem.
+6.1 “Greedy Attacks”
+
+We ﬁrst analyze the consequences of an adversary per-
+forming a na¨ıve greedy attack, particularly because it matches
+a common business model for adversaries, demonstrates the
+diﬃculties for an adversary, and shows the strength of our
+security approach.
+In this initial example, we assume that the adversary has
+from the start the set of M(cid:48) Pages he wants to Like, and we
+
+Figure 3: Illustration of a greedy attack - N(cid:48) × M(cid:48)
+adjacency matrix I(cid:48) of all Likes, where grey cells
+denote I(cid:48)
+
+i,j = 1, and white cells denote I(cid:48)
+
+i,j = 0.
+
+analyze the eﬀect if he iteratively Likes each Page with as
+many accounts as he can without getting caught. That is,
+for the ﬁrst Page the adversary will Like the Page using as
+many accounts as possible without getting caught. He will
+then move onto the second Page and do the same thing, etc.
+In this case, we are unconcerned with the time component
+of our bipartite core deﬁnition because we assume the ad-
+versary will add all of the Likes instantaneously. Therefore,
+an adversary will be caught if he creates an (n, m) com-
+plete bipartite core in the graph. If we look at the N(cid:48) × M(cid:48)
+adjacency matrix of Likes added by the adversary, this is
+equivalent to creating an n, m submatrix ﬁlled with ones.
+We will call this N(cid:48) × M(cid:48) adjacency matrix I(cid:48).
+
+Lemma 3. We assume there is an adversary with N(cid:48) ac-
+counts performing a greedy attack on M(cid:48) Pages. Catching
+and preventing all behavior meeting Deﬁnition 1 limits the
+adversary to obtaining (m−1)N(cid:48) + (n−1)M(cid:48) − (n−1)(m−1)
+Likes at a rate greater than n−1
+
+2∆t per Page per unit time.
+
+Proof. A simple pattern created by following the greedy
+approach can be seen in Figure 3. We see here for the ﬁrst
+m − 1 pages, the adversary can Like the Page with all N(cid:48)
+accounts. This is because we will only detect the accounts
+if at least m pages have been Liked, so there is no harm
+in Liking the ﬁrst m − 1 Pages with as many accounts as
+possible. However, for the mth Page, if any n users Like
+that page in a 2∆t time window, then he will have created
+an n×m full submatrix. This is true for all Pages ≥ m. As a
+result, following this greedy approach we can only Like each
+Page an average of (m−1)N(cid:48)+(n−1)M(cid:48)−(n−1)(m−1)
+
+times.
+
+M(cid:48)
+
+While not a complex example, the results are quite in-
+teresting. First, we see that as an adversary adds more
+accounts, the average number of Likes added by each ac-
+count asymptotically approaches m − 1. Similarly, as the
+accounts Like more Pages, the average number of Likes per
+Page asymptotically approaches n − 1.
+
+We have so far focused on how many Likes can an adver-
+sary add instantaneously, but it is worth looking at the eﬀect
+of our time constraint. To illustrate the impact of our tem-
+poral coherence restriction, we look at the case where an ad-
+versary sells Likes on eBay, promising to add the Page Likes
+within some time period (as some adversaries are known to
+do). As new orders come in, the adversary must add those
+Page Likes within the requested amount of time. Because
+
+n−1m−1M′PagesN′Users125we have a distinct time window for each Page j (centered
+around cj), waiting to add Likes to a new Page does not
+help an adversary avoid being caught. That is, if an adver-
+sary gets m − 1 orders in January and adds all N(cid:48) Likes as
+the greedy attack suggests, then even if he does not get any
+more orders until July he still cannot add more than n − 1
+Likes in a 2∆t time window without being caught.
+
+This is in contrast to previous research, which could set a
+time window for the entire bipartite core (through limiting
+the input), and thus merely waiting out that time window
+gave accounts a clean slate. As a result of our construction,
+once the greedy attack has been run, the adversary can only
+continue to add Page Likes to each Page at a rate slower
+than n
+
+2∆t . We call this eﬀect multi-user rate limiting.
+
+To make the eﬀect of these restrictions clear and concrete,
+let’s look at the example limits n = 20 accounts, m = 5
+Pages, and 2∆t = one week.
+(Note, for security reasons
+these are not the actual limits used at Facebook.) Any ad-
+versary performing a greedy attack with N(cid:48) = 1000 accounts
+can on average only like up to 5 Pages per account for 980 of
+his accounts. Similarly, if the adversary wants to boost the
+Like counts for more than 5 Pages, he can on average only
+Like the Pages 20 times. To add additional likes to any given
+Page can only be done at a rate slower than 20 accounts
+Likes per Page per day. This is clearly much harsher rate-
+limiting than we could enforce on a single user, but when
+looking at the group acting together makes sense.
+6.2 Optimal Strategy: An Open Problem
+
+1 week ≈ 3
+
+It should be clear from the previous analysis that greedy
+attacks do not work well for spammers. Ideally, we would
+like to ﬁnd an upper bound for the amount of damage an
+adversary could inﬂict. However, this turns out to be an old,
+open problem in extremal graph theory. In 1951 Kazimierz
+Zarankiewicz posed the following problem [27]: how many
+edges can there be in a bipartite graph G of size N(cid:48) × M(cid:48)
+without creating a complete bipartite core of size n × m?
+This is known as the Zarankiewicz problem, and the maxi-
+mum number of edges is denoted as z(N(cid:48), M(cid:48), n, m).
+
+Although the problem is old, little progress has been made
+in solving it for the general case. F¨uredi [13] is currently
+known to have the best general upper bound
+
+(cid:48)
+
+, M
+
+(cid:48)
+
+, n, m)≤ (n − m + 1)
+
+1
+m N
+
+(cid:48)
+
+M
+
+z(N
+
+(cid:48)1− 1
+
+m +M
+
+(cid:48)
+
+m+mN
+
+(cid:48)2− 2
+
+m
+
+for n > m. However, this is only known to be asymptotically
+optimal for m = 2 and n = m = 3. If we use larger values
+of n and m and reasonable values of N(cid:48) and M(cid:48), then z >
+N(cid:48)M(cid:48) and thus oﬀers us no information.
+
+Additionally, the proof oﬀered by F¨uredi [13], as well as
+most work surrounding the Zarankiewicz problem, uses non-
+constructive methods. That is, although the proof ﬁnds an
+upper bound for z(N(cid:48), M(cid:48), n, m), it does not give any in-
+formation about how to actually add edges to reach that
+bound without being caught. It would therefore be a chal-
+lenge for an adversary to optimally add edges (and would be
+interesting for the ﬁeld of extremal graph theory if solved).
+It is worth noting that our problem deviates from the
+classic Zarankiewicz problem in two regards: (1) we look for
+near-bipartite cores, and (2) we require temporal coherence.
+With respect to the ﬁrst point, by looking for near bipartite
+cores and not just complete bipartite cores, we would also
+catch cases where certain 1’s were missing from the n × m
+submatrix of I(cid:48). We call this the approximate Zarankiewicz
+
+problem. While any upper bound for the Zarankiewicz prob-
+lem is also an upper bound to this approximate Zarankiewicz
+problem, the maximum number of edges added without cre-
+ating a [n, m, ∆t, ρ]-TNBC would be lower, and thus this is
+an even harder problem for an adversary.
+
+Second, we require temporal coherence in our bipartite
+cores for the behavior to be considered suspicious. This
+helps us more accurately and ﬂexibly discern normal behav-
+ior from illegitimate behavior and eﬀectively rate limits an
+adversary, forcing them to add Likes very slowly if they do
+not want to be caught. As we saw in our analysis of a greedy
+attack, this multi-user rate limiting is signiﬁcantly stricter
+than a rate limit we could enforce on individual users. When
+generalizing this concept to the Zarankiewicz problem, the
+constraint adds complexity to an already challenging prob-
+lem. While we cannot ﬁnd a precise optimal rate at which
+adversaries can add edges without knowing an optimal strat-
+egy for the Zarankiewicz problem, it should be clear that the
+multi-user rate limiting principle holds. Setting 2∆t = ∞
+restricts an adversary to solving the Zarankiewicz problem;
+decreasing ∆t allows an adversary to exceed the maximum
+solution to the Zarankiewicz problem but at a slow rate.
+
+7. EXPERIMENTAL ANALYSIS
+7.1 Experimental Setup
+
+CopyCatch was written in Java 1.6.0 14 with Hadoop
+0.20.1, generally matching the algorithm outlined in Section
+5. The experiments were run on one of Facebook’s Hadoop
+clusters, running Hadoop, Hive, and HDFS on over 1000
+machines. More information about Facebook’s infrastruc-
+ture can be found in [26]. Our MapReduce jobs ran with
+3000 mappers and 500 reducers. We ran the algorithm on
+a few diﬀerent datasets from Faceboook as well as synthetic
+data to demonstrate a number of diﬀerent properties.
+
+The Facebook datasets used come from real Likes between
+users and Pages on the site. We pull data from periods of
+time ranging from weeks to multiple months, where the data
+has not already had Likes removed by this particular method
+(although of course many other security measures already
+keep malicious users and fake Likes oﬀ the site). For our
+scalability tests, data ranged from approximately 760 million
+Page Likes (25 gigabytes on HDFS) to 10.4 billion Page Likes
+(294 gigabytes on HDFS). When not testing scalability over
+data size, we used an intermediate dataset of 3.3 billion Likes
+(100 gigabytes on HDFS). Our parameter choices for n, m,
+and ∆t are those used currently on Facebook systems, but
+can not be given for security reasons.
+
+We also ran our discoverability experiments on synthetic
+data so that results could be replicated by other researchers.
+Our synthetic data was generated following the RTM method
+[2], where the time evolving graph is generated with a re-
+peated Kronecker product. The code used to generate the
+time evolving graph, including our initial generator/tensor,
+can be found online at alexbeutel.com/l/www2013. The
+generated graph is a bipartite graph between 38 million and
+10 million nodes with 410 million edges. After our data
+formatting, the graph is 10 gigabytes on HDFS.
+7.2 Scalability
+
+Facebook now has over a billion users and is continuing to
+grow. Therefore, it is important that our algorithm scales
+well to large datasets. We test this a few diﬀerent ways.
+
+126Figure 4:
+Scalability experiments: (a) shows the linear increase in computation time as the graph grows
+into the billions of Page Likes, (b) shows the increase in computation time as the number of seeds increases.
+Running time for is based on the total time for the ﬁrst three iterations of CopyCatch.
+
+(a)
+
+(b)
+
+A necessary preprocessing step to keep our algorithm ef-
+ﬁcient is to format the data similar to an adjacency list as
+described in Section 5.2. This takes approximately 45 min-
+utes for our 100GB Facebook dataset. Because this is merely
+formatting and not required each time we run the algorithm,
+we do not consider this time in future tests.
+
+For each of our timing experiments, we run our algorithm
+on the on the 100GB Facebook dataset and time the ﬁrst
+3 iterations, which includes the initial iterations of starting
+with individual Likes as seeds. We chose to run these tests
+on the Facebook data because run time is heavily inﬂuenced
+by the size of the data and the size of clusters. Since we
+do not know a-priori where large clusters are, we sample our
+seeds randomly so that we get the same distribution of small
+and large clusters that we would get in our real runs.
+
+Even with large Hadoop clusters, it is important that the
+algorithm can scale as the data scales. We test this by run-
+ning our implementation over Page Likes from increasingly
+large periods of time. As we explained previously, this data
+ranges from 25GB with 760 million Page Likes to 294GB
+with 10.4 billion Page Likes. We ran the algorithm with 100
+seeds, 3000 mappers, and 500 reducers. The run time for
+the ﬁrst 3 iterations can be seen in Figure 4(a). As seen in
+the plot, the run time increases approximately linearly with
+the number of edges (Page Likes). However, we note that
+only after a greater than 10 times increases in data size does
+our running time double. Therefore as our data grows, the
+running time of CopyCatch grows at a much slower rate.
+As the data scales, we also face the challenge of having to
+use more seeds to suﬃciently sample the space. Therefore,
+we also tested how the run time increases as the number of
+clusters being run in parallel increases. We time the ﬁrst 3
+iterations for running the algorithm on the 100GB Facebook
+dataset with 3000 mappers and 500 reducers. We vary the
+number of seeds used from 100 to 5000. As can be seen in
+Figure 4(b), we ﬁnd a similar linear relationship between
+number of seeds and run time. We note that 50 times in-
+crease from 100 clusters to 5000 clusters takes only a little
+over twice as much time. This is again reassuring that our
+implementation exploits the parallelism of the problem and
+can continue to scale as the data scales.
+7.3 Convergence
+
+Because our MapReduce implementation is not provably
+convergent, we also test our algorithm’s convergence. We
+ran the algorithm on the 100GB Facebook dataset, starting
+
+Figure 5: The convergence of the CopyCatch
+MapReduce implementation over 10 iterations on
+Facebook data.
+
+with 1000 seeds and tracked the sum of the values of the ob-
+jective functions per iteration, starting at the third iteration
+when |P(cid:48)| = m. As can be seen in Figure 5, the algorithm
+quickly converges in only a few iterations as desired.
+7.4 Discovery
+
+The eﬀectiveness of the algorithm is measured by its abil-
+ity to detect fraudulent behavior. This is diﬃcult to gauge
+in the real world where there isn’t labelled data, and it can
+be impossible to know if a user intentionally, honestly Liked
+a given Page. Here we take two diﬀerent approaches to eval-
+uate our method.
+
+First, we analyze the success of the algorithm in ﬁnding
+suspicious groups of users on Facebook. Our goal is for the
+algorithm to ﬁnd as many of the [n, m, ∆t, ρ]-TNBC’s in the
+Facebook data as possible. To test CopyCatch’s success,
+we run the algorithm repeatedly and check that we even-
+tually are mostly ﬁnding users we had caught in previous
+runs. In our experiment we run the algorithm 20 times for 5
+iterations, each run starting from 1000 seeds on the 100GB
+data set. In Figure 6(a) we see that over the course of 20
+iterations we quickly decrease to ﬁnding mostly the same
+users repeatedly, and only catching a small percentage of
+new users with each successive run. More precisely, after
+the eleventh run, the average percent of caught users that
+are new is only 13% percent. Because we use random inde-
+pendently drawn seeds for each run, this test suggests that
+the algorithm has found most of the attacks in the dataset.
+For a more precise analysis we use our synthetic dataset
+to test the algorithm’s ability to ﬁnd attacks in the graph.
+We set n = 50, m = 25, ∆t = 50, and ρ = 0.9. For our
+
+ 0 500 1000 1500 2000 2500 3000 3500 0 1 2 3 4 5 6 7 8 9 10 11Run time (seconds)Number of Edges (Billions)Experimental valuesLinear fit 0 1000 2000 3000 4000 5000 6000 7000 1000 2000 3000 4000 5000Run time (seconds)Number of SeedsExperimental valuesLinear fit0 3 4 5 6 7 8 9 10Sum of objective for all clustersNumber of Iterations127(a) Facebook
+
+(b) Synthetic
+
+(c) Facebook live runs
+
+Figure 6: Plots demonstrating the eﬀectiveness of CopyCatch in discovering attacks. (a) shows the total
+number of users caught after multiple runs of CopyCatch. (b) shows the success in ﬁnding planted attacks
+in synthetic data after one run. (c) shows the decrease in attacks on Facebook over the last 3 months.
+
+tests we add 20 randomly-placed attacks to the graph, and
+test the ability of the algorithm to ﬁnd the attacks after one
+run starting with 5000 randomly chosen seeds. We vary our
+attack size as a multiple of our deﬁned suspicious lockstep
+behavior, ranging from 50 users and 25 Pages to 1000 users
+and 500 Pages. In each case the time of the attack for each
+Page is chosen at random, and each user’s Likes falls within
+the 2∆t time window for 95% of the Pages being attacked.
+The percent of attackers caught after 1 run for each attack
+size are plotted in Figure 6(b). Also we note that 0% of our
+caught users were false positives. As we see in the plot, small
+attacks exactly at our threshold size were hard to spot, but
+as attacks grow in size in just one run we catch nearly all
+of the attackers. It is worth noting that because we choose
+seeds randomly, running the algorithm again should catch
+an independent set of the attackers, and thus merely running
+the algorithm a few times should catch a high percentage of
+the attackers even in cases where 1 run does not. Overall,
+this experiment shows the algorithm is generally successful
+in detecting a few relatively small attacks in large graphs.
+7.5 Deployment at Facebook
+
+CopyCatch is run regularly at Facebook, searching for
+new attacks. Parameters have been chosen to signiﬁcantly
+distinguish natural user behavior from ill-gotten Page Likes.
+In practice at Facebook, false positives are very rare due
+to the sparsity of the Page Like matrix. In particular, we
+labelled 22 randomly selected clusters caught in February
+2013. After intensive manual investigation, we found that
+100% of the clusters were caught due to Likes generated
+through deceitful means - 5 from fake accounts, 13 from
+malicious browser extensions, 1 from OS malware, 2 from
+credential stealing, and 1 from social engineering. When
+caught, users that have contributed to ill-gotten Page Likes
+have a portion of their past month’s Likes removed and are
+prevented from Liking pages for the next month. This re-
+moval of Page Likes are reﬂected in the Like counts of the
+Pages that beneﬁted. As shown in Figure 6(c), we have seen
+a general decrease in ill-gotten Page Likes since the start of
+this method. Overall, this method, in combination with the
+numerous other measures at Facebook mentioned in Section
+1, has proved eﬀective in decreasing ill-gotten Page Likes.
+
+8. DISCUSSION: APPLICATIONS
+
+As mentioned previously, the algorithm can be used in
+a number of settings including Twitter followers and Ama-
+zon product reviews. The use case at Twitter demonstrates
+
+the ability of the algorithm to be applied to non-bipartite
+graphs. However, in this case the general structure of the
+algorithm is the same - we look for some set of users that
+follow another set of users at around the same time.
+
+In this case of product reviews, we again have a bipartite
+graph between users and products where edges represent a
+review that was given to the product. However, in the case
+of product reviews, edges have much more meta-information
+beyond just timestamps, such as the IP address the review
+was written from, review tone, and linguistic cues. While
+this paper describes the edge constraints in terms of time,
+the algorithm only requires some center c and a comparison
+function φ. Therefore, we could extend the formulation as
+applied to Page Likes to use multiple linguistic and behav-
+ioral cues when attempting to ﬁnd near bipartite cores in
+settings with more metadata.
+
+9. CONCLUSIONS
+
+In this paper we have attacked the problem of detecting
+fraudulent user feedback through the context of catching
+lockstep behavior in Facebook Page Likes. Our main con-
+tributions are:
+
+1. Problem Formulation: We oﬀer a novel deﬁnition
+of suspicious behavior based only on graph structure
+and edge constraints.
+
+2. Algorithm: We describe two new algorithms to ﬁnd
+lockstep behavior ([n, m, ∆t, ρ]-TNBC’s) - one prov-
+ably convergent serial algorithm and one scalable, ef-
+ﬁcient MapReduce implementation.
+
+3. Theoretical analysis: We show that catching lock-
+step behavior limits the damage an adversary can do.
+By analyzing the eﬀect of a “greedy attack” and by
+applying the 60 year old Zarankiewicz problem to our
+setting, we show that ﬁnding an optimal adversarial
+attack is very hard.
+
+Finally, we experimentally demonstrate on Facebook and
+synthetic data that CopyCatch is scalable, generally con-
+verges, and eﬀective in catching lockstep behavior.
+Acknowledgments: We would like to thank Dr. Tao Stein,
+Kristie Chow, and Jieqi Yu for their valuable help and guidance
+in pursuing this project while at Facebook, and Professor Geoﬀ
+Gordon and Dr. Stephan G¨unnemann for their interesting and
+insightful discussions leading up to this paper.
+
+This material is based upon work supported by Facebook, a Na-
+tional Science Foundation Graduate Research Fellowship (Grant
+No. DGE-1252522), and the National Science Foundation under
+Grant No. IIS-1017415.
+
+0 0 5 10 15 20 0 10 20 30 40 50 60 70 80 90 100Total Number of Unique Users CaughtPercent of Users Caught that are NewNumber of RunsTotal NumberPercent 0 20 40 60 80 100(50,25)(250,125)(500,250)(750,375)(1000,500)Percent of Attacking Users CaughtAttack size (Number of Users, Number of Pages)08/2509/0809/2210/0610/2011/0311/1712/01Number of users caughtDate of CopyCatch run128clustering. ACM Trans. Knowl. Discov. Data,
+3(1):1:1–1:58, Helen Martin 2009.
+
+[17] K. Maruhashi, F. Guo, and C. Faloutsos.
+
+Multiaspectforensics: Pattern mining on large-scale
+heterogeneous networks with tensor analysis. In
+Proceedings of the Third International Conference on
+Advances in Social Network Analysis and Mining,
+2011.
+
+[18] S. Pandit, D. Chau, S. Wang, and C. Faloutsos.
+
+Netprobe: a fast and scalable system for fraud
+detection in online auction networks. In Proceedings of
+the 16th international conference on World Wide Web,
+pages 201–210. ACM, 2007.
+
+[19] S. Papadimitriou and J. Sun. Disco: Distributed
+
+co-clustering with map-reduce: A case study towards
+petabyte-scale end-to-end mining. In Data Mining,
+2008. ICDM ’08. Eighth IEEE International
+Conference on, pages 512 –521, dec. 2008.
+
+[20] E. Papalexakis, A. Beutel, and P. Steenkiste. Network
+
+anomaly detection using co-clustering. In 2012
+International Conference on Advances in Social
+Network Analysis and Mining, ASONAM 2012, 2012.
+[21] E. Papalexakis and N. Sidiropoulos. Co-clustering as
+multilinear decomposition with sparse latent factors.
+In Acoustics, Speech and Signal Processing (ICASSP),
+2011 IEEE International Conference on, pages
+2064–2067. IEEE, 2011.
+
+[22] R. Peeters. The maximum edge biclique problem is
+np-complete. Discrete Appl. Math., 131(3):651–654,
+Sept. 2003.
+
+[23] J. Pei, D. Jiang, and A. Zhang. On mining cross-graph
+
+quasi-cliques. In Proceedings of the eleventh ACM
+SIGKDD international conference on Knowledge
+discovery in data mining, KDD ’05, pages 228–238,
+New York, NY, USA, 2005. ACM.
+
+[24] B. A. Prakash, M. Seshadri, A. Sridharan,
+
+S. Machiraju, and C. Faloutsos. Eigenspokes:
+Surprising patterns and scalable community chipping
+in large graphs. PAKDD 2010, 21-24 June 2010.
+
+[25] T. Stein, E. Chen, and K. Mangla. Facebook immune
+system. In Proceedings of the 4th Workshop on Social
+Network Systems, SNS ’11, pages 8:1–8:8, New York,
+NY, USA, 2011. ACM.
+
+[26] A. Thusoo, Z. Shao, S. Anthony, D. Borthakur,
+
+N. Jain, J. Sen Sarma, R. Murthy, and H. Liu. Data
+warehousing and analytics infrastructure at facebook.
+In Proceedings of the 2010 ACM SIGMOD
+International Conference on Management of data,
+SIGMOD ’10, pages 1013–1020, New York, NY, USA,
+2010. ACM.
+
+[27] K. Zarankiewicz. Problem p 101. In Colloq. Math,
+
+volume 2, page 301, 1951.
+
+10. REFERENCES
+[1] Apache Hadoop. http://hadoop.apache.org/, 2012.
+[2] L. Akoglu, M. Mcglohon, and C. Faloutsos. RTM:
+
+Laws and a recursive generator for weighted
+time-evolving graphs. In International Conference on
+Data Mining, December 2008.
+
+[3] A. Anagnostopoulos, A. Dasgupta, and R. Kumar.
+
+Approximation algorithms for co-clustering. In
+Proceedings of the twenty-seventh ACM
+SIGMOD-SIGACT-SIGART symposium on Principles
+of database systems, PODS ’08, pages 201–210, New
+York, NY, USA, 2008. ACM.
+
+[4] A. Banerjee, I. Dhillon, J. Ghosh, S. Merugu, and
+
+D. Modha. A generalized maximum entropy approach
+to bregman co-clustering and matrix approximation.
+The Journal of Machine Learning Research,
+8:1919–1986, October 2007.
+
+[5] Y. Cheng. Mean shift, mode seeking, and clustering.
+
+Pattern Analysis and Machine Intelligence, IEEE
+Transactions on, 17(8):790 –799, aug 1995.
+
+[6] K. Crammer and G. Chechik. A needle in a haystack:
+
+local one-class optimization. In Proceedings of the
+twenty-ﬁrst international conference on Machine
+learning, ICML ’04, pages 26–, New York, NY, USA,
+2004. ACM.
+
+[7] J. Dean and S. Ghemawat. Mapreduce: Simpliﬁed
+
+data processing on large clusters. OSDI’04, Dec. 2004.
+
+[8] I. S. Dhillon, S. Mallela, and D. S. Modha.
+
+Information-theoretic co-clustering. In Conference of
+the ACM Special Interest Group on Knowledge
+Discovery and Data Mining, New York, NY, 2003.
+ACM Press.
+
+[9] Facebook. Better Security through Software.
+
+blog.facebook.com/blog.php?post=248766257130.
+2010.
+
+[10] Facebook. Working Together to Keep You Secure.
+blog.facebook.com/blog.php?post=68886667130,
+2009.
+
+[11] Facebook. Staying in Control of Your Facebook
+
+Logins.
+blog.facebook.com/blog.php?post=389991097130,
+2010.
+
+[12] Facebook. Improvements to our Site Integrity
+
+Systems. facebook.com/10151005934870766, 2012.
+
+[13] Z. F¨uredi. An upper bound on Zarankiewicz’ Problem.
+
+Combinatorics, Probability and Computing,
+5(01):29–33, 1996.
+
+[14] T. George and S. Merugu. A scalable collaborative
+
+ﬁltering framework based on co-clustering. In
+Proceedings of the Fifth IEEE International
+Conference on Data Mining, ICDM ’05, pages
+625–628, Washington, DC, USA, 2005. IEEE
+Computer Society.
+
+[15] G. Gupta and J. Ghosh. Robust one-class clustering
+
+using hybrid global and local search. In Proceedings of
+the 22nd international conference on Machine
+learning, ICML ’05, pages 273–280, New York, NY,
+USA, 2005. ACM.
+
+[16] H.-P. Kriegel, P. Kr¨oger, and A. Zimek. Clustering
+
+high-dimensional data: A survey on subspace
+clustering, pattern-based clustering, and correlation
+
+129

@@ -1,0 +1,2402 @@
+Extraction and Search of Chemical Formulae in Text
+
+Documents on the Web ⁄
+
+Bingjun Sun*, Qingzhao Tan*, Prasenjit Mitra*y, C. Lee Giles*y
+
+*Department of Computer Science and Engineering yCollege of Information Sciences and Technology
+
+The Pennsylvania State University
+University Park, PA 16802, USA
+
+fbsun,qtang@cse.psu.edu, fpmitra,gilesg@ist.psu.edu
+
+ABSTRACT
+Often scientists seek to search for articles on the Web re-
+lated to a particular chemical. When a scientist searches
+for a chemical formula using a search engine today, she gets
+articles where the exact keyword string expressing the chem-
+ical formula is found. Searching for the exact occurrence of
+keywords during searching results in two problems for this
+domain: a) if the author searches for CH4 and the arti-
+cle has H4C, the article is not returned, and b) ambiguous
+searches like \He" return all documents where Helium is
+mentioned as well as documents where the pronoun \he"
+occurs. To remedy these deﬂciencies, we propose a chemical
+formula search engine. To build a chemical formula search
+engine, we must solve the following problems: 1) extract
+chemical formulae from text documents, 2) index chemical
+formulae, and 3) design ranking functions for the chemical
+formulae. Furthermore, query models are introduced for for-
+mula search, and for each a scoring scheme based on features
+of partial formulae is proposed to measure the relevance of
+chemical formulae and queries. We evaluate algorithms for
+identifying chemical formulae in documents using classiﬂ-
+cation methods based on Support Vector Machines (SVM),
+and a probabilistic model based on conditional random ﬂelds
+(CRF). Diﬁerent methods for SVM and CRF to tune the
+trade-oﬁ between recall and precision for imbalanced data
+are proposed to improve the overall performance. A feature
+selection method based on frequency and discrimination is
+used to remove uninformative and redundant features. Ex-
+periments show that our approaches to chemical formula
+extraction work well, especially after trade-oﬁ tuning. The
+results also demonstrate that feature selection can reduce
+the index size without changing ranked query results much.
+
+Categories and Subject Descriptors
+H.3.3 [Information Storage and Retrieval]: Information
+Search and Retrieval|Information ﬂltering,Query formula-
+tion,Retrieval models,Search process; H.3.1 [Information
+Storage and Retrieval]: Content Analysis and Index-
+ing|Linguistic processing; I.2.7 [Artiﬂcial Intelligence]:
+Natural Language Processing|Text analysis; J.2 [Physical
+Sciences and Engineering]: Chemistry
+⁄This work was partially supported by NSF grant 0535656.
+Copyright is held by the International World Wide Web Conference Com›
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2007, May 8(cid:150)12, 2007, Banff, Alberta, Canada.
+ACM 978›1›59593›654›7/07/0005.
+
+General Terms
+Algorithms, Design, Experimentation
+
+Keywords
+Chemical formula, entity extraction, support vector ma-
+chines, conditional random ﬂelds, feature boosting, feature
+selection, query models, similarity search, ranking
+
+1.
+
+INTRODUCTION
+
+Increasingly, more scientiﬂc documents are being pub-
+
+lished on the World-Wide-Web. Scientists, especially chemists,
+often want to search for articles related to particular chem-
+icals. One obvious method to express such searches is by
+using the chemical formulae of the chemical compounds.
+Current search engines do not support users searching for
+documents using chemical formulae. In this work, we show
+how one can construct a chemical formula search engine,
+which is one of the E-science application areas [20, 29].
+
+When a scientist searches for a chemical formula using
+a search engine today, articles are usually returned where
+the exact keyword string expressing the chemical formula
+is found. Searching for the exact occurrence of keywords
+results in two problems for this domain: a) if the author
+searches for CH4 and the article has H4C, the article is not
+returned, and b) ambiguous searches like \He" return all
+documents where Helium is mentioned as well as documents
+where the pronoun \he" occurs. To remedy these deﬂcien-
+cies, we propose a chemical formula search engine. To build
+such a search engine, we must solve the following problems:
+(1) extract chemical formulae from text documents, (2) in-
+dex chemical formulae, and (3) design ranking functions for
+the chemical formulae.
+
+Extracting chemical formulae from text documents is a
+classiﬂcation problem where the text is classiﬂed into two
+classes: a) chemical formulae and b) other text. Each chem-
+ical formula is then transformed into a canonical form (e.g.
+N D4 into 2H4N ) and indexed to enable fast searches in re-
+sponse to queries posed by end-users. Furthermore, we also
+propose and provide the semantics of four types of queries to
+allow for fuzzy searches for chemical formulae. We have also
+devised a scoring scheme for each of these query types, based
+on features of partial formulae, to measure the relevance of
+chemical formulae and queries.
+
+A simple rule-based algorithm can be designed to check
+if words are composed of the symbols of chemical elements
+and numbers. While this rule-based algorithm can give high
+
+WWW 2007 / Track: E*-ApplicationsSession: E-Commerce and E-Content251recall identifying all chemical formulae, it results in low pre-
+cision because for terms like \He", \I", etc., the algorithm
+has to decide whether the term is a chemical formula or a
+pronoun or other non-formula terms. Because natural lan-
+guage understanding is a hard unsolved problem, we employ
+a classiﬂcation algorithm based on the statistics of the con-
+text of the occurrence of a term to determine whether it is
+a chemical formula or not.
+
+This problem can be addressed in two stages. The ﬂrst
+stage is that of chemical formula extraction. Previous re-
+search on detecting names [5], biological entities [17], or
+even advertising keywords [28] uses a broad range of tech-
+niques from rule-based methods to machine-learning based
+ones. Among these approaches, the machine-learning-based
+approaches utilizing domain knowledge perform the best be-
+cause they can mine implicit rules as well as utilize prior
+domain knowledge in statistical models to improve the over-
+all performance. In the second stage, the chemical formulae
+are indexed and ranked against user queries. For the second
+stage of formula search, there are two categories of related
+research issues and previous work. One is how to represent
+and index patterns (graphs or formulae), including feature
+selection of substructures [26]. Indexing graphs or formulae
+is important to support various query models especially sim-
+ilarity searches, which compare the internal structures. The
+second set of issues involve data mining, such as mining fre-
+quent substructures [6, 11], and similarity structure search
+[25, 7, 19, 27], which use some speciﬂc methods to mea-
+sure the similarity of two patterns. However, no previous
+research has addressed the issue of extracting and searching
+for chemical formulae in text documents.
+
+The major contribution of this paper is to show how to
+build a chemical formula search engine. We evaluate algo-
+rithms for identifying chemical formulae in documents us-
+ing classiﬂcation methods based on SVM, and a probabilis-
+tic model based on CRF. Similar to decision threshold ad-
+justment in the testing of SVM, a novel method of feature
+boosting for diﬁerent classes is introduced to improve the
+performance of CRF, by tuning the trade-oﬁ of recall and
+precision of the true class for imbalanced data (i.e., where
+the number of occurrences of entities belonging to the two
+classes are substantially diﬁerent). We propose a sequential
+feature selection algorithm, which ﬂrst mines frequent sub-
+structures, and then selects features from shorter to longer
+partial formulae, based on criteria of feature frequency and
+discrimination with respect to the current set of selected
+features. A partial formula (e.g. COOH ) is deﬂned as a
+partial sequence of a formula (e.g. CH3COOH ). We then
+propose four basic types of formula search queries: exact
+search, frequency search, substructure search, and similar-
+ity search. Finally, we describe relevance scoring functions
+corresponding to the types of queries. Our formula search
+engine is an integral part of ChemX Seer, a digital library
+for chemistry and embeds the formula search into document
+search by query rewrite and expansion (Figure 1).
+
+The rest of this paper is organized as follows: Section
+2 reviews related works.
+In Section 3, we present entity-
+extraction approaches based on SVM and CRF, improve
+these methods based on decision-threshold tuning and fea-
+ture boosting, and discuss the feature set used in our re-
+search. Section 4 introduces the sequential feature-selection
+algorithm for index construction of partial formulae, four
+categories of formula query models, and corresponding scor-
+
+Web
+
+Web Service
+
+Web Server
+
+Documents URL
+
+Focused Crawler
+
+Documents PDF
+
+Converter
+
+Documents TXT
+
+Formula Entity Extraction
+Documents
+
+Formulae
+
+Formula Parser & Analyzer
+
+Substructures
+
+Query Filter & Rewrite
+
+Formula Query
+
+Document Query
+
+Formula Ranking
+
+Document Ranking
+
+Document DB
+
+Meta-Data
+
+Formula
+
+Index
+
+Document
+
+Index
+
+Feature Selection
+
+Formula Indexing Document Indexing
+
+Figure 1: Architecture of ChemX Seer Formula
+Search and Document Search
+
+ing functions. In Section 5, experiments about formula ex-
+traction, indexing, and search are described, and results are
+presented and discussed to show that our methods work well.
+Conclusions and some future directions of the research work
+are discussed in Section 6.
+
+2. RELATED PREVIOUS WORK
+
+Related work involves two stages: 1) extraction of chemi-
+cal structure information, and 2) indexing and search chem-
+ical molecules. The problems of mining chemical structural
+information from literature [2] include: 1) chemical structure
+information can be in text or image formats, and 2) there
+are many standards. Some partial solutions exist, especially
+for commercial applications [2].
+2.1 Entity Extraction
+
+Labelling sequences is a task of assigning labels to se-
+quences of observations, e.g. labelling Part of Speech (POS)
+tags and entity extraction. Labelling POS tags represents a
+sentence with a full tree structure and labels each term with
+a POS tag, while shallow parsers [22] are used to extract
+entities. Methods used for labelling sequences are diﬁer-
+ent from those that are used for traditional classiﬂcation,
+which only considers independent samples. Hidden Markov
+Models (HMM ) [8] are one of the common methods used
+to label or segment sequences. HMM has strong indepen-
+dence assumptions and suﬁers the label-bias problem [12].
+Another category of entity extraction methods is based on
+Maximum Entropy (ME) [5], which introduces an exponen-
+tial probabilistic model based on binary features extracted
+from sequences and estimate parameters using maximum
+likelihood. MEMM [14] combines the ideas of HMM and
+ME, but also suﬁers the label-bias problem. Diﬁerent from
+those directed graphic models of HMM and MEMM, CRF
+[12] uses the undirected graphic model, which can avoid the
+label-bias problem. It follows the maximum entropy princi-
+ple [3] as ME and MEMM, using exponential probabilistic
+models and relaxing the independence assumption to involve
+multiple interaction and long-range dependencies. For la-
+belling sequences, models based on linear-chain CRF have
+been applied to many applications, such as named-entity
+recognition [15], detecting biological entities, like protein
+[21] or gene names [17], etc. However, chemical formula
+tagging is diﬁerent from them in the tokenizing process and
+the feature set used due to diﬁerent domain knowledge.
+
+WWW 2007 / Track: E*-ApplicationsSession: E-Commerce and E-Content252Entity extraction can also be viewed as a classiﬂcation
+problem where approaches such as SVM [10, 4] are appli-
+cable, since information about dependence in the text con-
+text of terms can be represented as overlapping features be-
+tween adjacent terms. However, usually entity extraction is
+an asymmetric binary classiﬂcation problem on imbalanced
+data, where there are many more false samples than true
+samples, but precision and recall of the true class is more
+important than the overall accuracy. In this case, the deci-
+sion boundary may be dominated by false samples. Several
+methods such as cost-sensitive classiﬂcation and decision-
+threshold tuning are studied for imbalanced data [23]. We
+have observed that CRFs suﬁer from this problem too, since
+in previous work based on CRF [17, 22], usually recall is
+lower than precision. To the best of our knowledge, no meth-
+ods to tune the trade-oﬁ between them exist.
+2.2 Graph Similarity Search
+
+In Chemoinformatics and the ﬂeld of graph databases, to
+search for a chemical molecule, the most common and sim-
+ple method is the substructure search [25], which retrieves
+all molecules with the query substructure(s). However, suf-
+ﬂcient knowledge to select substructures to characterize the
+desired molecules is required, so the similarity search is
+desired to bypass the substructure selection. Generally, a
+chemical similarity search is to search molecules with similar
+structures as the query molecule. Previous methods fall into
+two major categories based on diﬁerent criteria to measure
+similarity. The ﬂrst one is feature-based approaches using
+substructure fragments [25, 27], or paths [24]. The major
+challenge for this category is how to select a set of features,
+like substructure fragments or paths, to ﬂnd a trade-oﬁ be-
+tween e–ciency and eﬁectiveness and improve both of them.
+Previous work [26] focused on selection of good features for
+indexing. They selected frequent and discriminative sub-
+structure fragments sequentially. The basic idea is that the
+next feature selected from the candidate feature set should
+not appear only in a very small portion of data, and should
+not be redundant with respect to the current selected fea-
+tures. Thus, if a feature is too frequent in the data set,
+i.e., with a low entropy value, it is not a good candidate.
+However, in practice, no features are too frequent. After
+substructure analysis, feature extraction, and mapping to
+vector space, distance or kernel functions can be applied to
+measure the similarity. The second category of approaches
+uses the concept of Maximum Common Subgraph (MCS)
+[19] to measure the similarity by ﬂnding the size of the MCS
+of two graphs. The feature-based approaches are more e–-
+cient than the second one, since ﬂnding MCS is expensive
+and needs to be computed between the query graph and ev-
+ery graph in the collection. Thus, feature-based approaches
+based on substructure fragments are used to screen candi-
+dates before ﬂnding MCS [27]. Hierarchical screening ﬂlters
+are introduced in [19], where at each level, the screening
+method is more expensive but more accurate.
+3. FORMULA EXTRACTION
+
+A chemical formula like CH4 is a kind of sequential string
+representation of a chemical molecule. Diﬁerent from per-
+son names, locations, or biological entities, the number of
+chemical formulae is huge, but the string pattern is deﬂned
+by some particular rules. A chemical formula can have only
+partial information of the corresponding molecule structure,
+and a molecule may have diﬁerent formula representations.
+
+Usually, a rule-based string pattern match approach can
+identify most of the chemical formulae, but two types of am-
+biguity exist. The ﬂrst case is that even though the string
+pattern matches the formula pattern, and each letter seems
+like a chemical element, this chemical molecule may not exist
+at all. The matched term may be just an abbreviation, e.g.
+NIH. There are too many implicit relations which are infea-
+sible for the rule-based approach. The second case is that
+even though the matched term is a chemical formula string,
+in fact it is an English word, or a person name, or an ab-
+breviation in the semantic context. For example, ambiguity
+exists for I (Iodine) and I, He(Helium) and He, In(Indium)
+and In. Several text fragments are selected to show the two
+types of ambiguities.
+
+Non-formula
+\... This work was funded under NIH grants ..."
+\... YSI 5301, Yellow Springs, OH, USA ..."
+\... action and disease. He has published over ..."
+Formula
+\... such as hydroxyl radical OH, superoxide O2- ..."
+\... and the other He emissions scarcely changed ..."
+Thus, machine learning methods based on SVM and CRF
+are proposed for chemical formulae extraction. Advanced
+features from the rule-based string pattern match approach
+are utilized to improve the overall performance.
+3.1 Support Vector Machines
+
+SVM [4] is a binary classiﬂcation method which ﬂnds an
+optimal separating hyperplane fx : w¢x+b = 0g to maximize
+the margin between two classes of training samples, which
+is the distance between the plus-plane fx : w ¢ x + b = 1g
+and the minus-plane fx : w ¢ x + b = ¡1g. Thus, for separa-
+ble noiseless data, maximizing the margin equals minimizing
+the objective function jjwjj2 subject to 8i; w ¢ yi(xi + b) ‚ 1.
+In the noiseless case, only the so-called support vectors, vec-
+tors closest to the optimal separating hyperplane, are use-
+ful to determine the optimal separating hyperplane. Un-
+like classiﬂcation methods where minimizing loss functions
+on wrongly classiﬂed samples are aﬁected seriously by im-
+balanced data, the decision hyperplane in SVM is not af-
+fected much. However, for inseparable noisy data, SVM
+minimizes the objective function: jjwjj2 + C Pn
+i=1 "i subject
+to 8i; w ¢ yi(xi + b) ‚ 1 ¡ "i, and "i ‚ 0, where "i is the slack
+variable, which measures the degree of misclassiﬂcation of a
+sample xi. This noisy objective function has included a loss
+function that is aﬁected by imbalanced data.
+3.2 Conditional Random Fields
+
+Suppose we have a training set S of labelled sequences,
+where each sequence is an independently and identically dis-
+tributed sample, but each sample has an internal dependent
+structure. For example, in a document, adjacent terms have
+strong dependence. Could we ﬂnd a method for each sample
+to represent the conditional probability p(yjx; ‚), where x
+is the sequence of observations, y is the sequence of labels,
+and ‚ is the parameter vector of the model, and consider the
+dependent structure in each sample? Maximum Likelihood
+can be used to learn the parameter ‚ and ﬂnd the best y.
+
+A CRF model can be viewed as an undirected graphical
+model G = (V; E). The conditional probability of the ran-
+dom vector Y given observation sequences X is estimated
+from the data set [12]. Each random variable Yv in the ran-
+dom vector Y is represented by a node v 2 V in G. Each
+e 2 E represents the mutual dependence of a pair of labels
+
+WWW 2007 / Track: E*-ApplicationsSession: E-Commerce and E-Content253Yv; Yv0 . A pair of vertices in G are conditionally independent
+given all other random variables. Even though the structure
+of G may be arbitrary, for sequential data, usually the sim-
+plest and most common structure is a ﬂrst-ordered chain,
+where only neighbors in a sequence for Y are dependent.
+
+To model the conditional probability p(yjx; ‚), we need
+to ﬂnd a probability model that can consider not only the
+probability of each vertex, but also the joint probability of
+each pair of vertices. Then if the labels or observations of
+a pair of vertices have some changes, the probability of this
+model changes too. A probability model for each sequence
+based on feature functions is applied in CRF,
+
+p(yjx; ‚) =
+
+1
+
+Z(x)
+
+exp(X
+
+j
+
+‚jFj(y; x));
+
+(1)
+
+where Fj(y; x) is a feature function which extracts a real-
+valued feature from the label sequence y and the observation
+sequence x, and Z(x) is a normalization factor for each dif-
+ferent observation sequence x. For chain-structured CRF
+models of sequential inputs, usually only binary functions
+with values of f0; 1g are considered, and two types of fea-
+ture are used, state feature Fj(y; x) = Pjyj
+i=1 sj(yi; x; i) to
+model the probability of a vertex in G and transition feature
+Fj(y; x) = Pjyj
+i=1 tj(yi¡1; yi; x; i) to consider mutual depen-
+dence of the vertex labels for each edge e in G, and each
+function has a weight ‚j. The feature weight ‚j speciﬂes
+whether the corresponding feature is favored or not. The
+weight ‚j for the feature j should be highly positive if this
+feature tends to be on for the training data, and highly neg-
+ative if it tends to be oﬁ.
+
+Once we have p(yjx; ‚), the log-likelihood for the whole
+
+train set S is given by
+
+L(‚) =
+
+jSj
+
+X
+
+k=1
+
+log(p(y(k)jx(k); ‚))
+
+(2)
+
+The goal is to maximize this log-likelihood, which has been
+proved to be a smooth and concave function, and to estimate
+parameters ‚. To avoid the over-ﬂtting problem, regulariza-
+‚2
+j
+tion may be used; that is, a penalty (¡ Pj=1
+2(cid:190)2 ) is added
+to the log-likelihood function (3), where (cid:190) is a parameter
+which determines how much to penalize ‚. Diﬁerentiating
+the log-likelihood function (3) with respect to ‚j, setting the
+derivative to zero and solving for ‚ does not have a closed
+form solution. Numerical optimization algorithms can be
+applied to solve this problem [12, 18, 22].
+3.3 Trade›off Tuning for Imbalanced Data
+
+As mentioned before, from the results of previous research,
+we see that usually for imbalanced data, recall is lower than
+precision for the true class. However, usually extraction of
+true samples is more important than the overall accuracy,
+and sometimes recall is more important than precision, es-
+pecially in information retrieval (IR).
+
+Usually some parameter tuning can improve recall with
+some loss of precision. Those classiﬂcation approaches mainly
+fall into two categories, a) tuning in the training process and
+b) tuning in the testing process. Cross validation is used
+to estimate the best parameter [23]. The former approach
+oversamples the minority class, or undersamples the major-
+ity class, or gives diﬁerent weights for two classes, or gives
+diﬁerent penalties (costs of risk) to wrong classiﬂcations, ev-
+ery time during training. For example, if Cost(predicted =
+truejreal = f alse) < Cost(predicted = f alsejreal = true)
+
+for each sample, recall is more important than precision.
+These asymmetric cost values aﬁect the loss function, and
+ﬂnally change the decision boundary of the classes. The lat-
+ter approach adjusts and ﬂnds the best cut-oﬁ classiﬂcation
+threshold t instead of the symmetric value for the output,
+which actually only translates the decision boundary [23],
+but is more e–cient because only one training process is re-
+quired. For example, to increase the importance of recall in
+SVM, a cut-oﬁ classiﬂcation threshold value t < 0 should
+be selected.
+In methods with outputs of class probability
+[0; 1], then a threshold value t < 0:5 should be chosen. As
+noted before, for noiseless data, SVM is stable, but for noisy
+data, SVM is aﬁected much by imbalanced support vectors.
+In our work, the latter approach is applied for SVM, i.e.,
+when t < 0, recall is to be improved but precision decreases.
+When t > 0, a reverse change is expected.
+
+In CRF we use a weight parameter (cid:181) to boost features
+corresponding to the true class during the testing process.
+Similar to the classiﬂcation threshold t in SVM, (cid:181) can tune
+the trade-oﬁ between recall and precision, and may be able
+to improve the overall performance, since the probability
+of the true class increases. During the testing process, the
+sequence of labels y is determined by maximizing the proba-
+bility model p(yjx; ‚) = 1
+Z(x) exp(Pj ‚jFj(y; x; (cid:181)y)), where
+Fj(y; x; (cid:181)y) = Pjxj
+i=1 (cid:181)yi tj(yi¡1; yi; x; i),
+(cid:181)y is a vector with (cid:181)yi = (cid:181) when yi = true, or (cid:181)yi = 1 when
+yi = f alse, and ‚j are parameters learned while training.
+
+i=1 (cid:181)yi sj(yi; x; i) or Pjxj
+
+3.4 Feature Set and Induction
+
+Generally, two categories of state features are extracted
+from sequences of terms: single-term features from a single
+term, and overlapping features from adjacent terms. There
+are two types of features: surﬂcial features and advanced
+features. Surﬂcial features are those that can be observed
+directly from the term, such as word or word preﬂx and suf-
+ﬂx features, orthographic features, or lists of speciﬂc terms.
+Advanced features are those generated by complex domain
+knowledge or other data mining approaches in advance.
+
+Usually for data mining, advanced features are more pow-
+erful than surﬂcial features, but more expensive and some-
+times infeasible.
+If an advanced feature has a very high
+correlation with the true class label, then a high accuracy
+is expected. Advanced features can be inferred using rule-
+based approaches or machine-learning approaches.
+
+In our work, a rule-based approach using string pattern
+matching is applied to generate a set of features. Since we
+do not have a dictionary of all chemical molecules, and the
+formula of a molecule may have diﬁerent string representa-
+tions, we consider features of co-occurrence of two chemical
+elements in a formula to measure whether a matched string
+is a formula. For example, C and O co-occur frequently, but
+an element of the noble gases e.g. He and a metal element
+e.g. Cu are impossible to appear together in a formula.
+
+As mentioned before, we need to distinguish formula terms
+from English words or personal names. Linguistic features
+like POS tags are used based on natural language processing
+(NLP), such as noun or proper noun. Those features are
+useful especially when combined with overlapping features
+in the context of a token. All the features that are used
+by our algorithms are summarized here. Note that all the
+features based on observations are combined with the state
+labels of tokens to construct transition features.
+
+WWW 2007 / Track: E*-ApplicationsSession: E-Commerce and E-Content254Summary of features
+Surﬂcial features: InitialCapital, AllCapitals, OneCapital,
+HasDigit, HasDash, HasPunctuation, HasDot, HasBrack-
+ets, HasSuperscripts, IsChemicalElementName, IsAmbigu-
+ousEnglishWord, IsAmbiguousPersonalName, IsAbbreviation,
+character-n-gram features. For features like IsChemicalEle-
+mentName and IsAbbreviation, we have lists of names of
+chemical elements and common abbreviations, e.g. NIH.
+Advance features: IsFormulaPattern, IsFormulaPatternWith-
+Cooccurrence, IsLongFormulaPattern, IsFormulaPatternWith-
+Superscript, IsFormulaPatternWithLowerCase, IsPOSTagNN,
+etc. String pattern matching and domain knowledge are
+used for features of formula pattern.
+Overlapping features: Overlapping features of adjacent terms
+are extracted. We used -1, 0, 1 as the window of features,
+so that for each token, all Overlapping features about the
+last token and the next token are included in the feature set.
+For instance, for He in \... . He is ...", feature(termn¡1 =
+\." ^ termn = initialCapital)=true, and feature(termn =
+initialCapital ^ termn+1 = isP OST agV BZ)=true. This
+\He" is likely to be an English word instead of Helium.
+
+Finally all features combine with labels. However, there
+are too many features and most occur rarely. We apply
+an approach to feature induction for CRF proposed in [13]
+to score candidate features using their log-likelihood gain:
+¢LG(f ) = L(S)F [ff g ¡ L(S)F , where F is the current fea-
+ture set, L(S)F is the log-likelihood of the training set using
+F , and L(S)F [ff g is the log-likelihood of the training set
+adding feature f . Thus, more useful features are selected.
+4. FORMULA INDEXING AND SEARCH
+
+We deﬂne chemical formulae formally as follows:
+Deﬂnition 1. Formula and Partial Formula: Given a
+vocabulary of chemical elements, E, a chemical formula f is
+a sequence of pairs of a partial formula and the correspond-
+ing frequency < si; f reqsi >, where each si is a chemical
+element e 2 E or another chemical formula f 0. A partial
+formula is viewed as a substructure of f , denoted as s „ f ,
+is a subsequence of f , or a subsequence of a partial formula
+si in < si; f reqsi > of f , or a subsequence of a partial for-
+mula s0 of f , so that if s0 „ f ^ s „ s0, then s „ f . The
+length of a formula L(f ) or a partial formula L(s) is deﬂned
+as the number of pairs in the sequence.
+
+A partial formula is also a formula by deﬂnition, but may not
+be a meaningful formula. For example, CH3(CH2)2OH is a
+chemical formula, and C, CH2, (CH2)2, and CH3(CH2)2OH
+all are partial formulae.
+
+We discuss three issues in this section. First, we discuss
+how to analyze the structure of a chemical formula and select
+features for indexing, which is important for substructure
+search and similarity search. Since the full graphic struc-
+ture information of a molecule is unavailable, we use par-
+tial formulae as substructures for indexing and search. The
+same chemical molecule may have diﬁerent formula strings
+mentioned in text, e.g. acetic acid can be CH3COOH or
+C2H4O2. The same formula can represent diﬁerent molecules,
+e.g. C2H4O2 can be acetic acid (CH3COOH ) or methyl for-
+mate (CH3OCHO). Second, diﬁerent from keywords search
+of documents in IR, to search chemical formulae, we should
+consider structures of formulae instead of only frequencies
+of chemical elements, because in traditional IR, there are
+enough terms to distinguish documents, while in Chemoin-
+formatics, using chemical elements and their frequencies is
+
+Input: Candidate Feature Set C with frequency F reqs and
+support Ds for each substructure s, minimal threshold value
+of frequency F reqmin, minimal discriminative score ﬁmin.
+Output: Selected Feature Set F .
+1. Initialization: F = f;g, D; = D, length l = 0.
+2. while C is not empty, do
+3.
+4.
+5.
+6.
+7.
+
+l = l + 1;
+for each s 2 C
+
+compute ﬁs using Eq (3) (ﬁ
+
+(0)
+s = jDj
+
+jDsj , since
+
+if F reqs > F reqmin
+
+if Ls = l
+
+no s satisﬂes s0 „ s ^ s0 2 F )
+
+8.
+9.
+10.
+11.
+12. return F ;
+
+if ﬁs > ﬁmin
+
+move s from C to F ;
+
+else remove s from C;
+
+else remove s from C;
+
+Figure 2: Algorithm: Sequential Feature Selection
+
+not enough to distinguish chemical formulae. Third, to score
+the relevance of the search results to the query formula, each
+feature is assigned a weight based on its length, frequency
+in formulae, and distribution among formulae.
+4.1 Feature Selection for Index Construction
+To support similarity search, partial formulae of each for-
+mula are useful as possible substructures for indexing. How-
+ever, since partial formulae of a partial formula s „ f with
+L(s) > 1 are also partial formulae of the formula f , the num-
+ber of all partial formulae of the formula set is quite large.
+For instance, the candidate features of CH3OH are C, H3,
+O, H, CH3, H3O, OH, CH3O, H3OH, and CH3OH. We do
+not need to index every one due to redundant information.
+For example, two similar partial formulae may appear in the
+same set of formulae (e.g. CH3CH2COO and CH3CH2CO),
+because they generate from the same super sequence. In this
+case, it is enough to index only one of them. Moreover, it
+is not important to index infrequent fragments. For exam-
+ple, a complex partial formula appearing only once in the
+formula set is not necessary for indexing, if its selected frag-
+ments are enough to distinguish the formula having it from
+others. E.g. when querying formulae having partial formu-
+lae of CH3,CH2,CO,OH, and COOH, if only CH3CH2COOH
+is returned, then it is not necessary to index CH3CH2COO.
+Using a similar idea and notations about feature selection in
+[26], given a whole data set D, Ds is the support of substruc-
+ture s, the set of all formulae containing s, and jDsj is the
+number of items in Ds. All substructures of a frequent sub-
+structure are frequent too. Based on these observations, two
+criteria may be used to sequentially select features of sub-
+structures into the set of selected features F . The feature
+selected should be 1) frequent, and, 2) its support should
+not overlap too much with the intersection of supports of its
+selected substructures in F .
+
+For Criterion 1, mining frequent substructures is required
+in advance. After the algorithm extracts all chemical for-
+mulae from documents, it generates the set of all partial
+formulae and records their frequencies. Then, for Criterion
+2, we deﬂne a discriminative score for each feature candidate
+with respect to F . Similar to the deﬂnitions in [26], a sub-
+structure s is redundant with respect to the selected feature
+set F , if jDsj … j \s02F ^s0„s Ds0 j. A substructure s is dis-
+criminative with respect to F , if jDsj << j \s02F ^s0„s Df j.
+
+WWW 2007 / Track: E*-ApplicationsSession: E-Commerce and E-Content255Thus, the discriminative score for each candidate s with re-
+spect to F is deﬂned as:
+
+ﬁs = j \s02F ^s0„s Ds0 j=jDsj:
+
+(3)
+
+The sequential feature selection algorithm is described in
+Figure 2. The algorithm starts with an empty set F of se-
+lected features, scanning each substructure from the length
+l = 1 to l = L(s)max. At each length of substructure, all
+frequent candidates with discriminative scores larger than
+the threshold are selected. This scanning sequence ensures
+that at each length of substructure, no scanned substruc-
+ture is a substructure of another scanned one. Thus, only
+selected substructures at previous steps are considered to
+compute the discriminative scores. All substructures s with
+L(s) > l but F req(s) <= F reqmin are removed directly
+from the candidate set C, because even when L(s) = l after
+several scanning cycles to longer substructures, F reqs still
+has the same value, and ﬁs will decrease or remain the same.
+Consequently, the feature is not selected.
+4.2 Query Models
+
+We propose four types of queries for chemical formula
+search: exact search, frequency search, substructure search,
+and similarity search. Usually only frequency formula search
+is supported by current chemistry information systems. As
+mentioned before, substructure search and similarity search
+are common and important for structure search, but not
+for formula search, because formulae do not contain enough
+tructural information. Motivated by this, we propose heuris-
+tics for fuzzy formula search based on partial formulae.
+
+Deﬂnition 2. Formula Query and Frequency Range:
+A formula query q is a sequence of pairs of a partial formula
+and the corresponding frequency range < si; rangesi >,
+where token si is a chemical element e 2 E or another chem-
+ical formula f 0, and rangesi = [k[lowk; upperk]; upperk ‚
+lowk ‚ 0.
+
+Exact search
+
+The answer to an exact search query is formulae having
+the same sequence of partial formulae within the frequency
+ranges speciﬂed in the query. Exact search usually is used to
+search exact representation of a chemical molecule. Diﬁerent
+formula representations for the same molecule cannot be
+retrieved. For instance, the query C1-2H4-6 matches CH4
+and C2H6, but not H4C or H6C2.
+Frequency searches
+
+We say that a user runs a frequency search, when he spec-
+iﬂes the elements and their frequencies. All documents with
+chemical formulae that have the speciﬂed elements within
+the speciﬂed frequency ranges are returned. As indicated
+above, most current chemistry databases support frequency
+searches as the only query models for formula search. There
+are two types of frequency searches: full frequency searches
+and partial frequency search. When a user speciﬂes the query
+C2H4-6, the system returns documents with the chemical
+formulae with two C and four to six H, and no other atoms
+for full frequency search, e.g. C2H4, and returns formulae
+with two C, four to six H and any numbers of other atoms
+for partial frequency search, e.g. C2H4 and C2H4O.
+Substructure search
+
+Substructure searches ﬂnd formulae that may have a query
+substructure deﬂned by users. In substructure searches, the
+query q has only one partial formula s1 with ranges1 = [1; 1],
+
+and retrieved formulae f have f reqs1 ‚ 1. However, since
+the same substructure may have diﬁerent appearances in
+formulae, three types of matches are considered with diﬁer-
+ent ranking scores (Section 4.3). E.g. for the query COOH,
+COOH gets an exact match (high score), HOOC reverse
+match (medium score), and CHO2 parsed match (low score).
+Similarity search
+
+Similarity searches return documents with chemical for-
+mulae with similar structures as the query formula, i.e., a
+sequence of partial formulae si with a speciﬂc rangesi , e.g.
+CH3COOH. However, there are two reasons that traditional
+fuzzy search based on edit distance is not used for formula
+similarity search: 1) Formulae with more similar structures
+or substructures may have larger edit distance. E.g. H2CO3
+can also be mentioned as HC(O)OOH, but the edit distance
+of them is larger than that of H2CO3 and HNO3 (6>2). Us-
+ing the partial formula based similarity search of H2CO3,
+HC(O)OOH has a higher ranking score than HNO3 based
+on Equation (6). 2) Compute edit distances of the query for-
+mula and all the formulae in the data set is computational
+expensive, so a method based on indexed features of partial
+formulae is much faster and feasible in practice. Our ap-
+proach is feature-based similarity search, since full structure
+information is unavailable in formulae. The algorithm uses
+selected partial formulae as features. We design and present
+a scoring function in Section 4.3 based on all selected partial
+formulae that are selected and indexed in advance, so that
+the query processing and the ranking score computation is
+e–cient. Formulae with top ranking scores are retrieved.
+Conjunctive search
+
+Conjunctive search of the four basic formula searches is
+supported for ﬂltering search results, so that users can deﬂne
+various constraints to search desired formulae. For example,
+a user can search formulae that have two to four C, four
+to ten H, and may have a substructure of CH2, using a
+conjunctive search of a full frequency search C2-4H4-10 and
+a substructure search of CH2.
+Query rewriting
+
+Since the ultimate goal of users is to search relevant doc-
+uments, the users can search using formulae as well as other
+keywords. The search is performed in two stages. First, a
+query string is analyzed. All the embedded formula searches
+are taken out, and all possible desired formulae are retrieved.
+Then, after relevant formulae are returned, the original query
+string is rewritten by embedding those formulae into the
+corresponding positions of the original query string as sub-
+groups with OR operators. To involve the relevance score for
+each retrieved formula, boosting factors with the values of
+relevance scores are added to each retrieved formula with a
+goal to rank corresponding documents. Second, the rewrit-
+ten query is used to search relevant documents. For exam-
+ple, if a user searches documents with the term oxygen and
+the formula CH4, the formula search CH4 is processed ﬂrst
+and matches CH4 and H4C with corresponding scores of 1
+and 0.5. Then the query is written as \oxygen (CH4 ^1 OR
+H4C ^0.5)", where 1 and 0.5 are the corresponding boosting
+factors. Then documents with CH4 get higher scores.
+
+4.3 Relevance Scoring
+
+A scoring scheme based on the Vector Space Model in IR
+and features of partial formulae is used to rank retrieved
+formulae. We adapt the concepts of the term frequency tf
+and the inverse document frequency idf to formula search.
+
+WWW 2007 / Track: E*-ApplicationsSession: E-Commerce and E-Content256Deﬂnition 3. SF.IFF and Atom Frequency: Given
+the collection of formulae C, a query q and a formula f 2 C,
+SF (s; f ) is the substructure frequency for each substructure
+s „ f , which is the total number of occurrences of s in
+f , IF F (s) is the inverse formula frequency of s in C, and
+deﬂned as
+
+SF (s; f ) =
+
+; IF F (s) = log
+
+f req(s; f )
+
+jf j
+
+jCj
+
+jff js „ f jgj
+
+;
+
+where f req(s; f ) is frequency of s in f , jf j = Pk f req(sk; f )
+is the total frequency of all selected substructures in f , jCj
+refers to the total number of formulae in C, and jff js „ f jg
+is the number of formulae that have substructure s. Since a
+chemical atom e is also a substructure of a formula f or a
+partial formula s, atom frequency refers to the substructure
+frequency of e in f or s.
+
+Frequency searches
+
+For a query formula q and a formula f 2 C, the scoring
+
+function of frequency searches is given as
+
+score(q; f ) = Pe„q W (e)SF (e; f )IF F (e)2
+pjf j £ qPe„q (W (e)IF F (e))2
+
+;
+
+(4)
+
+where jf j = Pk f req(ek; f ) is the total atom frequency
+of chemical elements in f , 1=pjf j is a normalizing fac-
+tor to give a higher score to formulae with fewer atoms,
+1=qPe„q (W (e)IF F (e))2 is a factor that makes scores com-
+
+parable between diﬁerent queries. It does not aﬁect the rank
+of retrieved formulae for a speciﬂc formula query, but aﬁects
+the rank of retrieved documents, if there are more than two
+formula searches embedded in the document search. With-
+out this factor, documents containing the longer query for-
+mula get higher scores. Equation (4) considers f as a bag
+of atoms, where e „ f is a chemical element. W (e) is the
+weight of e that represents how much it contributes to the
+score.
+It can adjust the weight of each e together with
+IF F (e). Without domain knowledge W (e) = 1.
+Substructure search
+
+The scoring function of substructure search is given as
+
+score(q; f ) = Wmat(q;f )SF (q; f )IF F (q)=pjf j;
+
+(5)
+
+where Wmat(q;f ) is the weight for diﬁerent matching types,
+exact match (high weight, e.g. 1), reverse match (medium
+weight, e.g. 0.8), and parsed match (low weight, e.g. 0.25),
+which are deﬂned by experiences.
+Similarity search
+
+A scoring function like a sequence kernel [9] is designed to
+measure similarity between formulae for similarity search. It
+maps a query formula implicitly into a vector space where
+each dimension is a selected partial formula using the se-
+quential feature selection algorithm. For instance, the query
+CH3OH is mapped into dimensions of C, H3, O, H, CH3,
+and OH, if only these six partial formulae are selected. Then
+formulae with those substructures (including reverse or parsed
+matched substructures) are retrieved, and scores are com-
+puted cumulatively. Larger substructures are given more
+weight for scoring, and scores of long formulae are normal-
+ized by their total frequency of substructures. The scoring
+function of similarity search is given as
+score(q; f ) = Ps„q Wmat(s;f )W (s)SF (s; q)SF (s; f )IF F (s)
+
+;
+
+(6)
+where W (s) is the weight of the substructure s, which is
+deﬂned as the total atom frequency of s.
+
+pjf j
+
+Table 1: Average accuracy of formula extraction
+Method
+String Pattern Match
+CRF,(cid:181) = 1:0
+CRF,(cid:181) = 1:5
+SVM linear,t = 0:0
+SVM linear,t = ¡:2
+SVM poly,t = 0:0
+SVM poly,t = ¡:4
+LASVM linear,t = 0:0
+LASVM linear,t = ¡:2
+LASVM poly,t = 0:0
+LASVM poly,t = ¡:4
+
+Precision F-measure
+Recall
+41.70%
+98.38%
+86.05%
+96.02%
+90.92% 93.79%
+86.95%
+95.59%
+88.25% 94.23%
+87.69%
+96.32%
+90.36% 94.64%
+83.94%
+90.65%
+85.42% 89.55%
+75.87%
+93.08%
+83.86% 88.51%
+
+58.57%
+90.76%
+92.33%
+91.06%
+91.14%
+91.80%
+92.45%
+87.17%
+87.44%
+83.60%
+86.12%
+
+F-measure
+
+Table 2: P-values of 1-sided T-test on F-measure
+Pairs of methods
+CRF,(cid:181) = 1:0;CRF,(cid:181) = 1:5
+CRF,(cid:181) = 1:5;SVM,linear,t = ¡:2
+CRF,(cid:181) = 1:5;SVM,poly,t = ¡:4
+CRF,(cid:181) = 1:5;LASVM,linear,t = ¡:2
+CRF,(cid:181) = 1:5;LASVM,poly,t = ¡:4
+SVM,linear,t = 0:0;SVM,linear,t = ¡:2
+SVM,poly,t = 0:0;SVM,poly,t = ¡:4
+SVM,linear,t = ¡:2;SVM,poly,t = ¡:4
+SVM,linear,t = ¡:2;LASVM,linear,t = ¡:2
+SVM,poly,t = ¡:4;LASVM,poly,t = ¡:4
+
+0.130
+0.156
+0.396
+0.002
+0.000
+0.472
+0.231
+0.072
+0.009
+0.000
+
+5. EXPERIMENTS
+
+In this section, our proposed methods of formula extrac-
+
+tion, feature selection, and formula search are tested.
+5.1 Formula Extraction
+
+The ﬂrst data set we used for testing is randomly selected
+from chemistry publications crawled from the web-site of the
+Royal Society of Chemistry1. First, 200 documents are se-
+lected randomly from the publication set, and a random part
+of each document is chosen. Each token is labelled manu-
+ally with a tag of formula or non-formula after tokenizing.
+This data set is very imbalanced, with only 1.59% true sam-
+ples (5203 formulae vs. 321514 non-formula tokens). We use
+10-fold cross-validation to evaluate the results of formula ex-
+traction. Thus, each time, we used a training set of samples
+obtained from 180 ﬂles and a testing set of samples obtained
+from the other 20 ﬂles. Several methods are evaluated for
+formula extraction, including String Pattern Match, SVM
+with the linear (SVM linear) and polynomial kernel (SVM
+poly), SVM active learning with the linear (LASVM linear)
+and polynomial kernel (LASVM poly), and CRF. SVM light
+[10] for batch learning and LASVM [4] for active learning
+are used. MALLET [16] is used for CRF. The same feature
+set is utilized for all the machine learning methods, and dif-
+ferent feature subsets are tested for the CRF to evaluate
+the contribution of the subsets. We tested complex kernels
+of RBF and Gaussian, which are not shown here due to
+the worse performances and more expensive computational
+costs than the linear and polynomial kernel. For CRF, to
+avoid the overﬂtting problem, regularization is used, with
+(cid:190)2 = 5:0.
+
+To measure the overall performance, we use F-measure
+[17], F = 2P R=(P +R), where P is precision and R is recall,
+instead of using error rate, since it is always very small for
+imbalanced data. Results of average recall, precision, and
+
+1http://www.rsc.org/
+
+WWW 2007 / Track: E*-ApplicationsSession: E-Commerce and E-Content257i
+
+i
+
+n
+o
+s
+c
+e
+r
+P
+
+i
+
+i
+
+n
+o
+s
+c
+e
+r
+P
+
+1
+
+0.95
+
+0.9
+
+0.85
+
+0.8
+
+0.75
+
+0.7
+
+0.65
+
+0.6
+
+0.55
+
+0.5
+
+0.65
+
+1
+
+0.95
+
+0.9
+
+0.85
+
+0.8
+
+0.75
+
+0.55
+
+1
+
+0.95
+
+0.9
+
+0.85
+
+0.8
+
+0.75
+
+0.7
+
+0.65
+
+0.6
+
+0.55
+
+i
+
+i
+
+n
+o
+s
+c
+e
+r
+P
+
+0.9
+
+0.95
+
+1
+
+0.5
+
+0.5
+
+all features
+no POS
+no RULE
+no POS+RULE
+
+0.7
+
+0.75
+
+0.8
+
+0.85
+
+Recall
+
+all features
+no POS
+no RULE
+no POS+RULE
+
+1
+
+1.5
+
+2
+
+2.5
+
+Feature boosting parameter q
+
+1
+
+0.95
+
+0.9
+
+0.85
+
+0.8
+
+0.75
+
+0.7
+
+l
+l
+
+a
+c
+e
+R
+
+3
+
+0.65
+
+0.5
+
+1
+
+all features
+no POS
+no RULE
+no POS+RULE
+
+1.5
+
+2
+
+2.5
+
+Feature boosting parameter q
+
+1
+
+0.95
+
+0.9
+
+0.85
+
+0.8
+
+0.75
+
+0.7
+
+e
+r
+u
+s
+a
+e
+m
+−
+F
+
+3
+
+0.65
+
+0.5
+
+all features
+no POS
+no RULE
+no POS+RULE
+
+1
+
+1.5
+
+2
+
+2.5
+
+Feature boosting parameter q
+
+3
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+Figure 3: CRF with diﬁerent values of feature boosting parameter (cid:181)
+
+1
+
+0.95
+
+0.9
+
+0.85
+
+0.8
+
+i
+
+i
+
+n
+o
+s
+c
+e
+r
+P
+
+0.85
+
+0.9
+
+0.95
+
+1
+
+0.75
+
+−0.8
+
+−0.6
+
+−0.4
+
+SVM Linear
+SVM Poly
+LASVM Linear
+LASVM Poly
+CRF
+Precision=Recall
+
+0.6
+
+0.65
+
+0.7
+
+0.75
+
+0.8
+
+Recall
+
+SVM Linear
+SVM Poly
+LASVM Linear
+LASVM Poly
+
+−0.2
+
+0
+
+Decision threshold t
+
+0.2
+
+0.4
+
+0.6
+
+l
+l
+
+a
+c
+e
+R
+
+0.95
+
+0.9
+
+0.85
+
+0.8
+
+0.75
+
+0.7
+
+0.65
+
+0.6
+
+0.55
+
+−0.8
+
+0.95
+
+0.9
+
+0.85
+
+0.8
+
+0.75
+
+e
+r
+u
+s
+a
+e
+m
+−
+F
+
+0.2
+
+0.4
+
+0.6
+
+0.7
+−0.8
+
+SVM Linear
+SVM Poly
+LASVM Linear
+LASVM Poly
+
+−0.6
+
+−0.4
+
+−0.2
+
+0
+
+Decision threshold t
+
+0.2
+
+0.4
+
+0.6
+
+SVM Linear
+SVM Poly
+LASVM Linear
+LASVM Poly
+
+−0.6
+
+−0.4
+
+−0.2
+
+0
+
+Decision threshold t
+
+(a)
+
+(b)
+
+(c)
+
+(d)
+
+Figure 4: SVM and LASVM with diﬁerent values of threshold t
+
+F-measure are presented in Table 1, and Figures 3 and 4.
+P-values of T-test of signiﬂcance are shown in Table 2. Note
+precision-recall curves here are diﬁerent from the normal
+shape of precision-recall curves in IR. The shape in Figures
+3(a) and 4(a) can generate a F-measure curve with a peak,
+so that we can optimize it by parameter tuning. Moreover,
+if a precision-recall curve is situated towards the upper-right
+corner, then a better F-measure is expected.
+
+For CRF, we test diﬁerent feature sets. Features are cate-
+gorized into three sets: surﬂcial features, advanced features
+using rule-based string pattern match (RULE ), and part-
+of-speech tags based on natural language processing (POS ).
+Four combinations are tested: (1) all features, (2) no POS,
+(3) no RULE, and (4) no POS or RULE. We also test diﬁer-
+ent values f0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0g for the feature-
+boosting parameter (cid:181) for the formula class. Note that when
+(cid:181) = 1:0, it is the normal CRF, while when (cid:181) < 1:0, the
+non-formula class gets more preference.
+
+From Figure 3, we can see that the contribution of RULE
+features is much higher than that of POS features, since
+the diﬁerence between curves with or without POS features
+is quite smaller than that between curves with or without
+RULE features. Usually, the performance with more fea-
+tures is better than that with fewer features. We can ob-
+serve that F-measure curves with fewer features are more
+peaky and sensitive to (cid:181), because both recall and precision
+change faster. From the experiment results, we can see that
+when (cid:181) = 1:5 using all features, we have the best overall
+performance based on F-measure, and for this case, recall
+and precision are much more balanced.
+
+Based on experimental experiences of SVM, C = 1=–2,
+where – = 1=nPn
+i=1 pker(xi; xi) ¡ 2 ¢ ker(xi; 0) + ker(0; 0)
+for SVM light, C = 100 for LASVM, and polynomial kernel
+(x ¢ x0 + 1)3 are applied in experiments. We test diﬁerent
+decision threshold values f-0.4, -0.2, 0.0, 0.2, 0.4, 0.6, 0.8g.
+From Figure 4(a), we can see that CRF and SVM poly both
+
+have a better performance curve than does SVM linear, but
+the diﬁerence is not statistically signiﬂcant at the level of
+0.05 (Table 2). All of them are much better than LASVM,
+which is statistically signiﬂcant. Moreover, we can see that
+CRF gives recall more preference instead of precision than
+does SVM poly. When recall ‚ precision, CRF can reach
+a better F-measure. This is important for imbalanced data.
+We show the results for all approaches using all features
+in Table 1 and compare them with the String Pattern Match
+approach, which has very high recall but quite low precision.
+Its error of recall is caused mainly by wrong characters rec-
+ognized from image PDF ﬂles using optical character recog-
+nition. The only previous work we can ﬂnd is the GATE
+Chemistry Tagger [1]. Since it cannot handle superscripts
+and can recognize names of chemical elements, e.g. oxygen,
+the GATE Chemistry Tagger is not fully comparable with
+our approach. Without counting these two cases, its recall
+is around 63.4%, precision 45.2%, and F-measure 52.8%.
+
+We also evaluate the time taken by these methods to run
+both for the training and testing process. Note that feature
+extraction and CRF are implemented in Java, while SVM
+and LASVM in C. Running time includes time of feature
+extraction and training (or testing) time, since in practice
+feature extraction must be counted. In Figure 5(a), we can
+see that CRF has a computational cost between SVM poly
+and other methods. We also observe that LASVM is much
+faster than SVM, especially for complex kernels.
+
+Based on these observations from our experiment results,
+we can conclude that the boosting parameter for CRF and
+the threshold value for SVM can tune the relation of preci-
+sion and recall to ﬂnd a desired trade-oﬁ and are able to im-
+prove the overall F-measure, especially when recall is much
+lower than precision for imbalanced data. CRF is more de-
+sired than SVM for our work, since it not only has a high
+overall F-measure, but also a more balanced performance
+between recall and precision. Moreover, CRF has a reason-
+
+WWW 2007 / Track: E*-ApplicationsSession: E-Commerce and E-Content258)
+d
+n
+o
+c
+e
+s
+(
+e
+m
+
+i
+
+i
+t
+ 
+g
+n
+n
+a
+r
+T
+
+i
+
+CRF
+SVM Linear
+SVM Poly
+LASVM Linear
+LASVM Poly
+Feature extraction
+
+3500
+
+3000
+
+2500
+
+2000
+
+1500
+
+1000
+
+500
+
+CRF
+SVM Linear
+SVM Poly
+LASVM Linear
+LASVM Poly
+Feature extraction
+
+1200
+
+1000
+
+800
+
+600
+
+400
+
+200
+
+)
+d
+n
+o
+c
+e
+s
+(
+e
+m
+
+i
+t
+ 
+g
+n
+i
+t
+s
+e
+T
+
+0.25
+
+0.2
+
+0.15
+
+0.1
+
+0.05
+
+l
+
+s
+e
+r
+u
+t
+a
+e
+f
+ 
+d
+e
+t
+c
+e
+e
+s
+ 
+f
+o
+ 
+e
+g
+a
+t
+n
+e
+c
+r
+e
+P
+
+0
+
+0
+
+0.5
+
+1
+
+1.5
+
+Sample Size
+
+2
+
+2.5
+
+3
+x 105
+
+0
+
+0
+
+0.5
+
+1
+
+1.5
+
+Sample Size
+
+2
+
+2.5
+
+3
+x 105
+
+0
+
+1
+
+1.5
+
+2
+
+2.5
+
+3
+
+3.5
+
+Values of Freqmin
+
+amin=0.9
+amin=1.0
+amin=1.2
+
+0.82
+
+0.81
+
+0.8
+
+0.79
+
+0.78
+
+0.77
+
+0.76
+
+0.75
+
+0.74
+
+i
+
+e
+z
+S
+ 
+x
+e
+d
+n
+I
+ 
+l
+a
+n
+g
+i
+r
+
+i
+
+O
+
+i
+
+ 
+/
+ 
+e
+z
+S
+ 
+x
+e
+d
+n
+I
+
+4
+
+4.5
+
+5
+
+0.73
+
+1
+
+1.5
+
+2
+
+2.5
+
+3
+
+3.5
+
+Values of Freqmin
+
+amin=0.9
+amin=1.0
+amin=1.2
+
+4
+
+4.5
+
+5
+
+(a) Training time
+
+(b) Testing time
+
+(a) Ratio of selected features
+
+(b) Ratio of index size
+
+Figure 5: Running time of formula extraction includ-
+ing feature extraction
+
+Figure 6: Features and index size ratio after feature
+selection
+
+l
+
+o
+i
+t
+a
+r
+ 
+n
+o
+i
+t
+a
+e
+r
+r
+o
+c
+ 
+e
+g
+a
+r
+e
+v
+A
+
+0.8
+
+0.75
+
+0.7
+
+0.65
+
+0.6
+
+0.55
+
+0.5
+
+0.45
+
+0
+
+l
+
+o
+i
+t
+a
+r
+ 
+n
+o
+i
+t
+a
+e
+r
+r
+o
+c
+ 
+e
+g
+a
+r
+e
+v
+A
+
+0.8
+
+0.75
+
+0.7
+
+0.65
+
+0.6
+
+0.55
+
+0.5
+
+30
+
+0.45
+
+0
+
+Freqmin=1
+Freqmin=2
+Freqmin=3
+Freqmin=4
+Freqmin=5
+
+5
+
+10
+
+15
+
+20
+
+Top n retrieved formulae (amin=0.9)
+
+25
+
+l
+
+o
+i
+t
+a
+r
+ 
+n
+o
+i
+t
+a
+e
+r
+r
+o
+c
+ 
+e
+g
+a
+r
+e
+v
+A
+
+0.8
+
+0.75
+
+0.7
+
+0.65
+
+0.6
+
+0.55
+
+0.5
+
+30
+
+0.45
+
+0
+
+Freqmin=1,amin=0.9
+Freqmin=1,amin=1.2
+Freqmin=2,amin=0.9
+Freqmin=2,amin=1.2
+Freqmin=3,amin=0.9
+Freqmin=3,amin=1.2
+
+35
+
+30
+
+25
+
+20
+
+15
+
+10
+
+5
+
+)
+d
+n
+o
+c
+e
+s
+(
+e
+m
+
+i
+
+i
+t
+ 
+g
+n
+n
+n
+u
+R
+
+Freqmin=1
+Freqmin=2
+Freqmin=3
+Freqmin=4
+Freqmin=5
+
+5
+
+10
+
+15
+
+20
+
+Top n retrieved formulae (amin=1.2)
+
+25
+
+30
+
+0
+0.8
+
+1
+
+1.2
+
+1.4
+
+1.6
+
+1.8
+
+Feature Size
+
+2
+
+2.2
+
+2.4
+
+2.6
+
+2.8
+x 104
+
+Freqmin=1
+Freqmin=2
+Freqmin=3
+Freqmin=4
+Freqmin=5
+
+5
+
+10
+
+Top n retrieved formulae (amin=1.0)
+
+15
+
+20
+
+25
+
+(a) ﬁ = 0:9
+
+(b) ﬁ = 1:0
+
+(c) ﬁ = 1:2
+
+Figure 7: Correlation of similarity search results after feature selection
+
+Figure 8: Running time
+of feature selection
+
+able running time, lower than that of SVM with complex
+kernels.
+In addition, during the testing process, the test-
+ing cost of CRF is trivial compared with the cost of feature
+extraction.
+
+5.2 Formula Indexing and Search
+
+For formula indexing and search, we test the sequential
+feature selection algorithm for index construction and eval-
+uate retrieved results. We select a set of 5036 documents
+and extract 15853 formulae with a total of 27978 partial
+formulae before feature selection. Diﬁerent values for the
+frequency threshold F reqmin = f1; 2; 3; 4; 5g and the dis-
+crimination threshold ﬁmin = f0:9; 1:0; 1:2g are tested, and
+results are shown in Figures 6-9.
+
+Note that when ﬁmin = 0:9, all frequent partial formulae
+are selected without considering the discriminative score ﬁ.
+When ﬁmin = 1:0, each partial formula whose support can
+be represented by the intersection of its selected substruc-
+tures’ supports is removed. We do not lose information in
+this case because all the information of a removed frequent
+structure has been represented by its selected partial formu-
+lae. When ﬁmin > 1:0, feature selection is lossy since some
+information is lost. After feature selection and index con-
+struction, we generate a list of 100 query formulae that are
+selected randomly from the set of extracted formulae and
+from a chemistry textbook and web pages. These formulae
+are used to perform similarity searches.
+
+The experiment results (Figure 6) show that depending
+on diﬁerent threshold values, most of the features are re-
+moved after feature selection, so that the index size de-
+creases correspondingly. Even for the case of F reqmin = 1
+and ﬁmin = 0:9, 75% of the features are removed, since they
+appear only once. We can also observe that from ﬁmin = 0:9
+to ﬁmin = 1:0, many features are also removed, since those
+features have selected partial formulae with the same sup-
+
+port D. When ﬁmin ‚ 1:0, the selective ratio change a
+little. We also evaluated the runtime of the feature selection
+algorithm, illustrated in Figure 8. We can see that a larger
+F reqmin can ﬂlter infrequent features directly without com-
+puting discriminative scores, which speeds up the algorithm,
+while the value of ﬁmin aﬁect the runtime little.
+
+The most important result from our experiments is that
+for the same similarity search query, the search results with
+feature selection are similar to those without feature selec-
+tion when the threshold values are reasonable. To compare
+the correlation between them, we use the average of the per-
+centage of overlapping results for the top n 2 [1; 30] retrieved
+formulae, which is deﬂned as Corrn = jRn \ R0
+nj=n; n =
+1; 2; 3; :::, where Rn and R0
+n are the search results of applying
+feature selection or not, correspondingly. Results are pre-
+sented in Figure 7. As expected, when the threshold values
+of F reqmin and ﬁmin increases, the correlation curves de-
+crease. In addition, the correlation ratio increases for more
+retrieved results (n increases). From the retrieved results,
+we also ﬂnd that if there is an extract matched formula,
+usually it is returned as the ﬂrst result. This is why the cor-
+relation ratio of the top retrieved formula is not much lower
+than that of the top two retrieved formulae. We also can see
+from those curves that a low threshold value of F reqmin can
+keep the curve (cid:176)at and have a high correlation for smaller
+n, while a low threshold value of ﬁmin can improve the cor-
+relation for the whole curve. For the case of F reqmin = 1
+and ﬁmin = 0:9, more than 80% of the retrieved results are
+the same for all cases, and 75% of the features are removed,
+which is both e–cient and eﬁective enough.
+
+For exact search and frequency search, the quality of re-
+trieved results depends on formula extraction. For similarity
+search and substructure search, to evaluate the search re-
+sults ranked by the scoring function, enough domain knowl-
+edge is required. Thus, we only show an example with top
+
+WWW 2007 / Track: E*-ApplicationsSession: E-Commerce and E-Content2598. REFERENCES
+
+[1] Gate. http://gate.ac.uk/.
+[2] D. L. Banville. Mining chemical structural information from the
+
+drug literature. Drug Discovery Today, 11(1-2):35{42, 2006.
+
+[3] A. L. Berger, S. A. D. Pietra, and V. J. D. Pietra. A maximum
+
+entropy approach to natural language processing.
+Computational Linguistics, 22(1):39{71, 1996.
+
+[4] A. Bordes, S. Ertekin, J. Weston, and L. Bottou. Fast kernel
+
+classiﬂers with online and active learning. Journal of Machine
+Learning Research, 6(Sep):1579{1619, 2005.
+
+[5] A. Borthwick. A Maximum Entropy Approach to Named
+
+Entity Recognition. Ph.D. thesis, New York University, 1999.
+
+[6] L. Dehaspe, H. Toivonen, and R. D. King. Finding frequent
+
+substructures in chemical compounds. In Proceedings of
+SIGKDD, 1998.
+
+[7] S. J. Edgar, J. D. Holliday, and P. Willet. Eﬁectiveness of
+
+retrieval in similarity searches of chemical databases: a review
+of performance measures. Journal of Molecular Graphics and
+Modelling, 18(4-5):343{357, 2000.
+
+[8] D. Freitag and A. McCallum. Information extraction using
+
+hmms and shrinkage. In AAAI Workshop on Machine
+Learning for Information Extraction, 1999.
+
+[9] D. Haussler. Convolution kernels on discrete structures.
+
+Technical Report UCS-CRL-99-10, 1999.
+
+[10] T. Joachims. Svm light. http://svmlight.joachims.org/.
+[11] M. Kuramochi and G. Karypis. Frequent subgraph discovery. In
+
+Proceedings of ICDM, 2001.
+
+[12] J. Laﬁerty, A. McCallum, and F. Pereira. Conditional random
+
+ﬂelds: Probabilistic models for segmenting and labeling
+sequence data. In Proceedings of ICML, 2001.
+
+[13] A. McCallum. E–ciently inducing features of conditional
+
+random ﬂelds. In Proceedings of Conference on UAI, 2003.
+[14] A. McCallum, D. Freitag, and F. Pereira. Maximum entropy
+
+markov models for information extraction and segmentation. In
+Proceedings of ICML, 2000.
+
+[15] A. McCallum and W. Li. Early results for named entity
+
+recognition with conditional random ﬂelds, feature induction
+and web-enhanced lexicons. In Proceedings of CoNLL, 2003.
+
+[16] A. K. McCallum. Mallet: A machine learning for language
+
+toolkit. http://mallet.cs.umass.edu, 2002.
+
+[17] R. McDonald and F. Pereira. Identifying gene and protein
+
+mentions in text using conditional random ﬂelds. BMC
+Bioinformatics, 6(Suppl 1):S6, 2005.
+
+[18] S. D. Pietra, V. D. Pietra, and J. Laﬁerty. Inducing features of
+
+random ﬂelds. IEEE Transactions on Pattern Analysis and
+Machine Intelligence, 19(4):380{393, 1997.
+
+[19] J. W. Raymond, E. J. Gardiner, and P. Willet. Rascal:
+
+Calculation of graph similarity using maximum common edge
+subgraphs. The Computer Journal, 45(6):631{644, 2002.
+
+[20] S. S. Sahoo, C. Thomas, A. Sheth, W. S. York, and S. Tartir.
+
+Knowledge modeling and its application in life sciences: A tale
+of two ontologies. In Proceedings of WWW, 2006.
+
+[21] B. Settles. Abner: an open source tool for automatically
+tagging genes, proteins, and other entity names in text.
+Bioinformatics, 21(14):3191{3192, 2005.
+
+[22] F. Sha and F. Pereira. Shallow parsing with conditional
+
+random ﬂelds. In Proceedings of HLT-NAACL, 2003.
+
+[23] J. G. Shanahan and N. Roma. Boosting support vector
+machines for text classiﬂcation through parameter-free
+threshold relaxation. In Proceedings of CIKM, 2003.
+
+[24] D. Shasha, J. T. L. Wang, and R. Giugno. Algorithmics and
+
+applications of tree and graph searching. In Proceedings of
+PODS, 2002.
+
+[25] P. Willet, J. M. Barnard, and G. M. Downs. Chemical similarity
+
+searching. J. Chem. Inf. Comput. Sci., 38(6):983{996, 1998.
+
+[26] X. Yan, P. S. Yu, and J. Han. Graph indexing: A frequent
+
+structure-based approach. In Proceedings of SIGMOD, 2004.
+
+[27] X. Yan, F. Zhu, P. S. Yu, and J. Han. Feature-based
+
+substructure similarity search. ACM Transactions on
+Database Systems, 2006.
+
+[28] W. Yih, J. Goodman, and V. R. Carvalho. Finding advertising
+
+keywords on web pages. In Proceedings of WWW, 2006.
+
+[29] J. Zhao, C. Goble, and R. Stevens. Semantic web applications
+
+to e-science in silico experiments. In Proceedings of WWW,
+2004.
+
+Figure 9: Similarity search results of ChemX Seer
+
+retrieved results for the feature selection case of F reqmin =
+1 and ﬁmin = 0:9 in Figure 9, a snapshot of ChemX Seer.
+
+6. CONCLUSIONS AND FUTURE WORK
+We evaluated several methods for chemical formula ex-
+traction based on SVM and CRF. We also proposed dif-
+ferent methods for them to tune the trade-oﬁ between re-
+call and precision for imbalanced data. Experiments illus-
+trated that CRF is the best regarding eﬁectiveness and ef-
+ﬂciency, and SVM linear also has a good performance. Our
+trade-oﬁ tuning methods can improve the overall F-measure
+scores and increase recall of formulae as expected. Study-
+ing diﬁerent subsets of features shows that combining prior
+knowledge as advanced features is important to improve the
+accuracy. A sequential feature selection algorithm is de-
+signed to select frequent and discriminative substructures.
+Results show that it can reduce the feature set and the in-
+dex size tremendously. Retrieved results of similarity search
+with and without feature selection are highly correlated.
+We also introduced several query models for chemical for-
+mula search, which are diﬁerent from keywords searches in
+IR. Corresponding scoring schemes are designed, which ex-
+tended the idea of tf-idf, and considered sequential infor-
+mation in formulae. Experiment results show that the new
+scoring schemes work well.
+
+Several future directions are discussed here. First, user
+study is required to evaluate precision and recall of addi-
+tional search results. Second, the scoring schemes can be
+optimized by global knowledge learned from users’ click-
+through information. We can expect non-formula strings
+among extracted formulae can get a lower rank and can be
+identiﬂed easily. Third, when we analyze the structures of
+chemical formulae, which occurrence of a string pattern is a
+meaningful substructure? This is a challenging issue since
+formulae may not have enough information and how to de-
+ﬂne a substructure is a problem. Furthermore, which sub-
+structures are useful to measure the similarity? Finally, the
+identity ambiguity exists for formulae, since even though we
+have a unique id for each object in a database, id matching
+of each appearance is a challenging issue.
+
+7. ACKNOWLEDGMENTS
+
+Seyda Ertekin is acknowledged for the LASVM code.
+
+WWW 2007 / Track: E*-ApplicationsSession: E-Commerce and E-Content260

@@ -1,0 +1,1327 @@
+Contextual Advertising by Combining Relevance with Click
+
+Feedback
+
+Deepayan Chakrabarti
+
+Yahoo! Research
+
+701 First Ave
+
+Sunnyvale, CA 94089.
+
+deepay@yahoo-inc.com
+
+Deepak Agarwal
+Yahoo! Research
+
+701 First Ave
+
+Sunnyvale, CA 94089.
+dagarwal@yahoo-
+
+inc.com
+
+Vanja Josifovski
+Yahoo! Research
+
+701 First Ave
+
+Sunnyvale, CA 94089.
+
+vanjaj@yahoo-inc.com
+
+ABSTRACT
+Contextual advertising supports much of the Web’s ecosys-
+tem today. User experience and revenue (shared by the site
+publisher ad the ad network) depend on the relevance of the
+displayed ads to the page content. As with other document
+retrieval systems, relevance is provided by scoring the match
+between individual ads (documents) and the content of the
+page where the ads are shown (query).
+In this paper we
+show how this match can be improved signiﬁcantly by aug-
+menting the ad-page scoring function with extra parameters
+from a logistic regression model on the words in the pages
+and ads. A key property of the proposed model is that it
+can be mapped to standard cosine similarity matching and
+is suitable for eﬃcient and scalable implementation over in-
+verted indexes. The model parameter values are learnt from
+logs containing ad impressions and clicks, with shrinkage
+estimators being used to combat sparsity. To scale our com-
+putations to train on an extremely large training corpus con-
+sisting of several gigabytes of data, we parallelize our ﬁtting
+algorithm in a Hadoop [10] framework. Experimental eval-
+uation is provided showing improved click prediction over a
+holdout set of impression and click events from a large scale
+real-world ad placement engine. Our best model achieves
+a 25% lift in precision relative to a traditional information
+retrieval model which is based on cosine similarity, for re-
+calling 10% of the clicks in our test data.
+
+Categories and Subject Descriptors
+H.4.m [Information Systems]: Miscellaneous
+
+General Terms
+Algorithms, Experimentation, Measurements
+
+Keywords
+Clickthrough rate, Modeling, Interaction Eﬀects
+
+1.
+
+INTRODUCTION
+
+Web advertising provides ﬁnancial support for a large por-
+tion of today’s Internet ecosystem, catering to a diverse
+set of sites like blogs, news, reviews etc. Spurred by the
+tremendous growth in traﬃc in terms of volume, number of
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2008, April 21–25, 2008, Beijing, China.
+ACM 978-1-60558-085-2/08/04.
+
+users, user engagement, content diversity, the last few years
+have seen a tremendous growth in spending on web advertis-
+ing. According to eMarketer [9] the total internet advertiser
+spending in 2007 will reach almost 20 billion US dollars.
+This establishes the Web as one of the top 3 advertisement
+mediums, along with TV and print media.
+
+A major part of the advertising on the web falls into
+the category of textual ads: short textual messages usually
+marked as “sponsored links” or similar. There are two main
+types of textual ads on the web today:
+
+1. Sponsored Search (SS) or Paid Search advertising places
+ads on the result pages from a web search engine based
+on the search query. All major current web search en-
+gines support such ads and act simultaneously as a
+search engine and an ad agency.
+
+2. Contextual advertising or Context Match (CM) adver-
+tising places ads within the content of a generic, third-
+party web page. There usually is a commercial inter-
+mediary, called an ad-network, in charge of optimizing
+the ad selection with the twin goal of increasing rev-
+enue (shared between publisher and ad-network) and
+improving user experience. Here also the main players
+are the major search engines; however, there are also
+many smaller players.
+
+While the methods proposed in this paper could be adapted
+for both SS and CM advertising, we will focus in our analysis
+and experiments on the CM scenario.
+
+Studies have shown that displaying ads that are closely re-
+lated to the content of the page1 provide a better user experi-
+ence and increase the probability of clicks [4, 21]. This intu-
+ition is analogous to that in conventional publishing, where
+there are very successful magazines (e.g., Vogue) where a
+majority of the content is topical advertising (fashion, in
+the case of Vogue). Hence, estimating the relevance of an ad
+to a page is critical in serving ads at run-time.
+
+Previously published approaches estimated the ad rele-
+vance based on co-occurrence of the same words or phrases
+within the ad and within the page (see [18, 13, 3] and the
+related work section for more details). The model used in
+this body of work is to translate the ad search into a sim-
+ilarity search in a vector space. Each ad is represented as
+a vector of features, as for example, unigrams, phrases and
+classes [3]. The page is also translated to a vector in the
+1Ads can also be behaviorally targeted; however, without
+loss of generality, we focus on contextual features.
+
+417WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, Chinasame space as the ads. The search for the best ads is now
+translated into ﬁnding the ad vectors that are closest to
+the page vector. To make the search eﬃcient and scalable
+to hundreds of millions of ads and billions of requests per
+day, we can use an inverted index and an eﬃcient similar-
+ity search algorithm as the one reported in [2]. A drawback
+of this method is that it relies on a-priori information and
+does not use the feedback (a posteriori) information that is
+collected in the form of ad impressions (displays) and clicks.
+Another line of work uses click data to produce a CTR
+estimate for an ad, independent of the page (or query, in the
+Sponsored Search scenario [19, 17]). The CTR is estimated
+based on features extracted from the ads that are then used
+in a learning framework to build models for estimation of
+the CTR of unseen ads. In this approach the assumption
+is that the ads are selected by a deterministic method - by
+matching the bid phrase to a phrase from the page (or the
+query in Sponsored Search) and therefore to select the most
+clickable ads we only need to estimate the CTR on the ads
+with the matching bid phrase. This simplifying assumption
+of the matching process is an obvious drawback of these
+approaches. Another drawback is that these methods do not
+account for diﬀerential click probabilities on diﬀerent pages:
+If some pages in the corpus attract an audience that clicks
+on ads signiﬁcantly more than average, then the learning of
+feature weights for ads will be biased towards ads that were
+(only by circumstance) shown on such pages.
+
+Contributions. In this work we combine the two diﬀerent
+lines of work and propose a relevance based approach that is
+augmented to use the the click data to produce a CTR esti-
+mate. We adapt the vector space similarity formulation and
+keep the format of the scoring formulas so that they are still
+suitable for inverted index evaluation that has low cost and
+high scalability. To incorporate the feedback, we modify the
+scoring formulas with correction parameters that are learned
+from the click data. We examine several scoring formulas
+in order of increasing complexity and propose learning the
+parameters by statistical learning methods. We overcome
+the problem of learning from data with low click rates by
+a sampling method that equalizes the sizes of clicked and
+non-clicked portions of the data, and then solves the prob-
+lem of the (page, ad) sparsity by explaining click propensities
+(scores) of ads on pages in terms of the words that occur in
+both. In summary our main contributions are:
+
+• We propose a set of intuitive models of click propen-
+sities in terms of the words that occur in the webpage
+and ad. The basic model takes into consideration the
+location of the words (title, main body, sidebar, etc.),
+while the most complex model also considers word syn-
+onyms, the tf-idf values of the words and relevance
+measures, among others.
+
+• The models were carefully chosen to extend scoring
+formulas in current use so that they could be easily
+implemented on top of existing systems. Thus, they
+can be immediately used for eﬃcient ad selection from
+a very large corpus of ads.
+
+• We describe a fast method for ﬁtting the parameters
+of these models, and prescriptions for picking the right
+model given the dataset size and runtime execution
+constraints.
+
+• Extensive experiments on real-world datasets convinc-
+
+ingly demonstrate the accuracy of our models.
+
+2. RELATED WORK
+
+Online advertising is an upcoming area of research and
+the published literature is sparse. A study presented in [21]
+conﬁrms the intuition that ads need to be relevant to the
+user’s interest to avoid degrading the user’s experience and
+increase the probability of reaction.
+IR methods used in
+web search engines are one of the most prominent methods
+to ensure relevance of search results.
+
+A pioneering report by Ribeiro-Neto et. al on contextual
+matching [18] examines a number of strategies to match
+pages to ads based on extracted keywords. Here also the ads
+and pages are represented as vectors in a vector space. The
+work ﬁrst presents ﬁve strategies that use cosine similarity
+to match page and the ad vectors. The authors explore using
+diﬀerent ad sections (bid phrase, title, body) as a basis for
+the ad vector. The winning strategy out of the ﬁrst ﬁve
+requires the bid phrase to appear on the page and then ranks
+all such ads by the cosine of the union of all the ad sections
+and the page vectors.
+
+While both pages and ads are mapped to the same space,
+there is a discrepancy (impedance mismatch) between the
+vocabulary used in the ads and in the pages. Furthermore,
+since in the vector model the dimensions are determined by
+the number of unique words, plain cosine similarity will not
+take into account synonyms. To solve this problem, Ribeiro-
+Neto et al expand the page vocabulary with terms from other
+similar pages weighted based on the overall similarity of the
+origin page to the matched page, and show improved match-
+ing precision.
+
+A follow-up work [13] proposes a method to learn impact
+of individual features using genetic programming to produce
+a matching function. represented as a tree. Arithmetic oper-
+ators and the log function are internal nodes while diﬀerent
+numerical features of the query and ad terms can be leafs of
+the function tree. The results show that genetic program-
+ming ﬁnds matching functions that signiﬁcantly improve the
+matching compared to the best method (without page side
+expansion) reported in [18].
+
+In our previous work [3] we expand on the search of the ads
+in a vector space by adding classes as additional dimensions.
+This allows for having the ads topically match the content
+of the page. We used tf-idf for weighting the unigram and
+phrase features and class conﬁdence score returned by the
+classiﬁer as weight of the class features. While the class
+weights are trained over a labeled set of ads, there is no
+direct use of the click data to improve on the ad selection.
+All of these approaches share the use of similarity in a
+feature space to relate ads to pages. However none of these
+approaches uses statistical learning techniques to factor the
+implicit relevance feedback in a form of click data to learn
+how to better match pages to ads.
+
+Another approach to contextual advertising is to reduce it
+to the problem of sponsored search advertising by extract-
+ing phrases from the page and matching them with the bid
+phrase of the ads. In [22] a system for phrase extraction is
+described that used a variety of features to determine the
+importance of page phrases for advertising purposes. The
+system is trained with pages that have been hand anno-
+tated with important phrases. The learning algorithm takes
+into account features based on tf-idf, HTML meta data and
+
+418WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, Chinaquery logs to detect the most important phrases. During
+evaluation, each page phrase up to length 5 is considered
+as potential result and evaluated against a trained classiﬁer.
+In our work we also use phrases as feature and we learn pa-
+rameters to determine the relative importance of a particular
+phrase compared to other phrases and unigrams. Another
+key diﬀerence related to this work is that we use multiple
+features to select the ads.
+
+Another line of research attempts to predict the click
+through rate of ads using similar tools (clustering, keyword
+matching and classiﬁcation) for search advertising [17]. In
+this work, the ads are clustered by their bid phrases. The
+click through rate is averaged over each cluster. The CTR
+estimate for new ads is obtained by ﬁnding the nearest clus-
+ter and assuming that cluster’s CTR. Results show that this
+improves over naive global CTR priors and CTR based on
+the bid phrase deciles.
+
+3. METHOD
+
+Our proposed method to match relevant ads to pages is
+based on logistic regression, a popular technique in statis-
+tics and machine learning [14]. The regression enables us
+to combine click feedback and semantic information avail-
+able from both pages and ads to determine relevancy. This
+is more general than a pure relevance based approach that
+does not use click feedback in any form. Indeed, our experi-
+ments convincingly demonstrate the usefulness of using click
+feedback to ﬁnd more relevant ads.
+
+There has been recent work on using regression models for
+determining relevant ads [19]. While it has the same ﬂavor as
+our work, only ad-speciﬁc features are learnt, which is only
+a subset of the features we consider. In particular, in addi-
+tion to page and ad speciﬁc features, we learn features that
+capture interactions between pages and ads. Furthermore,
+we combine word based features with traditional relevance
+measures to enhance matching relevant ads to pages.
+
+Our models are more granular and can incorporate larger
+number of features, which reduces bias in CTR estimates
+and leads to better performance. However, reduced bias
+comes at the price of increased variance, which can become
+a serious problem if the models become too granular and
+start overﬁtting the training data. To balance these two
+issues, we use a two-pronged strategy. First, we use a rela-
+tively large but specially selected set of features, where the
+selection mechanism ensures that the features have reason-
+able support. We also provide a mechanism based on prior
+probabilities to down-weight features that are too sparse.
+The second strategy we use to prevent overﬁtting is to train
+our models on an extremely large corpus (billions of records,
+several thousand features) which automatically increases the
+support of a large number of features. Fortunately, data is
+plentiful especially for big ad-networks that serve a large
+number of publishers and advertisers. However, increased
+training size poses a diﬃcult computational challenge of
+scaling logistic regression to web scale data. We overcome
+this by using an approximation based on a “divide and con-
+quer strategy”, i.e., we randomly split our training corpus
+into several pieces and ﬁt a separate logistic regression to
+each piece. The ﬁnal result is obtained by combining esti-
+mates from all the pieces. Our computation is carried out in
+the software framework called MapReduce[12] that supports
+large scale parallel computations using a cluster of commod-
+ity personal computers.
+
+Roughly speaking, our method consists of three broad
+steps: (a) Feature extraction, (b) Feature selection, and (c)
+Coeﬃcient estimation for features through a logistic regres-
+sion. We provide a detailed description of each below.
+3.1 Feature Extraction
+
+Pages and ads are treated as being composed of several
+regions. For instance, a page is composed of page title, page
+metadata, page body, page URL etc. Similarly, an ad is
+composed of ad title, ad body etc. Within each region, we
+extract a set of words/phrases after stop word removal. We
+associate a score (e.g. region speciﬁc tf, tf-idf) to each word
+that measures its importance in a given region. For a given
+(page, ad) region combination, our model has three sets of
+features described below.
+
+Page region speciﬁc main eﬀects. Web pages are usually
+composed of multiple regions with diﬀerent visibility and
+prominence. The impact of each region on the ad selection
+can thus vary. We follow the intuition of our previous work
+[3] and we learn the eﬀect of each region separately. For
+a word w in page region p(r) with score tp(r)w, the region-
+speciﬁc main eﬀect is deﬁned as
+
+Mp(r)w = 1(w ∈ p(r)) · tp(r)w,
+
+that is, if the word is present in the page region p(r), the fea-
+ture contributes its score else it does not contribute. These
+features provide an estimate of word popularity. They are
+not useful at the time of selecting relevant ads for a given
+page but help in getting better estimates of other terms in
+the model after adjusting for the eﬀect of popular words on
+a page. For instance, if “camera” pages are popular in terms
+of click-through rates and 90% of our corpus consists of cam-
+era pages, “camera” ads that were the ones mostly shown on
+camera pages would tend to become popular even on “soc-
+cer” pages which constitute only 1% of the total corpus. By
+incorporating page words in the model, we adjust for this
+eﬀect and get the correct matching ads for “soccer” pages.
+
+Ad region speciﬁc main eﬀects. Ads are also composed
+of multiple regions, some visible to the user (title, abstract)
+and some used only in the ad selection (bid phrase, targeting
+attributes). As with the page regions, the ad regions can
+have diﬀerent impact on the ad selection. For a word w in
+ad region a(r) with score ta(r)w, this is deﬁned as
+
+Ma(r)w = 1(w ∈ a(r)) · ta(r)w.
+
+Unlike page speciﬁc main eﬀects, it does play an important
+role when selecting relevant ads for a given page and provides
+more weight to popular ads.
+
+Interaction eﬀects between page and ad regions. For
+a word w1 in page region p(r1) and word w2 in ad region
+a(r2) with score f (tp(r1)w1 , ta(r2)w2 ) for some function f ,
+this is given as
+
+Ip(r1)w1,a(r2)w2 = 1(w1 ∈ p(r1), w2 ∈ a(r2))
+
+(1)
+
+·
+
+f (tp(r1)w1 , ta(r2)w2 ).
+
+In this paper, we conﬁne ourselves to the case where w1 = w2
+(i.e., the feature “ﬁres” only if the same word occurs in
+both the corresponding page and ad regions), but in gen-
+eral, one can consider co-occurrences of synonyms or re-
+lated words. Examples of f include the product function
+
+419WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, Chinatp(r1)w1 × ta(r2)w2 , the geometric mean
+
+p
+tp(r1)w1 × ta(r2)w2
+
+and so on. Interaction eﬀects are important components of
+our method and help in matching relevant ads to a given
+page. For instance, occurrence of the word “camera” in the
+ad body is a strong indication of the ad being relevant for
+the page whose title contains the word “camera,” with the
+degree of relevance being determined by the regression.
+3.2 Feature Selection
+
+For any given (page, ad) region combination, a large num-
+ber of words occur in the training data. Using them all as
+features might make the logistic regression ill-conditioned
+and inﬂate variance of the coeﬃcient estimates. Hence we
+take recourse to variable selection techniques which select a
+subset of important words to be used in our regression. Vari-
+able selection in the context of regression is a well studied
+area with a rich literature. Stepwise backward-forward auto-
+mated variable selection algorithms are widely used for large
+scale applications but these methods have drawbacks, espe-
+cially when features are correlated [8]. The general recom-
+mendation is to use as much domain knowledge as possible
+instead of using an automated procedure to select relevant
+variables. However, in large scale settings as ours, some level
+of automation is necessary. For reasons of scalability, we ex-
+plore a two-stage approach. In the ﬁrst stage, we conserva-
+tively prune non-informative features using simple measures
+that can be computed using only a few passes over the train-
+ing corpus. In the second stage, we ﬁt a regression to all the
+selected features from the ﬁrst stage but down-weight them
+through a specially constructed prior that pools data from
+all the features, while putting more coeﬃcient on those that
+are less sparse. The latter approach will be described in
+more detail in the next subsection; we discuss our variable
+selection methods next.
+
+We selected the variables using two methods, the ﬁrst
+based on clicks and views, and the second based on rel-
+evance scores of words that are independent of any click
+feedback. In the ﬁrst approach (data-based), we rank words
+based on a measure that quantiﬁes the interaction between
+words occurring in the page and ad regions. For a word w,
+the interaction measure is deﬁned as
+
+iw =
+
+CT Rpage
+
+w
+
+CT Rboth
+
+w
+
+· CT Rad
+
+w
+
+(2)
+
+w
+
+where CT Rboth
+denotes the click-through rate (CTR) when
+w occurred both on page region and ad region of an ad
+displayed on a page, and CT Rpage
+w denote the
+marginal CTRs when w shown on the page and ad regions
+respectively. Higher values of the ratio indicates stronger
+interaction being induced by the presence of the word which
+in turn should enhance the matching quality of ads to pages.
+We also tried a variation of the measure above with a square
+root of the denominator with no signiﬁcant impact.
+
+and CT Rad
+
+w
+
+In the second approach (relevance-based), words are ranked
+by computing the average tf-idf scores across the entire page
+and ad corpus for the respective regions under considera-
+tion. Here, we experiment with two measures: (a) create a
+single corpus by treating page and ad regions as documents
+and compute a single tf-idf average score for each word, and
+(b) Treat the page and ad regions as diﬀerent corpora and
+use the geometric mean of tf-idf scores computed separately
+from page and ad regions for each word.
+
+For both measures, we picked the top 1000 words and used
+
+Figure 1: Distribution of (page, ad) impressions:
+Plots are on log-log scale but ticks are on the original
+scale.
+
+them in the logistic regression. To avoid noisy estimates of
+CTRs in the ratio, we only consider words that were shown
+simultaneously on ad and page regions at least 10 times and
+had non-zero marginal probabilities. As our experiments
+will show later, the data-based approach gives better results
+for the same number of words.
+3.3 Approximate Logistic Regression
+
+ij (1−pij)1−yij . To
+
+Let yij denote the binary click outcome (1 for click, 0 for
+no click) when ad j is shown on page i. We assume yij has
+a Bernoulli distribution with CTR pij , i.e., the probability
+distribution of yij is given by P (yij) = pyij
+determine relevant ads for a given page i, we need to esti-
+mate pij’s, with higher values indicating more relevant ads.
+For ads that are shown a large number of times on a page,
+the CTR can be estimated empirically by clicks per impres-
+sion. However, in our application a large fraction of page-ad
+pairs having a small number of impressions (Figure 1). In
+fact, since the CTRs are typically low (0.1% − 20% with a
+substantial right skewness in the distribution), number of
+impressions required to get precise empirical estimates are
+high. For instance, to estimate a 5% CTR, we need 1K
+impressions to be even 85% conﬁdent that our estimate is
+within 1% of the true CTR. Thus, we take recourse to fea-
+ture based models, i.e., pij is a function of features extracted
+from page and ad regions as discussed in section 3.1.
+
+To allow for arbitrary real-valued coeﬃcients for features,
+it is routine to map pij onto the real line via a monotonically
+increasing function. The most widely used function is the
+logit which maps pij to logit(pij) = log [pij/(1 − pij )]. We
+assume that logit(pij) is a linear function of features repre-
+senting the main eﬀects and interaction eﬀects discussed in
+section 3.1. For simplicity, consider a single (page, ad) re-
+gion combination (p(r1), a(r2)). The linear function in the
+logistic regression is given by:
+
+X
+
+logit(pij) = logit(qij) +
+
+X
+
+αwMp(r1)w
+
+X
+
+w
+
+(3)
+
++
+
+βwMa(r2)w +
+
+δw,r1,r2 Ip(r1)w,a(r2)w
+
+w
+
+w
+
+where w = (α, β, δ) are unknown feature coeﬃcients to be
+estimated by logistic regression, and logit(qij ) are known
+prior log-odds that could have been derived from a diﬀerent
+
+420WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, Chinamodel. For instance, a uniform prior would assume qij = ˆp,
+where ˆp is the average CTR on the entire training corpus.
+Another possibility we explore is to derive prior log-odds qij
+by combining relevance scores with click feedback.
+
+To add new (page,ad) region combination, we only need
+to augment equation 3 with the appropriate linear terms
+for the page main and ad main eﬀects. For the interaction
+eﬀects, we re-parametrize our model to facilitate indexing.
+We explain our re-parametrization here and discuss the con-
+nection to indexing later in section 4. For each (page,ad)
+combination (r1, r2), a word w that occurs in both r1 and
+r2 has a coeﬃcient δw,r1 ,r2 which depends on the word, the
+page region and the ad region. We assume the following
+parametrization.
+
+δw,r1,r2 = δw · γp(r1) · γa(r2)
+
+(4)
+
+i.e., the interaction of a word for a given page and ad re-
+gion combination is factored into word-speciﬁc, page-speciﬁc
+and ad-speciﬁc components. Thus, for M words, R1 page
+regions, R2 ad regions, the number of parameters equals
+M + R1 + R2 as opposed to M · R1 · R2 in the original model.
+The estimate of coeﬃcients is obtained by maximizing the
+log-likelihood of the data as given by
+
+(yijlog(pij) + (1 − yij )log(1 − pij))
+
+(5)
+
+X
+
+ij
+
+where pij is given by equation 3. The optimization prob-
+lem described above may become ill-conditioned and lead
+to high variance estimates if features tend to be correlated
+or are sparse or both. For exact technical details on neces-
+sary and suﬃcient conditions that ensure convergence, we
+refer the reader to [15]. This is a drawback in our scenario
+where feature sparsity and correlations are routine. To pro-
+vide a robust solution, we put additional constraints on the
+coeﬃcients in the form of priors.
+A N (0, σ2) prior would mean that the parameter estimates
+are pinned down in the range (−3σ, 3σ) with 99% probabil-
+ity a-priori. In the absence of enough information about the
+coeﬃcient from data, this ensures that the coeﬃcient esti-
+mates do not diverge to the boundaries and cause numerical
+instability. To put more stringent constraints on sparse fea-
+tures, we down-weight the prior variance σ2 by a measure
+of relative sparsity which we deﬁne to be the variance of the
+feature occurrence process relative to average feature occur-
+rence variance. The feature occurrence variance is given by
+s(1 − s), where s is the fraction of times the feature occurs.
+In particular, we assume:
+
+„
+„
+„
+
+αw ∼ N
+βw ∼ N
+δw ∼ N
+
+«
+«
+«
+
+2 · sp(w)(1 − sp(w))
+2 · sa(w)(1 − sa(w))
+2 · sI (w)(1 − sI (w))
+
+sp(1 − sp)
+sa(1 − sa)
+sI (1 − sI )
+
+0, σ
+
+0, σ
+
+0, σ
+
+Note that separate averages are used for the main page and
+ad eﬀects, and interaction eﬀects (indicated by the sub-
+scripts p, a, and I). In all our experiments, we ﬁx σ2 = 9;
+experiments with several other values in the range of 3 to
+20 did not yield much diﬀerence.
+
+Now, the optimization problem reduces to estimating the
+coeﬃcients by maximizing the log-posterior which is the sum
+
+of the log-likelihood (Eq. 5) and the log-prior of the coeﬃ-
+cients, as discussed above. Next, we discuss the optimization
+process itself.
+
+Several approaches to optimize our objective function ex-
+ist in the literature. Among the ones that have been used
+in large-scale applications are iterative scaling [20], nonlin-
+ear conjugate gradient, quasi-Newton (in particular, limited
+memory BFGS) [7], iteratively-reweighted least squares [14],
+truncated Newton [16], and trust-region Newton [5]. All the
+methods are iterative and generate a sequence of estimates
+that converge to the optimal solution. For all methods ex-
+cept iterative scaling, cost per iteration is high but the con-
+vergence is fast. For iterative scaling which updates one
+component at a time, cost per iteration is low but conver-
+gence is slower. For our application, the training corpus
+typically has several millions data points and several thou-
+sand features making it extremely slow to ﬁt the model using
+these approaches on a single machine.
+
+To scale our computations, we adopt a simple paralleliza-
+tion approach that randomly splits the data into several
+parts, ﬁts a logistic regression separately to each part and
+then combines the estimates obtained from each piece. For
+convenience, we perform our computation in a MapReduce
+framework [12]. MapReduce is a programming model for
+processing large data sets.
+It runs on a large cluster of
+commodity machines; it is highly scalable processing sev-
+eral gigabytes of data on thousands of machines and easy to
+use. The run-time system automatically takes care of the
+details of partitioning the data, scheduling job across ma-
+chines, handling failures and managing inter-machine com-
+munication.
+
+To ﬁt a logistic regression for a given piece, we use a simple
+iterative scaling (also known as conditional maximization)
+approach. The algorithm is as follows: We initialize the co-
+eﬃcients α’s, β’s, and δ’s to 0, and γp(.)’s and γa(.)’s to 1.
+We update the value of each coeﬃcient one at a time holding
+the others ﬁxed at the current value by maximizing the like-
+lihood through a Newton-Raphson method. This completes
+a single iteration. The procedure is continued through sev-
+eral iterations until convergence. The method is guaranteed
+to converge since every step can only increase the likelihood.
+Along with a coeﬃcient estimate, the Newton-Raphson pro-
+cedure provides an estimate of the negative Hessian, the
+inverse of which provides an estimate of variance of the co-
+eﬃcient from maximum likelihood theory. The results on
+the various data partitions are combined using a weighted
+average of the individual estimates, where the weight as-
+signed to partition-speciﬁc estimate is its relative precision
+obtained from the negative Hessian values. This weighting
+scheme is the best way to combine estimates through a lin-
+ear function [6]. Figure 2 describes our ﬁtting procedure in
+detail.
+
+4. AD SEARCH PROTOTYPE
+
+A key feature of the model proposed in this paper is that
+it is suitable for eﬃcient evaluation over an inverted indexes.
+In this section we outline an implementation of a prototype
+ad search engine based on the WAND [2] algorithm and
+inverted indexing of the ads using the Hadoop distributed
+computing framework [10].
+
+Our method allows for any kind of feature to be used in the
+ad search. In our prototype we use unigrams, phrases and
+classes as features. The inverted index is composed of one
+
+421WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, ChinaFigure 3: Ad search prototype architecture
+
+Algorithm CondMax
+Initialize coeﬀi = 0 for all word features i and coeﬀi = 1
+for page-region and ad-region speciﬁc parameters in the
+re-parametrized model of equation 4.
+Iterate until convergence
+
+(cid:2)
+
+Iterate i over the set of features
+(i) = loglik = 0
+
+(i) = f
+
+(cid:2)(cid:2)
+
+impressions, with the data
+
+P
+i coeﬀi · scorei
+(i) + (click or not − p) × scorei
+(cid:2)
+(i) − p(1 − p) × score2
+(cid:2)(cid:2)
+
+Set f
+Iterate over all
+providing scorei for feature i
+x =
+p = 1.0/(1.0 + exp(−x))
+(cid:2)
+(i) = f
+f
+(cid:2)(cid:2)
+f
+(i) = f
+loglik = loglik + log p − x · (1 − click or not)
+(cid:2)
+(i) = f
+f
+(cid:2)(cid:2)
+f
+(i) = f
+coeﬀi = coeﬀi − f
+than previous
+(cid:2)(cid:2)
+Return (coeﬀi, f
+
+(i) − coeﬀi/σ2
+(cid:2)
+(i) − 1.0/σ2
+(cid:2)(cid:2)
+(i)/f
+
+(i) if loglik is lower
+
+(i)) for all i
+
+i
+
+i
+
+(cid:2)
+
+i
+
+(cid:2)(cid:2)
+
+Algorithm CombineCoeffs
+Randomly split the data
+Call CondMax on each split
+Iterate over all features i
+(cid:2)(cid:2)(i)|
+splitj coeﬀi·|f
+|f(cid:2)(cid:2)(i)|
+
+C(i) =
+
+P
+
+P
+
+splitj
+
+Return C(i) as the ﬁnal coeﬃcient value for feature i
+
+Figure 2: Implementation of Logistic Regression.
+
+postings list for each feature that has one entry (posting) for
+each ad that contains this feature. The ads are represented
+by adIDs - unique numeric identiﬁers assigned to each ad.
+
+Figure 3 shows the architecture of our ad search proto-
+type. We produce the inverted index over a grid of machines
+running the Hadoop framework [10]. The indexing starts by
+extracting features from the ads. Each feature is represented
+by an unique numeric featureID. The resulting data ﬁle is
+sorted by < adID, f eatureID >. Next we invert this ﬁle by
+sorting the ﬁle by < f eatureID, adID > as a key. Finally
+we write the delta compressed posting lists used at runtime
+to evaluate the query.
+
+There are a few important diﬀerences in the ad search
+engine problem that require diﬀerent approach compared
+to web search engines. First, in web search, the queries are
+short and the documents are long. In the ad search case, the
+number of features per ad is usually lower than the number
+of features extracted from a web page, which in our case
+represent the ad space query. So it is almost never the case
+that an ad will contain all the features of the ad search query.
+Therefore the ad search engine performs similarity search in
+the vector space with a long query and relatively short ad
+vectors. In contrast for the majority of the web queries there
+are many pages that contain all the query words and one of
+the key issue is how to rank the pages containing the query.
+Features are extracted from the input query. The query is
+a bag of pairs < f eatureID, weight >. For each query fea-
+ture, WAND opens a cursor over the posting list of this fea-
+ture. During the evaluation the cursors are moved forward
+examining the documents as they are encountered. WAND
+is a document at the time algorithm [1] that ﬁnds the next
+cursor to be moved based on an upper bound of the score for
+the documents at which the cursors are currently positioned.
+The algorithm keeps a heap of current candidates. The in-
+variant of the algorithm is that the heap contains the best
+
+422WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, Chinamatches (highest scores) among the documents (ads) with
+IDs less than the document pointed by the current minimum
+cursor.
+
+Cursors pointing on documents with upper bound smaller
+than the minimum score among the candidate docs are can-
+didates for a move. To ﬁnd the upper bound for a document,
+the algorithm assumes that all cursors that are before the
+current will hit this document (i.e. the document contains
+all those terms represented by cursors before or at that doc-
+ument). It has been shown that WAND can be used with
+any function that is monotonic with respect to the number
+of matching terms in the document. It can also be easily
+shown that some non-monotonic scoring functions can also
+be used as long as we can ﬁnd a mechanism to estimate the
+score upper bounds.
+
+One family of such functions is a set of functions where a
+ﬁxed subset of the features (known a priori) always decrease
+the score.
+In such cases, the upper bound estimates just
+assume that these features do not appear in the ad. An
+example of such function is a cosine similarity where some
+of the query coeﬃcients are negative. The scoring function
+proposed in this paper might have such coeﬃcients and ﬁts
+well within the WAND framework.
+
+Incorporating the logistic-regression based model in this
+framework is simple. The scoring equation 3 is modiﬁed to
+exclude the page eﬀect and used as WAND scoring formula.
+Figure 3 shows the stages in which the learned parameters
+are factored into the evaluation framework. Ma(r) is used
+at indexing time to calculate a static score for each individ-
+ual ad. We use this score to assign an adID to the ads in
+decreasing ad score order. This allows for estimating upper
+bounds of the ads that are skipped by using scores by using
+the score of the ad pointed by the preceding cursor in the
+sorted cursor list.
+
+After the page is parsed and the features are extracted
+along with their TF-IDF scores, we apply the reweighing
+based on the table Iw.
+
+The Mp(r) table is not used in the ad selection but just to
+adjust the ﬁnal scores to calculate the probabilities accord-
+ing to equation 3.
+
+5. EXPERIMENTS
+
+We now provide a detailed discussion of all our experi-
+ments, conducted on a large-scale real-world dataset. After
+a brief description of the data, we present results on the
+diﬀerent word selection schemes, followed by comparisons
+of several variants of our model with a baseline model that
+does not utilize any click feedback and is based solely on rel-
+evance. The results convincingly demonstrate the improved
+performance of models that use click feedback.
+5.1 Data
+
+To demonstrate the eﬃcacy of our approach, we conduct
+a series of experiments on retrospective data collected from
+some back-end servers of a large contextual advertising sys-
+tem. We would like to emphasize that the servers were cho-
+sen subjectively and are not representative of the actual per-
+formance of the entire advertising system. We conducted
+our experiments on 30 days of data. The ﬁrst 15 days of
+data were used as our training corpus while the results were
+evaluated on the remaining days.
+
+Every display of an ad on a page is called an impression.
+Thus, a single page view by a user generates multiple im-
+
+pressions and equals the number of ads shown on the page.
+There are approximately .5B − 1B page views on a day in
+the portion of the data that we examined. Deﬁning CTR
+as the number of clicks per impressions, overall CTRs for
+(page,ad) combinations are low and approximately in the
+range of .1% − 20% with extreme right skew. Labeling the
+clicks as 1 and non-clicks as 0, we have a learning prob-
+lem with extreme class imbalance. The logistic regression
+is known to provide biased estimates of weights in such sce-
+narios [11]. A widely used strategy in such settings reduces
+imbalance by sampling from the majority class. We also
+adopt a similar strategy but our sampling scheme is as fol-
+lows: we retain all impressions associated with clicked page
+views and get a 1/2000 random sample from the pageviews
+associated with non-clicked page views. All results reported
+in this paper are on data sampled in this fashion.
+5.2 Word selection schemes
+
+We conducted experiments with several (page,ad) region
+combinations but provide detailed analysis for experiments
+conducted with one region combination, viz, page title (call
+it pti) and ad title (call it oti). In the training corpus, we
+obtained approximately 112K unique words after stop word
+removal. To avoid introducing extremely sparse words in
+our regression, we truncated our word list to consider only
+those that had at least 100 impressions where the word oc-
+curred both on the page and ad. Also, we further truncated
+our list by considering only words that had at least 5 clicks
+separately when shown on pages and ads. The truncation
+left us with approximately 3.4K words to choose from.
+
+We implemented one data based and two relevance-based
+feature selection schemes. The data based feature selection
+criteria was described in section 3.1 and given by the mea-
+sure deﬁned as iw in equation 2. We conduct two experi-
+ments, one with the top 1K words and other with all 3.4K
+words. Similar experiments were also conducted on words
+selected using two relevance-based measures described pre-
+viously in Section 3.2. Brieﬂy, the ﬁrst relevance-based mea-
+sure assigns the average tf-idf score to a word. It is computed
+from a single corpus which is the union of page title and ad
+title regions. The second relevance-based measure is the ge-
+ometric mean of average tf-idf scores of a word computed
+separately from page region and ad region corpora. We also
+conducted a set of experiments by randomly selecting a set
+of 1K words from our list of words which performed very
+poorly and hence its results are not reported.
+5.3 Hybrid model
+
+A pure relevance-based based model ﬁnds relevance by
+using semantic information. More speciﬁcally, the relevance
+of an ad for a page is quantiﬁed by a score which is a function
+of page and ad content. We tested two such scores for region
+combination (pti, oti), viz.
+
+X
+
+tf-idfw,pti · tf-idfw,oti
+
+Relevance1 =
+
+w
+
+and
+
+Relevance2 =
+
+qP
+
+Relevance1
+
+w,pti ·P
+
+w tf-idf2
+
+w tf-idf2
+
+w,oti
+
+Relevance2 is the cosine of the angle between tf-idf vectors
+for page and ad regions. The distribution of Relevance1
+
+423WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, ChinaFigure 4: Relationship between log-odds of CTR and
+Relevance2.
+
+was extremely right skewed with several outliers, hence we
+conduct all our experiments with Relevance2.
+
+In addition to a model based solely on Relevance2, we ex-
+plore a hybrid model which combines our word-based logistic
+regression with the relevance-based score model. We explore
+two options: (a) use Relevance2 as an additional feature in
+the logistic regression but without adding substantial over-
+head to the indexing algorithm, and (b) use Relevance2 to
+derive the priors qij in equation 3.
+
+Both these options require understanding the relation-
+ship between the log-odds of CTR and Relevance2; the
+relevance score needs to be transformed on to the scale of
+log-odds of probability. We empirically studied this rela-
+tionship by plotting empirically estimated log-odds against
+Relevance2 scores as follows: sort all positive Relevance2
+values in the training data and create 100 bins. For each
+bin, we compute the empirical log-odds and the average
+Relevance2 score. Figure 4 shows the relationship. Ap-
+proximately 90% of impressions had a Relevance2 value of
+zero. Excluding those, the curve clearly reveals a quadratic
+relationship. Thus, for scheme (a) above, we add quadratic
+terms a + b ∗ Relevance2 + c ∗ Relevance2
+2 to the logistic re-
+gression and estimate parameters a, b and c. For scheme (b)
+above, we derive qij ’s by using the approximate quadratic
+curve shown in ﬁgure 4:
+logit(qij ) = −1.75 + 2.52 ∗ Relevance2 − 1.56 ∗ Relevance
+
+2
+2.
+
+5.4 Evaluation Criteria
+
+Our test data had a total of 14.48M impressions. Of these,
+12.8M had at least one word from our 1K word list or a pos-
+itive tf-idf score when considering only words in pti and oti.
+We only report results on this pool. We use the precision-
+recall metric to measure the performance of our algorithms.
+In our scenario, recall for a given threshold on the model
+
+Figure 5: Precision-recall curves for the three word
+selection schemes with the best hybrid model that uses
+both words and relevance measure as features.
+
+score is the fraction of all clicks that were present (recalled)
+in the test cases above that threshold. Precision for a given
+recall value is the CTR on the test cases above the threshold.
+Since our end goal is to rank ads for a given page, we are
+more interested in algorithms that recall the top fraction of
+clicks (e.g 2%, 5%, 10%) with greater precision. Also note
+that, for a random classiﬁer that classiﬁes a test case as a
+click with a constant probability (overall CTR in training
+corpus), the precision equals that constant probability value
+for every recall value.
+5.5 Results
+
+Our key results are as follows:
+• Figure 5 shows the precision-recall curves for the three
+word selection schemes for our best model, viz, the hy-
+brid model that uses both words and relevance mea-
+sure as features (results with other models were simi-
+lar). Of the three word selection schemes we tried, the
+data-based one using measure iw of equation 2 gave
+the best results, especially for low values of recall. Of
+the two relevance-based word selection criteria, the one
+that uses the geometric mean of the average tf-idf score
+was slightly better than the one that used average tf-
+idf from the union of page and ad regions. However,
+both the relevance schemes were inferior to the data-
+based one. In addition, we found no signiﬁcant diﬀer-
+ence in going from the top 1000 words to the top 3400
+words in the data-based scheme; hence, those results
+are not shown. This does indicate, however, that the
+top few words according to our data-based measure iw
+are enough to capture most of the signal in the data.
+• We conducted experiments using both tf and tf-idf as
+our scores for features in equation 3. We consistently
+get better results with tf; all our subsequent results are
+reported with this measure.
+
+• Figure 6 shows the precision-recall curve for the hy-
+brid, word-only and relevance-based models. Both our
+word-only logistic regression using tf as feature scores
+
+424WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, China(a) Truncated at 20% recall
+
+(b) All recall values
+
+Figure 6: Precision recall curves for three methods. All curves are reported for the best word selection scheme.
+The second curve was truncated at a recall value of 20% to provide a better summary of performance at small
+recall values. Statistical error in all cases was less than 1% of the mean.
+
+in equation 3 and the hybrid model that uses both
+word-based and Relevance2 based features outperformed
+the pure relevance model that ranks ads solely based
+on Relevance2. In fact, the hybrid model is superior
+to the word only model; especially for low recall val-
+ues like 2%, 5% and 10%. The hybrid models that
+use Relevance2 as features and prior have approxi-
+mately similar performance.
+In fact, for a recall of
+10%, the hybrid model provides 25% lift relative to a
+pure relevance-based model and 100% lift relative to
+random model in terms of precision. We notice sharp
+spikes in the precision-recall curves, especially at low
+recall values. This is indicative of high click density
+regions in the test data when ranked by model scores.
+On further scrutiny we discovered some of these high
+density regions were caused by (page,ad) impressions
+that had extremely high click rates (e.g in the range
+of 30% − 60%). This can occur in our data due to a
+number of reasons: popular ads, popular pages, sud-
+den burst of heavy clickers, etc. The 95% conﬁdence
+intervals obtained by producing precision-recall curves
+on several independent splits of test data was within
+1% of the mean; hence, all our results are statistically
+signiﬁcant.
+
+• Figure 7 shows histograms of parameter estimates ob-
+tained from our best hybrid model. The histograms
+show the distribution of coeﬃcient estimate × average-
+tf for words for page main eﬀects, ad main eﬀects and
+page-ad interaction eﬀects. Interestingly, the interac-
+tion eﬀects are small for a majority of words except for
+a small fraction that have large positive values. This
+ties in with the observation that using the top 1000
+words was as accurate as using the top 3400 words; if
+only a few words have signiﬁcant interaction eﬀects,
+then adding more words as features into the logistic
+regression will not help.
+
+5.6 Summary of Results
+
+Based on an extensive set of large scale experiments, we
+demonstrated that using click feedback signiﬁcantly improves
+the accuracy of matching relevant ads to pages compared to
+traditional relevance scoring models that are solely based on
+semantic similarity. We incorporate click feedback through
+a logistic regression by using the words on pages and ads as
+features. We tested several variable selection schemes and
+found a simple data based scheme performs the best. We
+also proposed a hybrid model which uses words and rele-
+vance scores as features and signiﬁcantly outperforms the
+traditional relevance based models in our experiments. Our
+solution is scalable and can process several gigabytes of data
+through a Hadoop parallelization framework. In addition, it
+can be easily incorporated into existing ad-serving architec-
+tures.
+
+6. CONCLUSIONS
+
+We proposed a new class of models to combine relevance
+with click feedback for a contextual advertising system. Our
+model is based on a logistic regression and allows for a large
+number of granular features. The key feature of our model-
+ing approach is the ability to model interactions that exist
+among words between page and ad regions in a way that
+is suitable for eﬃcient evaluation over inverted indexes. In
+fact, we employ a multiplicative factorization to model the
+interaction eﬀects for several (page, ad) regions in a parsi-
+monious way that facilitates fast look-up of ads at run time.
+Through large scale experiments, we convincingly demon-
+strate the advantage of combining relevance with click feed-
+back. In fact, we achieve a 25% lift in precision for a recall
+value of 10% relative to a pure relevance based model in our
+experiments.
+
+In the future, we want to enrich our models to discover
+interactions that are caused due to word synonyms both
+using a supervised and unsupervised approach. We are cur-
+rently experimenting with a wide range of feature selection
+and model ﬁtting scheme for the logistic regression proposed
+
+425WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, China(a) Page Main Eﬀects
+
+(b) Ad Main Eﬀects
+
+(c) Page Ad Interaction Eﬀects
+
+Figure 7: Average estimated weight for page main eﬀects, ad main eﬀects and interaction eﬀects. The distri-
+bution is obtained as product of parameter estimate from regression and the average tf score associated with a
+word in the training corpus.
+
+in the paper. We are also exploring the application of our
+method to other systems where there is implicit feedback in
+the form of clicks, such as web search and search advertising.
+
+and B. Ribeiro-Neto. Learning to advertise. In SIGIR
+’06: Proc. of the 29th annual intl. ACM SIGIR conf.,
+pages 549–556, New York, NY, 2006. ACM.
+
+[14] P. McCullagh and J.A.Nelder. Generalized Linear
+
+Models. Chapman and Hall, 1989.
+
+[15] M.J.Silvapulle. On the existence of maximum
+
+likelihood estimates for the binomial response models.
+Journal of the Royal Statistical Society, Series B,
+43:310–313, 1981.
+
+[16] P.Komarek and A.W.Moore. Making logistic
+
+regression a core data mining tool with tr-irls. In
+International Conference on Data Mining, pages
+685–688, 2005.
+
+[17] M. Regelson and D. Fain. Predicting click-through
+
+rate using keyword clusters. In In Proc. of the Second
+Workshop on Sponsored Search Auctions, 2006.
+
+[18] B. Ribeiro-Neto, M. Cristo, P. B. Golgher, and E. S.
+
+de Moura. Impedance coupling in content-targeted
+advertising. In SIGIR ’05: Proc. of the 28th annual
+intl. ACM SIGIR conf., pages 496–503, New York,
+NY, 2005. ACM.
+
+[19] M. Richardson, E. Dominowska, and R. Ragno.
+
+Predicting clicks: estimating the click-through rate for
+new ads. In WWW, pages 521–530, 2007.
+
+[20] S.D.Pietra, V.D.Pietra, and J.Laﬀerty. Inducing
+
+features of random ﬁelds. IEEE PAMI, 19:380–393,
+1997.
+
+[21] C. Wang, P. Zhang, R. Choi, and M. D. Eredita.
+
+Understanding consumers attitude toward advertising.
+In Eighth Americas conf. on Information System,
+pages 1143–1148, 2002.
+
+[22] W. Yih, J. Goodman, and V. R. Carvalho. Finding
+advertising keywords on web pages. In WWW ’06:
+Proc. of the 15th intl. conf. on World Wide Web,
+pages 213–222, New York, NY, 2006. ACM.
+
+7. REFERENCES
+[1] R. Baeza-Yates and B. Ribeiro-Neto. Modern
+
+Information Retrieval. ACM, 1999.
+
+[2] A. Z. Broder, D. Carmel, M. Herscovici, A. Soﬀer, and
+
+J. Zien. Eﬃcient query evaluation using a two-level
+retrieval process. In CIKM ’03: Proc. of the twelfth
+intl. conf. on Information and knowledge management,
+pages 426–434, New York, NY, 2003. ACM.
+
+[3] A. Z. Broder, M. Fontoura, V. Josifovski, and
+L. Riedel. A semantic approach to contextual
+advertising. In SIGIR, pages 559–566, 2007.
+
+[4] P. Chatterjee, D. L. Hoﬀman, and T. P. Novak.
+
+Modeling the clickstream: Implications for web-based
+advertising eﬀorts. Marketing Science, 22(4):520–541,
+2003.
+
+[5] C.Lin, R.C.Weng, and S.S.Keerthi. Trust region
+
+newton methods for large-scale logistic regression. In
+International Conference on machine learning, 2007.
+
+[6] C.R.Rao. Linear Statistical Inference and its
+
+Applications. Wiley-Interscience, 2002.
+
+[7] D.C.Liu and J.Nocedal. On the limited memory bfgs
+method for large scale optimization. Mathmematical
+Programming, 45:503–528, 1989.
+
+[8] S. Derksen and H. J. Keselman. Backward, forward
+and stepwise automated subset selection algorithms:
+Frequency of obtaining authentic and noise variables.
+British Journal of Mathematical and Statistical
+Psychology, 45:265–282, 1992.
+
+[9] Online ad spending to total $19.5 billion in 2007.
+eMarketer, February 2007. Available from http:
+//www.emarketer.com/Article.aspx?id=1004635.
+
+[10] A. Foundation. Apache hadoop project. In
+
+lucene.apache.org/hadoop.
+
+[11] G.King and L.Zeng. Logistic regression in rare events
+
+data. Political Analysis, 9:137–162, 2001.
+
+[12] J.Dean and S.Ghemawat. Mapreduce:simpliﬁed data
+processing on large clusters. In Sixth Symposium on
+Operating System Design and Implementation, pages
+137–150, 2004.
+
+[13] A. Lacerda, M. Cristo, M. A. G., W. Fan, N. Ziviani,
+
+426WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, China

@@ -1,0 +1,259 @@
+PAKE-based Mutual HTTP Authentication
+
+for Preventing Phishing Attacks
+
+Yutaka Oiwa
+
+Research Center for Information Security (RCIS)
+
+National Institute of Advanced Industrial Science and Technology (AIST)
+
+Hiromitsu Takagi
+
+Hajime Watanabe
+
+Hirofumi Suzuki
+Yahoo! Japan, Inc.
+
+ABSTRACT
+We developed a new Web authentication protocol with password-
+based mutual authentication which prevents various kinds of phish-
+ing attacks. This protocol provides a protection of user’s passwords
+against any phishers even if a dictionary attack is employed, and
+prevents phishers from imitating a false sense of successful authen-
+tication to users. The protocol is designed considering interoper-
+ability with many recent Web applications which requires many
+features which current HTTP authentication does not provide. The
+protocol is proposed as an Internet Draft submitted to IETF, and im-
+plemented in both server side (as an Apache extension) and client
+side (as a Mozilla-based browser and an IE-based one).
+Categories and Subject Descriptors: K.6.5 [Management of
+Computing and Information Systems]: Security and Protection—
+Authentication
+General Terms: Security, Standardization.
+Keywords: Network protocol, Mutual authentication, HTTP.
+
+1.
+
+INTRODUCTION
+
+We propose a new password-based mutual authentication pro-
+tocol for Web systems which prevents various kinds of phishing
+attacks. Currently, initial design of the protocol is ﬁnished, an ex-
+tension for Apache Web server and two client browsers (Mozilla
+and IE-based) supporting the new protocol are implemented, and
+the speciﬁcation is submitted to IETF as an Internet Draft [1] for
+standardization.
+
+Recently, phishing attacks are getting more and more sophisti-
+cated. Phishers not only steal user’s password directly, but imi-
+tate successful authentication to steal user’s sensitive information,
+check the password validity by forwarding the password to the le-
+gitimate server, or employ a man-in-the-middle attack to hijack
+user’s login session. Existing countermeasures such as one-time
+passwords can not completely solve these problems.
+
+Our protocol prevents such attacks by providing users a way to
+discriminate between true and fake web servers using their own
+passwords. Even when a user inputs his/her password to a fake
+website, using this authentication method, any information about
+the password does not leak to the phisher, and the user certainly
+notices that the mutual authentication has failed. Phishers cannot
+make such authentication attempt succeed, even if they forward re-
+ceived data from a user to the legitimate server or vice versa. Users
+can safely input sensitive data to the web forms after conﬁrming
+that the mutual authentication has succeeded.
+
+To achieve this goal, we use a kind of cryptographic scheme
+called PAKE (Password-Authenticated Key Exchange) authentica-
+tion algorithms as a basis. The use of PAKE mechanism allows
+users to use familiar ID/password based accesses, without fear of
+leaking any password information to the communication peer or
+eavesdroppers. The protocol, as a whole, is designed as a natural
+extension to the current HTTP authentication schema such as Basic
+and Digest access authentication (RFC 2617). To use PAKE mech-
+anism for such a purpose, we had to modify it to prevent credential
+forwarding (man-in-the-middle) attacks.
+
+We also designed new user-interface for this authentication sys-
+tem. To prevent phishing attacks, it is important to make users
+easily determine whether the server authentication has been suc-
+ceeded or not. This information must be protected from forgery
+by phishers, otherwise phishers deliberately convince users that the
+mutual authentication is established, and let users input sensitive
+information to the phishing sites.
+
+2. RELATED WORK
+
+There are several existing proposals which can be used for pre-
+venting phishing attacks. TLS-SRP extension introduces a kind
+of PAKE into TLS. Although it can be a good solution for closed
+applications like VPN or IPP, it is not convenient for general web
+systems.
+
+Several web toolbar plugins have own login facility to the spe-
+ciﬁc sites, which effectively provides host-authentication. How-
+ever, it is unacceptable to install a number of plugins for all possible
+web sites the users access.
+
+TLS server authentication is not powerful enough to prevent
+phishing, as certiﬁcates (especially so-called “class-1” certiﬁcates)
+can be acquired by any party including phishers. Phishing using
+HTTPS certiﬁed by publicly-accepted PKI is already a real issue,
+as users do not always keep attentions to the subject of issued cer-
+tiﬁcates.
+
+Another solution is to issue a special certiﬁcates for each “gen-
+uine” site (as accepted by the vendors of anti-phishing products).
+However, it is completely “closed” solution with unclear criteria
+for “genuineness”.
+
+“pwd_hash” prevents phishing by making the transmitted data
+different for each sites, even for the same password. However, to
+prevent phishers from guessing the real password, the original pass-
+word must be very long (e.g. more than 30 characters) to prevent
+off-line attacks.
+
+Copyright is held by the author/owner(s).
+WWW 2009, April 20–24, 2009, Madrid, Spain.
+ACM 978-1-60558-487-4/09/04.
+
+3. DESIGN PRINCIPLES
+
+Our design of the protocol addresses the following criteria for
+preventing phishers from forging users and stealing private infor-
+
+WWW 2009 MADRID!Poster Sessions: Thursday, April 23, 20091143mation including passwords and other data
+
+• The protocol is generic: As the algorithm uses passwords
+as a basis of authentication, a single implementation of the
+algorithm can be used for any web sites without speciﬁc au-
+thorizations for “genuine sites”.
+
+• The protocol is a natural extension to existing HTTP authen-
+tication algorithms deﬁned in RFC 2617.
+It can be easily
+integrated to web servers and clients, and the protocol can
+pass through existing web proxies, load balancers, or TLS
+accelerators without modiﬁcation to such intermediate ma-
+chines. Our protocol works both for HTTP and for HTTPS.
+For conﬁdentiality and transport-layer safely, our protocol
+is designed to be used in combination with existing TLS
+(HTTPS) mechanisms.
+
+• The authentication is sound:
+
+if users have connected to a
+phishing site with wrong host-name (which do not know the
+user’s password), the authentication will never succeed, and
+the users can reliably be aware to the authentication failure.
+This property must hold even if the genuine site can be used
+as an oracle (e.g. forwarding attacks).
+Further more, in such cases no information about the user’s
+password is leaked to the phishers. By analyzing the com-
+munication data, even if they performed exhaustive search
+(off-line attack), no information about the password can be
+acquired. This means it is safe to input their password to the
+phisher’s site.
+
+4. PROTOCOL OVERVIEW
+
+Brief view of our protocol is described in this section. Our proto-
+col uses the “Key Agreement Mechanism 3” (KAM3, Section 6.3)
+deﬁned in ISO/IEC 11770-4 as a cryptographic basis. Server-side
+password database, which contains pairs of a user-name and the
+password veriﬁcation element v calculated from user’s password
+(“π” below), is prepared beforehand.
+
+Firstly, as a response to a client’s request (without any authen-
+tication), the server sends a usual HTTP 401 response to request
+authentication.
+
+GET / HTTP/1.1
+Host: www.example.com
+
+HTTP/1.1 401 Authentication required
+WWW-Authenticate: Mutual algorithm=iso11770-4-ec-p256,
+
+validation=host, realm="Protected Contents", stale=0
+
+Content-Type: text/html; charset="ISO-8859-1"
+
+After the user has input the user-name and the password, the
+client calculates the password hash π by combining host-name,
+realm, user-name and the password. The use of the host-name here
+prevents phishers from exploit credential forwarding attacks.
+
+The client also constructs a value wa according to ISO/IEO
+11770-4, and sends the second request. Then the server respond
+with an intermediate 401 response containing the value wb using
+the password veriﬁcation element v in the password database. It
+also sends the session id “sid” which is used to distinguish concur-
+rent authentication sessions.
+
+GET / HTTP/1.1
+Host: www.example.com
+Authorization: Mutual algorithm=iso11770-4-ec-p256,
+
+validation=host, user=foobar, wa=xxxx
+
+HTTP/1.1 401 Authentication required
+WWW-Authenticate: Mutual sid=yyyy, wb=zzzz,
+
+nc-max=256, nc-window=64, time=300, path=/
+
+After that, the client sends a third request containing value of
+oa. The value oa is a hash value calculated according to ISO/IEO
+11770-4 except that it also uses the host-name, the value of nonce
+counter (nc) to calculate it. The server calculates the same value
+and veriﬁes whether the client is acceptable. If so, the server sends
+the ﬁnal response with the value ob. The receiving client must ver-
+ify the value ob to check whether the server is genuine.
+
+GET / HTTP/1.1
+Host: www.example.com
+Authorization: Mutual sid=yyyy, nc=0, oa=wwww
+
+HTTP/1.1 200 OK
+Authentication-Info: Mutual sid=yyyy, ob=vvvv
+Content-Type: text/html; charset="ISO-8859-1"
+
+If second request to the same host is sent, the client can reuse
+the session key by directly sending the third message to the server
+using the same session ID. In this case, we only need to perform a
+hash operation but no public-key operations.
+
+5. USER INTERFACES CONSIDERATION
+Oue possibility for an attack to our scheme is to forge the UI
+dialogs for asking passwords using this protocol. To prevent such
+kind of attacks, our extension for Mozilla Firefox uses the address-
+bar area (where web-pages do not have access to) for password
+input instead of using dialogs, and introduces a indicator for dis-
+playing the authentication status.
+
+(a) Mutual authentication is requested. Input ﬁelds are in the
+
+chrome area.
+
+(b) Mutual authentication has been succeeded. The username
+
+“mutualtest” is displayed in the chrome area.
+
+6. CONCLUSION AND FUTURE WORK
+
+We designed a new password-based Web mutual authentication
+protocol which prevents various kinds of phishing attacks. We have
+implemented a server-side module and two client implementation
+based on Mozilla and Microsoft Internet Explorer. These imple-
+mentations and the protocol speciﬁcation, as well as our online
+demonstration, are available online from our homepage1.
+
+7. REFERENCE
+
+[1] Y. Oiwa, H. Watanabe, H. Takagi and H. Suzuki,Mutual Authentication
+Protocol for HTTP, Internet Draft available at https://datatracker.
+ietf.org/drafts/draft-oiwa-http-mutualauth/.
+
+1https://www.rcis.aist.go.jp/special/MutualAuth/
+
+WWW 2009 MADRID!Poster Sessions: Thursday, April 23, 20091144

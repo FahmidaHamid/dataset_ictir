@@ -1,0 +1,2378 @@
+Multi-Objective Ranking of Comments on Web
+
+∗
+
+Onkar Dalal
+Stanford University
+
+California, USA
+
+onkar@stanford.edu
+
+Srinivasan H Sengamedu
+
+Komli Labs
+
+Bangalore, India
+shs@komli.com
+
+Subhajit Sanyal
+
+Big Data Labs, American
+
+Express
+
+Gurgaon, India
+
+Subhajit.Sanyal@aexp.com
+
+ABSTRACT
+With the explosion of information on any topic, the need
+for ranking is becoming very critical. Ranking typically de-
+pends on several aspects. Products, for example, have sev-
+eral aspects like price, recency, rating, etc. Product ranking
+has to bring the “best” product which is recent and highly
+rated. Hence ranking has to satisfy multiple objectives. In
+this paper, we explore multi-objective ranking of comments
+using Hodge decomposition. While Hodge decomposition
+produces a globally consistent ranking, a globally inconsis-
+tent component is also present. We propose an active learn-
+ing strategy for the reduction of this component. Finally,
+we develop techniques for online Hodge decomposition. We
+experimentally validate the ideas presented in this paper.
+
+Categories and Subject Descriptors
+H.m [Information Systems]: Miscellaneous
+
+General Terms
+Algorithms
+
+Keywords
+Multi-Objective Ranking, Hodge Decomposition, Active Learn-
+ing
+
+1.
+
+INTRODUCTION
+
+The amount of information available on the Internet on
+any topic is ever increasing. Hence the amount of informa-
+tion relevant to any topic is also on the increase. Ranking
+plays a crucial part in selecting relevant information. Rank-
+ing has traditionally been posed as a problem of match-
+ing queries to documents. Subsequent approaches to rank-
+ing emphasized document quality/authority in addition to
+matching. With the availability of complex data and in-
+formation ﬁnding requirements, there is a realization that
+several aspects are important to ranking. In this paper, we
+address multi-objective ranking.
+
+Multi-objective ranking is relevant to several applications
+– product ranking, video ranking, etc. We consider ranking
+∗
+hoo! Labs, Bangalore
+
+This work was conducted when the authors were with Ya-
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2012, April 16–20, 2012, Lyon, France.
+ACM 978-1-4503-1229-5/12/04.
+
+of comments on news articles. In a typical scenario, users
+comment on news articles. Users also rate the comments
+with “thumbs up” and “thumbs down”. The goal of rank-
+ing is to increase user engagement – roughly measured by
+the fraction of “thumbs up”. A simple strategy is to rank
+comments by the number of thumbs up they receive. This
+does not work well since new comments do not get suﬃcient
+ratings. Hence we resort to other measures like the quality
+of comments or reputation of commenters. So ranking of
+comments has to balance several objectives – actual rating,
+recency, commenter reputation, comment quality etc. – to
+arrive at a single ranking.
+
+Example 1. We use Figure 1 as a running example in
+this paper. This illustrates the ranking of 8 comments to
+a news article in Yahoo News. We consider three ranking
+aspects: current rating, commenter’s reputation, and com-
+ment quality. For each of these aspects, each comment gets a
+score. These scores are incomplete because of the following:
+new comments have insuﬃcient ratings, some commenters
+have no history of commenting, and we do not calculate qual-
+ity scores for very short comments. We can construct a
+graph for each aspect. The nodes of the graph are comments
+and there is an edge between any pair of nodes if both the
+2
+nodes have scores. See Figures 1(a), 1(b), and 1(c).
+
+It is well-known such multi-aspect data can be have con-
+ﬂicts in the sense diﬀerent aspects can have conﬂicting pref-
+erences or even be “cyclic”.
+
+Example 2. Comments 2 has higher rating compared to
+comment 7 but the latter has a higher quality compared to the
+former. See Figures 1(a) and 1(c). In Figure 1(h) (which
+represents the harmonic ﬂow as discussed in Section 2.2),
+comment 2, 3, 1, and 4 form a cycle: 4 is better than 2, 3
+is better than 1, 1 is better than 4, and 4 is better than 1. 2
+
+Such cyclic preferences are inherent in social choice data. In
+other scenarios, the cyclic preferences are artifacts of incom-
+plete data and it is possible to make the data more complete
+at a cost. For example, in case of comments, it is possible to
+obtain more ratings for a comments (or pairs of comments)
+by ranking it (or them) high.1 So if we identify critical de-
+pendencies and get more data (by displaying the comments,
+for example), we can resolve the critical conﬂicts and arrive
+at globally consistent ranking faster. This is related to ac-
+tive learning using explore-exploit or editorial strategies but
+in the Hodge framework.
+
+1Such exploration is possible with other data too. For exam-
+ple, In product ranking, popularity information for a prod-
+uct can be determined by showing the product more often.
+
+WWW 2012 – Session: Obtaining and Leveraging User CommentsApril 16–20, 2012, Lyon, France419Example 3. In Figure 1(h), we identify that the infor-
+mation about relative preference between comments 1 and
+2 is important. Getting this information reduces the cyclic
+2
+preference.
+
+Contributions: The above examples highlight the fol-
+lowing requirements in ranking applications. (1) Ability to
+fuse the preference data from multiple aspects. (2) Need to
+identify and resolve conﬂicts. Our contributions are,
+
+• A technique for aggregating preference data from mul-
+
+tiple aspects.
+
+• An active exploration framework for identiﬁcation of
+critical missing data for fast resolution of ranking con-
+ﬂicts.
+
+We exploit Hodge decomposition framework for ranking of
+preference data and identiﬁcation of critical missing data.
+Hodge decomposition is a global framework which requires
+processing of the information about all comments of an ar-
+ticle. Since new comments arrive steadily, we need a mech-
+anism to incrementally update the ranking rather than run-
+ning the ranking calculations from the scratch. In this case,
+online updates are more eﬃcient. Hence we propose
+
+• A technique for online update of ranking models.
+
+Paper organization: This paper is organized as fol-
+lows. Section 1.1 discusses the problem deﬁnition and multi-
+objective ranking. Section 2 reviews Hodge decomposition.
+Section 3 outlines the proposed technique for ranking data
+aggregation and Section 4 describes the use of Hodge decom-
+position on the aggregated matrix. While Hodge decompo-
+sition provides a global ranking, the quality of this rank-
+ing may not be high. Section 5 proposes an active learning
+framework for increasing the quality of global ranking. On-
+line updates for Hodge ranking are discussed in Section 6.
+Section 7 provides experimental validation of the proposed
+techniques. Section 8 places this work in context with re-
+spect to related work. The paper closes with concluding
+remarks.
+1.1 Problem Deﬁnition
+
+The general problem tackled in this work can be deﬁned as
+follows. We are given n objects to be ranked. (The notation
+in the following sections is summarized in Table 1.) In this
+paper, these are the comments to a single article. There are
+k criteria for comparisons (rating, author-reputation, read-
+ability, freshness, textual similarity with the article, collab-
+orative factors, etc.). For each comparison criterion r, we
+have a preference score matrix Yr with Yr
+ij denoting the
+rank-score diﬀerence between comment i and comment j
+according to the criteria r. Note that the matrix Yr is
+skew-symmetric (Yr
+
+ij = −Yr
+ji).
+
+As mentioned in Example 1, the entries observed or ob-
+servable are sparse. The sparsity is measured by a param-
+eter p which is the fraction of the total entries observed.
+And the support set for criteria r is denoted by Sr which is
+a symmetric binary matrix. In this paper, we address the
+following.
+
+Rank Aggregation: We ﬁnd a ranking preference matrix
+Y(w) which respects each of the criteria Yr (in a pre-
+decided weighted manner). See Section 3.
+
+(a) Yrating
+
+(b) Yreputation
+
+(c) Yquality
+
+(d) Y(w)
+
+(e)
+Rank-
+ing
+
+(f) grad ﬂow of Y(w) (g) curl ﬂow of
+
+Y(w)
+
+(h) harmonic ﬂow of Y(w)
+
+(j) grad ﬂow of Y(w)
+after active learning
+
+(k) curl ﬂow of
+Y(w) after active
+learning
+
+(i)
+Mod-
+iﬁed
+Rank-
+ing
+
+Figure 1: Example: Rank aggregation for ranking a
+set of eight comments.
+
+WWW 2012 – Session: Obtaining and Leveraging User CommentsApril 16–20, 2012, Lyon, France420Table 1: Table of Notations
+
+Vector of 1’s
+Unit vector with dimension i set to 1
+Number of comparison criteria
+Number of comments to rank
+Sparsity ratio in preference data
+Residue matrix
+Individual ranking-score vector
+Binary support matrix of Sr
+Gradient component
+Curl Flow component
+Harmonic Flow component
+
+e
+ei
+k
+n
+p
+R
+s
+Sr
+XG
+XC
+XH
+
+Y (Yr) Preference scores (for criterion r)
+Aggregated Yrs using weight vector w
+Y(w)
+Preference weight for criterion r
+(cid:3)Y(cid:3)F,S Frobenius norm of Y on support set S
+
+αr
+
+Global ranking: Once we ﬁnd the “consensus” preference
+matrix, we ﬁnd the “optimal” global ranking consistent
+with it (Section 4).
+
+Active Learning: In active learning we identify the pair
+of comments, for which if more data is acquired, the
+global inconsistency maximally reduces (Section 5).
+
+Online Update: Here we compute the ranking incremen-
+
+tally as in online learning framework (Section 6).
+
+2. HODGE DECOMPOSITION
+
+In this section, we review the combinatorial Hodge decom-
+position as described in [16] for arriving at globally consis-
+tent rankings from pairwise preference information Y. The
+decomposition also provides a quality score (“residue”) for
+the global ranking as well as a resolution of the residue to
+insigniﬁcant (curl ) and signiﬁcant (harmonic) components.
+2.1 Globally Consistent Ranking
+A globally consistent ranking is characterized a single score
+function on comments. Suppose s ∈ Rn is the vector of
+ranking scores for the comments such that si > sj implies
+that comment i is better than comment j. Then preference
+matrix induced by s is given by
+
+Xij = sj − si
+
+This can also be written in matrix form as
+
+X = esT − seT
+
+The RHS can be viewed as a gradient operator on vectors s,
+grad : Rn → Rn×n and the X is a rank-2, skew-symmetric
+matrix can be viewed as a gradient ﬂow.
+
+While the matrix X is cycle free, the data matrix Y can
+have conﬂicts. We deﬁne the optimal global ranking XG of
+Y as
+
+XG
+
+(cid:3)Y − XG(cid:3)2
+minimize
+subject to XG = esT − seT ,
+eT s = 0.
+
+F,S
+
+(1)
+
+(2)
+
+(3)
+
+The objective function is the Frobenius-norm of the residue
+after subtracting a gradient ﬂow from the data matrix Y,
+
+weighted with S. The norm is deﬁned as
+
+(cid:3)Y − X(cid:3)2
+
+F,S =
+
+Sij (Yij − Xij )2
+
+(4)
+
+(cid:2)
+
+∀i,j
+
+This constrained-linear least squares regression problem ﬁnds
+the globally consistent ranking closest to Y in L2 sense.
+Since “s + constant” is also a valid solution, the second con-
+straint is added to get a unique solution without changing
+the ranking order.
+
+We can solve similar problem with minimizing L1-norm in
+the objective function or a slightly modiﬁed nuclear-norm
+minimizing, matrix completion problem as given in [10].
+However, the rankings obtained by either approaches are
+very similar to each other. Hence, we continue with L2-
+norm for the experiments. The inconsistency in data is
+characterized by the residue obtained after extracting the
+∗
+∗
+optimal global component. The residue R
+G is a
+divergence-free cyclic ﬂow. The consistency quality of ob-
+served data is characterized using the cyclicity ratio given
+by
+
+= Y − X
+
+Cp =
+
+∗(cid:3)2
+(cid:3)R
+(cid:3)Y(cid:3)2
+
+2,S
+
+2,S
+
+(5)
+
+(6)
+
+(7)
+
+Example 4. Figure 1(f ) shows the gradient ﬂow of the
+graph in Figure 1(d). The ranking derived from this ﬂow is
+2
+shown in Figure 1(e).
+
+2.2 Inconsistencies: Local + Global
+
+In this section, we look deeper into the inconsistencies and
+split them into local and global inconsistencies of the data.
+The local inconsistency is a curl ﬂow which is combination
+of triangular cyclic ﬂows. And the global inconsistency is
+an orthogonal (in L2 sense) ﬂow which is locally acyclic but
+globally cyclic. This ﬂow is called the harmonic ﬂow. The
+local and global components are separated by solving an-
+other optimization problem,
+
+(cid:3)R
+
+minimize
+
+∗ − XC(cid:3)2
+F,S
+∗
+subject to XC = curl
+
+XC
+
+Φ,
+
+where the 3-dimensional tensor Φ is of size n × n × n and
+satisﬁes
+
+Φ(i, j, k) = Φ(j, k, i)
+
+= Φ(k, i, j)
+= − Φ(i, k, j) = − Φ(j, i, k)
+= − Φ(k, j, i).
+
+The operator curl applied to a matrix Y gives a n× n× n
+
+tensor Φ such that
+.
+= curl(Y)ijk
+
+Φ(i, j, k)
+
+.
+= Yij + Yjk + Yki
+
+(8)
+
+and its dual operator curl* applied to a 3-dimensional ten-
+sor Φ gives a matrix XC such that
+
+(cid:2)
+
+XC (i, j) =
+
+Φ(i, j, k)
+
+k
+
+Here, the entry corresponding to an edge (i, j) is the sum of
+all the triangular ﬂows which share that particular edge.
+
+If Yij is cost of traversing the edge (i, j), then for XG
+any two paths between same source and destination nodes
+would cost exactly the same. In other words, XG satisﬁes
+the zero-curl condition,
+
+WWW 2012 – Session: Obtaining and Leveraging User CommentsApril 16–20, 2012, Lyon, France421∗
+
+The optimization problem (6) is a linear least squares re-
+gression for the matrix XC which is constrained to the space
+of three-dimensional n×n×n tensors. Where, curl
+∗
+of curl
+is dual of the curl operator deﬁned in Expression (8). The
+solution XC denotes the curl ﬂow which comprises of the
+local-inconsistencies and can be written as sum of triangu-
+∗ − XC denoted by
+lar inconsistencies. The residue ﬂow R
+XH is the divergence-free, curl-free ﬂow called the harmonic
+ﬂow. The matrix XH is a locally consistent but globally in-
+consistent ﬂow which comprises of cycles of size ≥ 4. The
+global inconsistency usually occurs due to some missing Y
+values. In case of complete S, the global inconsistency is 0
+as all the large cycles are decomposed into gradient ﬂow and
+smaller triangular ﬂows.
+
+Example 5. Figures 1(g) and 1(h) show the curl and
+harmonic ﬂows of the graph in Figure 1(d). The cycles in
+the harmonic ﬂow (in Figure 1(h)) is of length 4. Recall that
+cycles of length 4 or more are called globally inconsistent.
+The curl component (Figure 1(g)) has cycles of length 3 and
+these are called locally inconsistent. Note that our proposed
+active learning technique (in Section 5) tries to eliminate
+2
+global inconsistencies.
+
+Similar to “cyclicity ratio” (see Expression 5), we deﬁne
+
+norm-ratios for curl and harmonic components as
+
+(cid:3)XC(cid:3)2
+(cid:3)Y(cid:3)2
+
+2,S
+
+2,S
+
+(cid:3)XH(cid:3)2
+(cid:3)Y(cid:3)2
+
+2,S
+
+2,S
+
+and
+
+(9)
+
+to quantify local and global inconsistencies.
+
+Therefore, we have decomposed the aggregated preference
+
+data Y into
+
+Y = XG + XC + XH
+
+(10)
+
+which is known as the Hodge decomposition of a matrix
+into (a) curl-free gradient ﬂow (b) divergence-free curl ﬂow
+and (c) curl & divergence-free harmonic ﬂow.
+
+3. RANKING DATA AGGREGATION
+
+Hodge decomposition provides a way of decomposing a
+single preference matrix. As described earlier in Section 1.1,
+we have several preference matrices Yr for r = 1, 2,· ·· , k –
+each one being partial and possibly noisy. These are aggre-
+gated to get an incomplete matrix Y(w). (We extract the
+most appropriate individual ranking score s from Y(w).)
+
+In this section, we describe the initial preprocessing step
+of aggregating the ranking data from various criteria. Given
+n objects (comments) to be ranked, there are k criteria for
+comparisons (rating, recency, author-reputation, readabil-
+ity, etc). For each comparison criteria r, preference score for
+every pair (i, j) may not be available or meaningful. We de-
+note the sparse support for each criteria with a symmetric
+binary matrix Sr with Sr
+ij = 1 for every available prefer-
+ence score (i, j). The sparsity is measured by a parameter p
+denoting the fraction of total entries observed. The actual
+value of the diﬀerence in ranking score between a pair of
+comments is given by a skew-symmetric matrix Yr. In the
+most consistent case Yr is a rank 2 skew-symmetric matrix
+with e (vector of ones) as one of its generators as explained
+in the previous section.
+
+We now describe our procedure to aggregate the incom-
+plete preference data from diﬀerent criteria to get a balanced
+
+ij = 0 or Sr
+
+aggregate preference measure. Firstly, we observe that an
+edge (i, j) with Yr
+ij = 0 in a preference matrix, can either
+have the corresponding Sr
+ij = 1. The distinction
+between the two being that a 0 of ﬁrst kind denotes lack of
+information for that edge, while the second kind indicates
+that the two comments i and j are equal in preference scores
+according to the criteria r. (The latter is called a “structural
+zero”.) Hence, we say that an edge (i, j) belongs to the sup-
+port set Sr if Yr
+ij value is known with high conﬁdence and
+it denotes the preference measure between i and j.
+
+Drawing parallel from the rank-aggregation of ranking
+lists [5], we combine the individual preference matrix Yr
+into a combination preference matrix given by
+
+r=k(cid:2)
+
+Y(w) =
+
+r=1
+
+wrYr.
+
+(11)
+
+The weights w are learned by solving the following optimiza-
+tion problem:
+
+r=k(cid:2)
+
+minimize
+
+w
+
+r=1
+
+subject to
+
+αr(cid:3)Y(w) − Yr(cid:3)2
+
+F,Sr
+
+r=k(cid:2)
+
+wrYr,
+Y(w) =
+eT w = 1, w ≥ 0.
+
+r=1
+
+(12)
+
+The objective function is the weighted sum of the Frobe-
+nius distances of the aggregated matrix from the individual
+components. See Equation (4). And the parameters αr are
+chosen from prior conﬁdence or importance assigned to re-
+spective criteria. The αr can also be tailored to speciﬁc user
+preferences using declared interests or learned from user be-
+havior history.
+
+Note that each edge (i, j) may belong to multiple or one
+or none of the comparison criteria support sets Sr. Let ˆS
+(Note that ˆS does
+denote the union of support sets Sr.
+not depend on w.) Thus, ˆSij = 1 implies that for at least
+one criteria r, the preference information for edge (i, j) is
+available. Due to the non-uniformity of the sparsity patters
+of diﬀerent criteria, the weights have to carefully normal-
+ized over the available information for each edge belonging
+to ˆS. The solution of this constrained-convex optimization
+problem gives us a balanced aggregate preference measure
+Y(w).
+
+Example 6. Figure 1(d) shows the preference graph cor-
+2
+
+responding to Y(w).
+
+4. HODGE RANK
+
+In this section, we show how the ideas discussed in the
+
+previous sections ﬁt together.
+
+1. We start with k preference matrices: Y1, Y2,··· , Yk.
+
+2. We use rank aggregation (optimization problem (12))
+
+to arrive at the aggregated preference matrix Y(w).
+
+3. We ﬁrst separate out the gradient ﬂow through the
+
+optimization problem (3).
+
+4. We extract the curl ﬂow through the optimization
+
+problem (6).
+
+WWW 2012 – Session: Obtaining and Leveraging User CommentsApril 16–20, 2012, Lyon, France422The quality of decomposition is estimated by the norm of
+residues (see Expressions (5) and (9)) while the quality of the
+ranking is measured by comparing the sum of the Kendall -τ
+distances from individual rankings. See Section 7 for details.
+
+Example 7. Figure 1(f ) shows the preference graph cor-
+responding to this approximating preference matrix. We re-
+fer to this approximating preference relationship as the gra-
+dient ﬂow of the aggregate preference matrix. The ranking
+obtained as a result is shown in Figure 1(e).
+
+We now move to the analysis of the residue. One com-
+ponent captures local inconsistencies in the aggregate prefer-
+ence relationship while the other component captures global
+inconsistencies. Figure 1(g) shows the preference graph cor-
+responding to the local inconsistencies, which is referred to
+as the curl ﬂow. These are in the form of short cyclic
+preferential relationships amongst the comments indicated
+as triangular cyclic components in the ﬁgure. The pref-
+erence graph pertaining to the global component (referred
+to as the harmonic ﬂow) is shown in Figure 1(h) and ex-
+hibit preferential chains of longer cycles. In our example,
+the harmonic component is {1 → 4 → 2 → 3 → 1} and
+{6 → 1 → 4 → 2 → 7 → 3 → 6}.
+
+2
+
+5. ACTIVE LEARNING
+
+Having obtained the Hodge decomposition into three com-
+ponents, we will now look at each of it closely. Ideally, with
+complete data and no noise, we would expect Y(w) to be of
+the form of gradient ﬂow and extracting a global ranking-
+score s from it would be straight forward. But as most
+settings with real online data, the noise in behavior of large
+user base is inevitable. And with complete noisy data, even
+though the global inconsistencies are zero, the local incon-
+sistencies are unavoidable. In this work, we do not focus on
+methods for reducing the local inconsistencies. In our set-
+ting, the sparsity adds another twist leading to a non-zero
+harmonic ﬂow and thereby a globally inconsistent compo-
+nent.
+
+Our next step is to eliminate the global inconsistencies in
+the harmonic component which are caused by the sparsity
+of data. For this, we will select edges for active-learning
+and use editorial or explore-exploit methods to obtain the
+preference data for these comment-pairs. Evaluating all the
+absent edges would solve our problem. However, the evalu-
+ation process is either very expensive (for editorial) or takes
+a long time (to increase ratings using explore-exploit meth-
+ods). Hence, it is vital to choose the edges intelligently to
+eliminate the harmonic-component as cheaply and quickly as
+possible. And the experimental evidence suggests that the
+global inconsistencies can be reduced substantially with rel-
+atively very few edge evaluations. Among the various diﬀer-
+ent methods for choosing edges for evaluation, we compare
+the following three methods:
+
+1. Baseline method of adding edges randomly.
+
+2. Edge which maximizes the number of triangles com-
+
+pleted by its addition,
+
+3. Edge which maximizes the weighted sum of triangles
+
+completed by its addition,
+
+Section 7 shows the experimental results of these three strate-
+gies for reducing the harmonic component.
+
+Example 8. As we saw earlier in this example that there
+is an uncertainty in the preference relationships between com-
+ments 1 and 2. Having a direct preferential relationship be-
+tween comments 1 and 2 is more reliable than to infer it
+through second order relationships. To resolve this, we eval-
+uate this edge directly and introduce the correct preference
+explicitly which is 1 → 2. Figure 1(i) shows the updated
+ranking order after the introduction of this edge. Figure 1(j)
+shows the gradient ﬂow component after the addition of the
+new edge and Figure 1(k) shows the updated curl ﬂow of the
+2
+updated aggregate preference matrix.
+
+6. ONLINE RANK CALCULATIONS
+
+In this section, we describe how to update the rank when
+new information/data arrives/is obtained in the form of a
+new comment or an update from active learning iteration.
+One would predict the existing order to not change sub-
+stantially by addition of a new comment. Hence, the new
+comment can be expected to be inserted in the existing or-
+der with few changes in the order of “nearby” comments.
+In order to deﬁne the notion of “nearby” comments, we will
+ﬁrst look at an alternate formulation for the optimization
+problem (3). Given the n × n preference data matrix Y, we
+consider a directed graph on n nodes with weighted edges
+from node j to node i if Yij > 0. Let A denote the adja-
+cency matrix of this graph, A corresponds to the positive
+part of the sparse support S. Let D = Ae, where e, as be-
+fore, is the vector of 1s. Then the Laplacian matrix of the
+graph is given by G = D − A. Substituting the gradient
+ﬂow constraint in the objective function of the optimization
+problem (3) and diﬀerentiating with respect to s, we get the
+following equivalence:
+
+s
+
+arg min
+
+(cid:3)Y−grad(s)(cid:3)F,S ≡ {s : (D−A)s = Gs = β(Y)}
+(13)
+where β is a constant vector which linearly depends on Y,
+in fact, βi is the total sum of the weights of edges leaving
+and entering the node i with appropriate signs. Therefore,
+
+β(Y) = Ye
+
+(14)
+
+It is known that for a connected component with nc nodes,
+the corresponding block Laplacian has rank nc − 1. Hence,
+for a graph with c connected components, the Laplacian G is
+rank deﬁcient with rank n− c. For simplicity, we assume we
+have a single component, and the procedure described can
+be extended to multiple components by repeating the same
+for each block. As in the previous formulation, the solution
+to the linear system is not unique under translation. Thus
+we replace the ﬁrst row in G with a row of all 1s to get ¯G and
+the corresponding entry in β with 0 to get ¯β. The solution to
+this system is unique, and for multiple components we can
+do the same for each by replacing ﬁrst rows of each block
+with a row of appropriate 1s and 0s.
+
+∗
+
+The key insight of our online update formulation is that
+from a data matrix Y can be
+the optimal ranking score s
+computed by splitting the matrix as Y = Y1 + Y2, com-
+∗
+puting the individual ranking scores s
+2 to get the
+∗
+eﬀective score s
+2. However, in order to split the
+L.H.S. of the linear system, it is important to note that
+both the problems have to be solved with same support set
+S even if certain entries of individual Y1 or Y2 are 0 (more
+speciﬁcally, structural zeros).
+
+∗
+1 and s
+
+∗
+1 + s
+
+∗
+
+= s
+
+WWW 2012 – Session: Obtaining and Leveraging User CommentsApril 16–20, 2012, Lyon, France423We will use this result to compute new ranking when
+a new comment is added. This adds a new node to the
+graph. The edges added will be based on the scores like
+author-reputation, readability, etc. which can be calculated
+instantly for the new comment. Let the new node be n + 1
+and suppose it is connected to d of the old nodes denoted
+by the neighborhood set Nd. The binary vector indicating
+this connectivity is denoted by g ∈ Rn and corresponding
+weights ynew. Then, the new system of equations is given
+by:
+
+(cid:4)
+
+(cid:3)
+
+(cid:3)
+
+(cid:4)
+
+¯G + Dg −¯g
+−gT
+d
+
+snew =
+
+¯βold + βinc
+
+βn+1
+
+(15)
+
+Here, ¯g is g with ﬁrst entry set to 1, Dg is diagonal matrix
+of g and βinc is the increment to β after appending of ynew
+to the data Y.
+Let sg = s ◦ g denote the entry-wise (Hadamard/Schur)
+product of s and g, and ¯sg =
+be the mean of these d
+non-zero values to give ¯y = sg − ¯sgg. Now we split the new
+problem into two problems, both with the new support, ﬁrst
+with the Y entries for all the old edges and si − ¯sg for the
+new edges between i ∈ Nd and the new node. The second
+part with 0 for all the old edges and the remaining diﬀerence
+of new preference values for the new edges. Thus we write
+the new preference matrix as:
+
+gT s
+d
+
+(cid:4)
+(cid:8)
+
++
+
+(cid:3)
+(cid:5)
+
+Y ¯y
+(cid:6)(cid:7)
+−¯yT
+0
+
+Yaug
+
+0
+(cid:6)(cid:7)
+−ΔyT
+
+Δy
+0
+
+Yinc
+
+(cid:4)
+(cid:8)
+
+(16)
+
+(cid:3)
+
+(cid:4)
+
+Y
+−ynew
+
+ynew
+
+0
+
+=
+
+(cid:3)
+(cid:5)
+
+(cid:4)
+
+where, Δy = ynew − ¯y. The ﬁrst system is very similar to
+the older problem with only few new edges, and the second
+system is sparse with a large number of 0s and a very few
+non-zero values.
+
+The new system of equations for the ﬁrst problem is given
+
+by: (cid:3)
+
+(cid:3)
+
+(cid:4)
+
+¯G + Dg −¯g
+−gT
+d
+
+saug =
+
+¯βold + sg − ¯sgg
+
+0
+
+Here, ¯g is g with the ﬁrst entry set to 1 to maintain the
+uniqueness condition of ﬁrst row. The solution for this prob-
+lem has a closed form solution which can be written as:
+
+(cid:3)
+
+(cid:4)
+
+(17)
+
+(18)
+
+∗
+aug =
+
+s
+
+s − δe
+nδ
+
+where, the scalar δ =
+
+¯sg
+
+n + 1
+
+. Note that the form of s
+
+∗
+aug
+
+guarantees the ﬁrst condition of zero-sum to hold.
+
+The second problem is more involved and the ease of solv-
+ing it depends on the structure of the existing graph and the
+new edges added. The new system is given by:
+βinc − sg + ¯sgg
+
+(cid:3)
+
+(cid:4)
+
+(cid:4)
+
+(cid:3)
+
+sinc =
+
+βn+1
+
+(19)
+
+¯G + Dg −¯g
+−gT
+d
+
+The L.H.S. is same as ﬁrst problem and the R.H.S. is sparse
+with all 0s except the neighbors of the new node and the last
+entry. As expected, the inﬂuence of the few non-zero edges
+will diminish as we go further away from the new node. The
+ﬁnal ranking score is given by sum of the two solutions
+
+∗
+new = s
+
+∗
+aug + s
+
+∗
+inc.
+
+s
+
+(20)
+
+To solve the second problem in online fashion, we will main-
+−1. For this, it is vital to note
+tain and update the inverse ¯G
+
+that the new matrix can be written as a rank d + 1 update
+of an invertible matrix.
+¯G 0
+0T
+1
+
+(ei − en+1)(ei − en+1)T
+
+¯Gnew =
+
+(cid:3)
+
+(cid:4)
+
++
+
+(cid:2)
+(cid:4)
+
+i∈Nd
+
+(cid:3)
+
++
+
+11(cid:5)∈Nd
+−1
+= ¯G+ + UVT .
+
+0T
+
+(21)
+where, U and V are both n×(d+1) matrices. The ﬁrst term
+¯G+, which is ¯G appended with a column and row of 0s and
+1 on diagonal, is easily invertible given the inverse matrix
+−1 from previous iteration. The second term is the sum of
+¯G
+d rank-1 updates for each edge added to the graph and the
+third term denotes the adjustment required to ¯Gnew(1, n)
+to have ﬁrst row of 1s for the uniqueness condition and to
+−1
+¯Gnew(n, n) to getd . And the new matrix inverse ¯G
+new is
+given by the Sherman-Morrison-Woodbury identity [12] for
+inverse of low-rank updates as:
+
+−1
+new = ¯G
+
+−1
++
+
+¯G
+
+− ¯G
+
+−1
++ U
+
+Id + VT ¯G
+
+−1
++ U
+
+VT ¯G
+
+−1
++ .
+
+(22)
+
+(cid:10)−1
+
+(cid:9)
+
+Thus to solve the second problem, we compute the updated
+inverse which can be used for further calculations. This
+computation involves inverting a small (d + 1) × (d + 1)
+matrix and involves O(n2d) operations compared to O(n3)
+in any other direct method using LU or QR decompositions.
+However, a similar incremental update of LU factors can be
+used, but LU is highly dependent on ordering of nodes, in
+the worst case of the new comment being connected to node
+1, the whole factor will have to be updated. One would argue
+that this updated inverse could be used directly to solve
+the original new system. However, the beneﬁt of splitting
+the problem lies in the ﬁrst split problem requiring O(n)
+∗
+time for computing the closed form solution s
+aug, and the
+second split problem exploiting the sparseness in R.H.S. to
+∗
+compute s
+inc with a factor of O(n/d) faster. We can further
+speed up the calculations at the expense of accuracy of the
+ranking scores ignoring small entries while solving the second
+problem. Since the ranking order is robust to small changes
+∗
+in the ranking score s
+new, we would expect small error in
+∗
+s
+new to not disturb the ﬁnal ordering. And the complete
+problem can be resolved at regular intervals to avoid error
+buildup.
+
+In the case of an edge update from active-learning de-
+scribed in previous section, an edge (i, j) gets added to the
+graph. The Laplacian matrix gets updated by a rank-1 ma-
+trix as
+
+¯Gnew = ¯G + (ei − ej)(ei − ej)T .
+
+And the Sherman-Morrison-Woodbury identity reduces the
+inverse update to
+
+−1
+new = ¯G
+
+¯G
+
+(cid:11)
+−1(ei − ej)(ei − ej)T ¯G
+−1
+−1 − ¯G
+1 + (ei − ej )T ¯G−1(ei − ej)
+
+(cid:12) .
+
+This update requires no matrix-inversion and the 3 matrix-
+vector multiplication can be done carefully using sparsity
+of (ei − ej), reducing the complete updating procedure to
+O(n2) ﬂops.
+
+Thus we have described a method to update the hodge-
+rank for incremental addition of nodes or edges to the data.
+
+(23)
+
+(24)
+
+WWW 2012 – Session: Obtaining and Leveraging User CommentsApril 16–20, 2012, Lyon, France4247. EXPERIMENTAL RESULTS
+
+In this section, we provide experimental validation of the
+
+proposed methods.
+
+Dataset: We use 200 articles along with 50 comments
+for each article from Yahoo! News. The comments have the
+following associated information: time stamp, commenter,
+and rating (number of thumbs up and thumbs down) along
+with comment text. The articles appeared during Sep 2011.
+Ranking aspects: We use three ranking criteria namely,
+rating, reputation of author, and quality of the comment.
+The reputation information for the commenters is the av-
+erage rating obtained during the three month period June
+2011 to Aug 2011. This information is not available for all
+commenters in the dataset. For comment quality, we use
+the framework of [4]. The rating information is given by the
+fraction of thumbs up to the total number of rating for a
+comment.
+
+The above information is available in the form of ab-
+solute scores. We calculate the preference information as
+(scorej − scorei). Note that the ratings of a old comment
+and new comment are not commensurate since the old com-
+ment could have accumulated a large number of ratings and
+the new comment may not have had that chance. So we cal-
+culate the preference information only between “commensu-
+rate” comments.
+
+Metrics: We use Kendall τ rank correlation coeﬃcient
+to characterize the distance between two rankings. Kendall
+τ is deﬁned as
+(number of concordant pairs) − (number of discordant pairs)
+
+n(n−1)
+
+τ values are in the range [−1, 1] with -1 indicating reverse
+order and +1 indicating same order. Hence higher values
+indicate better performance. If R1, R2,··· , Rk are the indi-
+vidual rankings and RA is the aggregated rank, then we use
+the Q-metric deﬁned below.
+
+2
+
+k(cid:2)
+
+Q(RA) =
+
+1
+k
+
+τ (RA, Ri)
+
+i=1
+
+to characterize the quality of RA. A higher values of Q(RA)
+indicate better aggregation.
+
+To show the sizes of various components (like residue, har-
+monic and curl), we use the three norm-ratio measures de-
+ﬁned in Expressions (5) and (9).
+
+Note the lack of readily available golden data in this task.
+It is close to impossible to editorially rank a set of comments.
+The best approach is to do live tests. In this paper, we use
+the above measures as proxies for live tests.
+
+Baselines: For rank aggregation, we use simple mean
+and weighted mean. In simple mean, the scores are averaged
+ﬁrst and the ranking derived from the scores is used.
+In
+weighted mean, the weights obtained from the optimization
+problem (12) are used for averaging and the ranking induced
+by the weighted scores is used.
+7.1 Rank aggregation
+
+We ﬁrst use optimization problem (12) described in Sec-
+tion 3 to calculate the aggregated preference matrix and the
+globally consistent Hodge rank is computed using the opti-
+mization problem (3). (We set all αr = 1 in equation (12)).
+Further, two baseline rankings are computed by simple mean
+and weighted mean of the individual partial ranking lists of
+
+Table 2: Q-metric from individual rankings
+
+Simple Mean Weighted Mean
+
+(% Gain)
+
+(% Gain)
+
+A.m
+
+A.1
+
+A.2
+
+A.3
+
+A.4
+
+Sparsity Hodge
+Rank
+0.4185
+0.4110
+0.4047
+0.3810
+0.3907
+0.3911
+0.3941
+0.3854
+0.3812
+0.4180
+0.4105
+0.4041
+0.3816
+0.3858
+0.3838
+
+p
+0.3
+0.4
+0.5
+0.3
+0.4
+0.5
+0.3
+0.4
+0.5
+0.3
+0.4
+0.5
+0.3
+0.4
+0.5
+
+0.3422(-22.31)
+0.3492(-17.53)
+0.3578(-13.09)
+0.3208(-19.48)
+0.3397(-15.55)
+0.3539(-10.82)
+0.3501(-13.51)
+0.3512(-10.50)
+0.3554(- 7.89)
+0.3814(-10.15)
+0.3824(- 7.63)
+0.3814(- 6.17)
+0.3313(-16.55)
+0.3395(-14.27)
+0.3443(-12.01)
+
+0.3445(-21.48)
+0.3497(-17.53)
+0.3597(-12.51)
+0.3124(-22.98)
+0.3318(-18.50)
+0.3489(-12.57)
+0.3372(-18.34)
+0.3452(-12.39)
+0.3544(- 8.09)
+0.3846(- 9.34)
+0.3859(- 6.49)
+0.3867(- 4.59)
+0.3213(-20.34)
+0.3368(-15.44)
+0.3418(-12.83)
+
+ 
+
+Simple Mean
+Weighted Mean
+
+0.46
+
+0.44
+
+0.42
+
+0.4
+
+0.38
+
+0.36
+
+0.34
+
+0.32
+
+ 
+0.2
+
+3
+
+.
+
+ 
+
+0
+=
+p
+
+ 
+
+4
+
+.
+
+ 
+
+0
+=
+p
+
+ 
+
+5
+
+.
+
+ 
+
+0
+=
+p
+
+ 
+
+i
+
+s
+g
+n
+k
+n
+a
+r
+ 
+l
+
+i
+
+a
+u
+d
+v
+d
+n
+
+i
+
+i
+ 
+r
+o
+
+f
+ 
+
+Q
+
+(a)
+
+(b)
+
+ 
+
+Simple Mean
+Weighted Mean
+Hodge Rank
+
+0.4
+
+0.35
+
+0.3
+
+0.25
+
+0.2
+
+0.15
+
+0.1
+
+Q
+n
+
+ 
+
+i
+ 
+
+i
+
+n
+a
+G
+
+ 
+l
+
+a
+n
+o
+
+i
+t
+c
+a
+r
+F
+
+0.3
+
+0.4
+
+Sparsity Ratio ’p’
+
+0.5
+
+0.6
+
+0.05
+
+ 
+0.2
+
+0.3
+
+0.4
+
+Sparsity Ratio ’p’
+
+0.5
+
+0.6
+
+30
+
+20
+
+10
+
+0
+
+30
+
+20
+
+10
+
+0
+
+30
+
+20
+
+10
+
+0
+
+0
+
+0
+
+0
+
+0.5
+
+0.5
+
+0.5
+
+Simple Mean
+
+30
+
+20
+
+10
+
+0
+
+30
+
+20
+
+10
+
+0
+
+30
+
+20
+
+10
+
+0
+
+0
+
+0
+
+0
+
+1
+
+1
+
+1
+
+0.5
+
+0.5
+
+0.5
+
+Weighted Mean
+
+1
+
+1
+
+1
+
+(a) Kendall-τ from individual rankings
+Figure 2:
+(left) and Fractional Rise in Total Kendall-τ (right).
+(b) Histogram for Fractional Rise for 200 articles.
+
+each criteria. We then compare the quality of Hodge rank to
+the baseline ranks using the total Kendall -τ of these ranks
+from the individual partial rankings lists.
+Table 2 illustrates the typical quality, Q(·), values for
+Hodge rank, simple mean rank and weighted mean rank.
+This is shown for the 200 article dataset (“A.avg”) as well
+as for four arbitrarily chosen articles. In the latter, we aver-
+age over 25 instances of randomly chosen 50 comments for
+each article. The table also shows the gain of the baselines
+compared to Hodge rank. It can be seen that Hodge rank
+
+WWW 2012 – Session: Obtaining and Leveraging User CommentsApril 16–20, 2012, Lyon, France425(b) Cyclicity Ratio
+
+(c) Norm−Ratio Curl Flow
+
+ 
+
+.
+
+ 
+
+2
+0
+=
+p
+
+ 
+
+0.5
+
+0.4
+
+0.3
+
+0.2
+
+0.1
+
+0
+
+(a) Norm−Ratio Harmonic Flow
+
+2
+
+4
+
+6
+
+8
+
+10
+
+2
+
+4
+
+6
+
+8
+
+10
+
+0.6
+
+0.5
+
+0.4
+
+0.3
+
+0.52
+
+0.5
+
+0.48
+
+0.46
+
+0.44
+
+0.42
+
+0.4
+
+0.51
+
+0.5
+
+0.49
+
+0.48
+
+0.47
+
+0.46
+
+Random
+Max. Δ
+Max. Wtd. Δ
+
+ 
+
+2
+
+4
+
+6
+
+8
+
+10
+
+2
+
+4
+
+6
+
+8
+
+10
+
+2
+
+4
+
+6
+
+8
+
+10
+
+(d) Histogram for 200 articles
+
+40
+
+30
+
+20
+
+10
+
+0
+
+0
+
+40
+
+30
+
+20
+
+10
+
+0
+
+0
+
+60
+
+50
+
+40
+
+30
+
+20
+
+10
+
+0
+
+0
+
+10
+
+20
+
+30
+
+10
+
+20
+
+30
+
+5
+
+10
+
+15
+
+0.4
+
+0.35
+
+0.3
+
+0.25
+
+0.2
+
+0.5
+
+0.48
+
+0.46
+
+0.44
+
+0.42
+
+0.4
+
+0.38
+
+.
+
+ 
+
+3
+0
+=
+p
+
+ 
+
+.
+
+ 
+
+4
+0
+=
+p
+
+ 
+
+0.2
+
+0.15
+
+0.1
+
+0.05
+
+0
+
+0.08
+
+0.06
+
+0.04
+
+0.02
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10
+
+2
+
+4
+
+6
+
+8
+
+10
+
+0.51
+
+0.5
+
+0.49
+
+0.48
+
+0.47
+
+0.46
+
+2
+
+4
+
+6
+
+8
+
+10
+
+2
+
+4
+
+6
+
+8
+
+10
+
+Number of Iterations
+
+Figure 3: Active Learning. (a) Norm-Ratio Harmonic Component. (b) Cyclicity Ratio. (c) Norm-Ratio Curl
+Component. (d) Histogram of Number of Iterations.
+
+is up to 30% better than the baselines. Also, the weighted
+average on par or slightly better than simple average but not
+uniformly so – as can be seen from Table 2 and Figure 2.
+
+Figure 2 shows the Quality scores averaged over 200 arti-
+cles in diﬀerent formats. In Figure 2(a), we show the typical
+dependence of the Kendall -τ values of the three rankings for
+diﬀerent sparsity p in data, ranging from p = 0.2 to p = 0.6.
+Figure 2(b) shows the typical fractional gain in these values
+for Hodge rank. As expected, as the sparsity in data reduces
+(p increases) the performance of simple and weighted mean
+ranks catch up with the Hodge Rank as seen in Figure 2(a).
+The histogram for the fraction gain in Kendall -τ from indi-
+vidual rankings for Hodge rank is given in Figure 2(b) for
+three diﬀerent sparsity values. Note that for majority of the
+articles, Hodge rank shows increasing improvement over the
+mean ranks with sparsity (the histogram shifts towards 0
+as p increases). However, for about 3 − 5% of the articles,
+Hodge Rank performs worse than the mean rankings.
+7.2 Active Learning
+
+In second part of the experiments, we solve the optimiza-
+tion problem (6) to separate the global and local inconsis-
+tencies. The harmonic component is then used to identify
+the edges for active learning to reduce the global inconsis-
+tency. Three strategies as described in Section 5 are used
+in parallel and at each iteration the unknown data value for
+the respective edge is added to the individual Yr matrix.
+
+Figure 3(a)-(c) show the norm-ratio of the harmonic com-
+ponent, the cyclicity ratio and the norm-ratio of curl compo-
+nent2 as a function of number of active learning iterations
+for three diﬀerent values of p.
+(For p = 4, the norm ra-
+tio of the harmonic component becomes 0 in two iterations.
+
+2See Expressions (5) and (9) for deﬁnitions.
+
+Hence we do not show the Cyclicity ratio and the norm ra-
+tio of curl ﬂow beyond two iterations.) As can be seen, the
+weighted maximum heuristic performs the best in reducing
+the harmonic component. At the same time, the cyclicity
+ratio reduces conﬁrming that additional data improves the
+rating. Further decrease in norm-ratio of curl component
+indicates that additional data does not just transfer incon-
+sistency from global component to local component. Fig-
+ure 3(d) shows the histograms of number of active learning
+iterations required to eliminate the harmonic component for
+200 articles. As expected, the average number of edges re-
+quired reduces with sparsity (increase in p).
+
+7.3 Online Updates
+
+Finally, we investigate the computation times for online
+updates for addition of edges from active-learning iterations
+or addition of nodes as a result of receiving new comments.
+Computation times for computing the Hodge rank for 10
+active-learning iterations is shown in left plot of Figure 4.
+The right plot of Figure 4 illustrates the computation time
+required for incrementally updating the Hodge rank as num-
+ber of comments increase from 50 to 60, one at a time.
+
+8. RELATED WORK
+
+Comments and ratings form a key component of the Social
+web and are one of the primary contributors to its success.
+There is a signiﬁcant volume of research eﬀort in the re-
+cent years focused on comments and ratings. User studies
+in [18, 11] illustrate the importance of comments in blog-
+ging communities. In [24], Witschge explores public online
+debates in the form of comments on strong socio-political is-
+sues and in [21] Schuth et al. study the discussion structure
+in comments associated with online news articles. In [20],
+
+WWW 2012 – Session: Obtaining and Leveraging User CommentsApril 16–20, 2012, Lyon, France426x 10−3
+
+Edge Addition
+
+x 10−3
+
+ 
+
+Node Addition
+
+ 
+
+)
+c
+e
+s
+(
+ 
+
+e
+m
+T
+
+i
+
+4
+
+3.5
+
+3
+
+2.5
+
+2
+
+1.5
+
+1
+
+0.5
+
+ 
+0
+50
+
+Online Update
+Full Fresh Update
+
+52
+
+54
+
+56
+
+58
+
+60
+
+New Comment Addition
+
+4
+
+3.5
+
+3
+
+2.5
+
+2
+
+1.5
+
+1
+
+0.5
+
+)
+c
+e
+s
+(
+ 
+
+e
+m
+T
+
+i
+
+0
+
+ 
+0
+
+2
+
+4
+
+6
+
+8
+
+10
+
+Edge Addition from Active Learning
+
+Figure 4: Computation Times for Online Updates
+
+the authors study comments associated with blog posts and
+[14] utilizes the comments associated with blog posts for
+summarization of the blog article.
+
+Ratings and Quality: A number of recent eﬀorts are in
+the direction of understanding the quality of user-contributed
+comments. In [19], Mishne et. al. utilize a language mod-
+eling approach to detect link spam in comments made on
+blogs. The quality measure for comments used in our ex-
+periments is based on the work of Chen et al. [4]. In [4],
+Chen et al. presents a supervised approach to determine rep-
+utation of users in the context of comments and ratings To
+this end they editorially judge the quality of comments ac-
+cording to a pre-deﬁned set of guidelines. Utilizing this as a
+training set, they learn regression models to characterize the
+quality of a comment. The predicted reputation of a user as
+an author of comments is obtained as mean quality score of
+the comments posted by them. The authors also introduce
+a support-based reputation computation. This is deﬁned as
+the average rating a user receives from all the users for com-
+ments made by him in a certain category. However, this is
+diﬃcult to compute empirically as in practice a user receives
+ratings for his comments only from a small subset of users.
+To mitigate this issue, the authors propose a latent factor
+model to predict the ratings of a comment. This model is
+personalized in the sense that it predicts the rating that a
+particular user will provide to a comment made by another
+user in a certain context. They show that this tensor model
+can be marginalized easily to obtain the support based rep-
+utation score for the users in a certain context.
+
+With the increase in user participation on commenting,
+ranking/recommendation of comments becomes an impor-
+tant problem to facilitate eﬃcient consumption of existing
+comments on a web site. [22] presents a detailed study of
+user comments in YouTube videos. The authors examine
+the comments and their ratings in YouTube videos to inves-
+tigate the relationships between the language and sentiment
+expressed and the ratings of the comments. Treating highly
+vs lowly rated comments as two classes, they also learn a
+discriminative model to predict whether a given comment is
+likely to be highly or lowly rated.
+[13] proposes a rating
+prediction approach to user comments on the social news ag-
+gregator site, Digg. In Digg, users can rate (provide thumbs
+up and thumbs down votes) to each comment (associated
+with a submitted story). The authors consider the diﬀer-
+ence of the total thumbs up and total thumbs down as the
+aggregate rating of a comment. They adopt the learning to
+rank approach to predict the ratings of comments. To this
+end they compute various features pertaining to each com-
+ment, based on the commenting activity of the commenter
+
+(user reputation) and content of the comment. The vari-
+ous user and content based features adopted in this work is
+similar to what we use in our work. They utilize historical
+data of comment ratings to train support vector regression
+models based on these features. As the rating received by a
+comment is biased by the posting time of the comment (older
+comments get more visibility and hence more ratings), the
+paper also presents experimental results where they explic-
+itly account for this bias while training the ranking model.
+In [1] Agarwal et al. presents a framework for recommenda-
+tion of user comments so as to surface comments (in an on-
+line news service) to users (in a personalized fashion) which
+they are likely to rate positively. They adopt a generalized
+linear model framework where given a user and a comment,
+the mean rating for it consists of several factors like rater
+bias, comment popularity, author reputation. Additionally
+they also include factors representing author-rater aﬃnity
+and rater-comment aﬃnity. They estimate the latent factors
+using MLE in a Bayesian setting where they learn appropri-
+ate priors for the factors by pooling data across similar users
+and comments.
+
+Multi-objective Ranking: In the recent years, the chal-
+lenge of optimizing for multiple criterion in learning to rank
+paradigm has attracted a lot of attention in the research
+community [23, 6]. Dai et al. in [6] adapts the conventional
+learning to rank paradigm to simultaneously optimize for
+freshness and relevance in web search. To this end they ex-
+tend the Divide and Conquer ranking framework [3]. The
+training phase involves clustering queries into several clus-
+ters based on the retrieval features computed from the top
+ranked results (according to a reference ranking model) for
+these queries. The clustering employed is a soft-clustering
+where each query is associated with all the clusters with
+diﬀerent association weights. They learn multiple ranking
+models for each of these clusters where they incorporate the
+notion of freshness into the traditional letor approach by
+generating hybrid labels based on relevance and freshness
+judgments (similar to Dong et al. [8]). While serving results
+for a query, they determine the aﬃnity (association weights)
+of a query to each of the clusters. Then the results are scored
+according to each of the pre-trained models and the scores
+are combined using these association weights to obtain the
+ﬁnal ranking of the results.
+
+Rank aggregation: Rank aggregation is a widely stud-
+ied problem in the domain of social choice and voting the-
+ory [2]. In the context of the web, one of the early works
+on rank aggregation is seen in [9]. In [9] they illustrate the
+use of rank aggregation for aggregating results from multiple
+search engines. They rely on the Condorcet criterion for mit-
+igating problems of spam, where their suggested approach
+satisﬁes the extended Condorcet criterion. While, Kemeny
+optimal aggregation satisﬁes this criterion, ﬁnding a kemeny
+optimal is known to be NP hard. The authors introduce a
+concept of locally Kemeny optimal which states that an ag-
+gregated permutation is locally Kemeny optimal if one can
+not decrease the Kendall τ measure (of the aggregated per-
+mutation with the component rank orders) by swapping ad-
+jacent elements in the aggregated order.
+In essence, their
+approach is to start with any rank aggregation technique
+and do a local Kemenization. The locally Kemeny optimal
+aggregate can be obtained by computing the Hamiltonian
+path in the majority graph.
+
+In the context of rank aggregation, there have been some
+
+WWW 2012 – Session: Obtaining and Leveraging User CommentsApril 16–20, 2012, Lyon, France427eﬀorts in the direction of semi-supervised [5] and super-
+vised [17] rank aggregation.
+In [17], Liu et al. propose a
+framework which utilizes the ordinal information and a la-
+beled training data to learn a rank aggregation model in
+a supervised setting. To this end they adapt the Markov
+Chain based rank aggregation approach (which is non-convex)
+into that of semi-deﬁnite programming. They show encour-
+aging results on the OSHUMED dataset and also in a rank
+aggregation task of web search results from six diﬀerent com-
+mercial search engines.
+
+In [10], Gleich et al. adopt a matrix completion approach
+towards rank aggregation. They utilize the scores from the
+component rankers to generate pairwise preference matrices
+of the items to be ranked. They suggest various aggregation
+schemes (based on arithmetic mean, geometric mean, etc.)
+to generate a composite pairwise matrix from the component
+rankings. The ﬁnal ranking is obtained as a rank-2 skew
+symmetric completion and approximation of the composite
+matrix.To this end they utilize a singular value projection
+based algorithm. Results on a synthetic and the Netﬂix
+dataset illustrate the eﬃcacy of their method.
+
+We have adopted Combinatorial Hodge Theory based ap-
+proach towards rank aggregation. The application of Hodge
+Theory for ranking was ﬁrst proposed in [15, 16].
+In our
+rank aggregation framework, the comments are associated
+with cardinal scores based on quality, reputation and rat-
+ings. Unlike traditional rank aggregation methods which
+consider ordinal orderings based on these scores, the Hodge
+decomposition approach allows us to leverage these cardi-
+nal scores in a more direct fashion to establish the pair-
+wise preference graph (see Section 3). Further, as discussed
+in Section 3 the pairwise preference graphs obtained using
+these individual aspects (rating, quality, and author repu-
+tation) are incomplete. The Hodge decomposition frame-
+work in essence generalizes the well-known Borda count [7]
+scheme to scenarios where the ranking data is incomplete.
+The framework, besides providing an elegant approach for
+rank aggregation, also provides some notion of a conﬁdence
+measure on the quality of the global ranking that is ob-
+tained. This is expressed in terms of the curl ﬂow and the
+harmonic ﬂow components of the decomposition (see Sec-
+tion 2.2). In this work, we adopt an active learning based
+approach to minimize the harmonic ﬂow component (global
+inconsistencies) and obtain a more globally consistent rank-
+ing.
+
+9. CONCLUSIONS
+
+Multi-objective rank aggregation is becoming essential in
+several applications.
+In this paper, we use the framework
+of Hodge decomposition for rank aggregation problems. We
+propose a novel technique for aggregating individual prefer-
+ence functions and experimentally show that the proposed
+approach is superior to commonly used baselines. We then
+formulate the problem of reducing global inconsistencies and
+propose techniques for identifying local observations which
+can maximally reduce global inconsistencies. We ﬁnally
+show how we can perform the decompositions in an online
+fashion. One of our future directions is to formulate the
+theory for choosing the edges optimally.
+
+10. REFERENCES
+[1] D. Agarwal, B.-C. Chen, and B. Pang. Personalized
+
+recommendation of user comments via factor models.
+In EMNLP, July 2011.
+
+[2] K. J. Arrow. Social Choice and Individual Values. Yale
+
+University Press, 2nd edition, Sept. 1970.
+
+[3] J. Bian, X. Li, F. Li, Z. Zheng, and H. Zha. Ranking
+
+specialization for web search: a divide-and-conquer
+approach by using topical ranksvm. WWW, 2010.
+[4] B.-C. Chen, J. Guo, B. Tseng, and J. Yang. User
+reputation in a comment rating environment. In
+SIGKDD, 2011.
+
+[5] S. Chen, F. Wang, Y. Song, and C. Zhang.
+
+Semi-supervised ranking aggregation. CIKM, 2008.
+
+[6] N. Dai, M. Shokouhi, and B. D. Davison. Learning to
+
+rank for freshness and relevance. SIGIR, 2011.
+
+[7] J. C. de Borda. M´emoire sur les ´elections au scrutin.
+
+Histoire de l’Acad´emie Royale des Sciences, 1784.
+[8] A. Dong, Y. Chang, Z. Zheng, G. Mishne, J. Bai,
+
+R. Zhang, K. Buchner, C. Liao, and F. Diaz. Towards
+recency ranking in web search. In WSDM, 2010.
+
+[9] C. Dwork, R. Kumar, M. Naor, and D. Sivakumar.
+
+Rank aggregation methods for the web. WWW, 2001.
+
+[10] D. F. Gleich and L.-H. Lim. Rank aggregation via
+
+nuclear norm minimization. In KDD, 2011.
+
+[11] M. Gumbrecht. Blogs as ‘Protected Space’. In WWW,
+
+2004.
+
+[12] W. W. Hager. Updating the inverse of a matrix. 1989.
+[13] C.-F. Hsu, E. Khabiri, and J. Caverlee. Ranking
+
+comments on the social web. In ICCSE, 2009.
+
+[14] M. Hu, A. Sun, and E. P. Lim. Comments-oriented
+
+document summarization: understanding documents
+with readers’ feedback. In SIGIR, New York, NY,
+USA, 2008.
+
+[15] X. Jiang, L.-H. Lim, Y. Yao, and Y. Ye. Learning to
+
+rank with combinatorial hodge theory. CoRR
+abs/0811.1067.
+
+[16] X. Jiang, L.-H. Lim, Y. Yao, and Y. Ye. Statistical
+
+ranking and combinatorial hodge theory. Math.
+Program., March 2011.
+
+[17] Y.-T. Liu, T.-Y. Liu, T. Qin, Z.-M. Ma, and H. Li.
+
+Supervised rank aggregation. WWW, 2007.
+
+[18] E. Menchen-Trevino. Blogger motivations: Power,
+pull, and positive feedback. Internet Research 6.0,
+2005.
+
+[19] G. Mishne. Blocking blog spam with language model
+
+disagreement. In AIRWeb, 2005.
+
+[20] G. Mishne and N. Glance. Leave a reply: An analysis
+
+of weblog comments. In WWW Workshop on
+Weblogging Ecosystem: Aggregation, Analysis and
+Dynamics, 2006.
+
+[21] A. Schuth, M. Marx, and M. de Rijke. Extracting the
+discussion structure in comments on news-articles. In
+WIDM, 2007.
+
+[22] S. Siersdorfer, S. Chelaru, W. Nejdl, and J. San Pedro.
+
+How useful are your comments?: analyzing and
+predicting youtube comments and comment ratings.
+WWW, 2010.
+
+[23] K. M. Svore, M. Volkovs, and C. J. C. Burges.
+
+Learning to rank with multiple objective functions. In
+WWW, 2011.
+
+[24] T. Witschge. (In)diﬀerence Online. PhD thesis,
+
+ASCoR, 2007.
+
+WWW 2012 – Session: Obtaining and Leveraging User CommentsApril 16–20, 2012, Lyon, France428

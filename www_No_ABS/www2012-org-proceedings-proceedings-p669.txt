@@ -1,0 +1,505 @@
+Since the emergence of the World Wide Web (WWW), electronic commerce, commonly known as e-commerce, has become more and more popular.
+Websites such as eBay and Amazon allow Internet users to buy and sell products and services online, which bene ts everyone in terms of convenience and pro tability.
+The traditional online shopping business model allows sellers to sell a product or service at a preset price, where buyers can choose to purchase if they Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+Distribution of these papers is limited to classroom use, and personal use by others.
+ nd it to be a good deal.
+Online auction however is a different business model by which items are sold through price bidding.
+There is often a starting price and expiration time speci ed by the sellers.
+Once the auction starts, potential buyers bid against each other, and the winner gets the item with their highest winning bid.
+Similar to any platform supporting  nancial transactions, online auction attracts criminals to commit fraud.
+The varying types of auction fraud are as follows.
+Products purchased by the buyer are not delivered by the seller.
+The delivered products do not match the descriptions that were posted by sellers.
+Malicious sellers may even post non-existing items with false description to deceive buyers, and request payments to be wired directly to them via bank-to-bank wire transfer.
+Furthermore, some criminals apply phishing techniques to steal high-rated seller s accounts so that potential buyers can be easily deceived due to their good rating.
+Victims of fraud transactions usually lose their money and in most cases are not recoverable.
+As a result, the reputation of the online auction services is hurt signi cantly due to fraud crimes.
+To provide some assurance against fraud, E-commerce sites often provide insurance to fraud victims to cover their loss up to a certain amount.
+To reduce the amount of such compensations and improve their online reputation, e-commerce providers often adopt the following approaches to control and prevent fraud.
+The identi es of registered users are validated through email, SMS, or phone veri cations.
+A rating system where buyers provide feedbacks is commonly used in e-commerce sites so that fraudulent sellers can be caught immediately after the  rst wave of buyer complaints.
+In addition, proactive moderation systems are built to allow human experts to manually investigate suspicious sellers or buyers.
+Even though e-commerce sites spend a large budget to  ght frauds with a moderation system, there are still many outstanding and challenging cases.
+Criminals and fraudulent sellers frequently change their accounts and IP addresses to avoid being caught.
+Also, it is usually infea-sible for human experts to investigate every buyer and seller to determine if they are committing fraud, especially when the e-commerce site attracts a lot of tra c.
+The patterns of fraudulent sellers often change constantly to take advantage of temporal trends.
+For instance, fraudulent sellers tend to sell the  hottest  products at the time to attract more potential victims.
+Also, whenever they  nd a loophole in the fraud detection system, they will immediately leverage the weakness.
+In this paper, we consider the application of a proactive line auction site, where hundreds of thousands of new auction cases are created everyday.
+Due to the limited expert resources, only 20%-40% of the cases can be reviewed and labeled.
+Therefore, it is necessary to develop an automatic pre-screening moderation system that only directs suspicious cases for expert inspection, and passes the rest as clean cases.
+The moderation system for this site extracts rule-based features to make decisions.
+The rules are created by experts to represent the suspiciousness of sellers on fraudulence, and the resulting features are often binary.1 For instance, we can create a binary feature (rule) from the ratings of sellers, i.e. the feature value is 1 if the rating of a seller is lower than a threshold (i.e. a new account without many previous buyers); otherwise it is 0.
+The  nal moderation decision is based on the fraud score of each case, which is the linear weighted sum of those features, where the weights can be set by either human experts or machine-learned models.
+By deploying such a moderation system, we are capable of selecting a subset of highly suspicious cases for further expert investigation while keeping their workload at a reasonable level.
+The moderation system using machine-learned models is proven to improve fraud detection signi cantly over the human-tuned weights [38].
+In [38] the authors considered the scenario of building o ine models by using the previous 30 days data to serve the next day.
+Since the response is binary (fraud or non-fraud) and the scoring function has to be linear, logistic regression is used.
+The authors have shown that applying expert knowledge, such as bounding the rule-based feature weights to be positive and multiple-instance learning, can signi cantly improve the performance in terms of detecting more frauds and reducing customer complaints given the same workload from human experts.
+However, of ine models often meet the following challenges: (a) Since the auction fraud rate is generally very low (< 1%), the data becomes quite imbalanced and it is well-known that in such scenario even  tting simple logistic regression becomes a dif- cult problem [27].
+Therefore, unless we use a large amount of historical training data, o ine models tend to be fairly unstable.
+For example, in [38], 30 days of training data with around 5 million samples are used for the daily update of the model.
+Hence it practically adds a lot of computation and memory load for each batch update, compared to online models.
+(b) Since the fraudulent sellers change their pattern very fast, it requires the model to also evolve dynamically.
+However, for o ine models it is often nontrivial to address such needs.
+Once a case is determined as fraudulent, all the cases from this seller will be suspended immediately.
+Therefore smart fraudulent sellers tend to change their patterns quickly to avoid being caught; hence some features that are e ective today might turn out to be not important tomorrow, or vice versa.
+Also, since the training data is from human labeling, the high cost makes it almost impossible to obtain a very large sample.
+Therefore for such systems (i.e.
+relatively small sample size with many features with temporal pattern), online feature selection is often required to provide good performance.
+Human experts are also willing to see the results of online feature selection to monitor the ef-
+details of those features.
+fectiveness of the current set of features, so that they can understand the pattern of frauds and further add or remove some features.
+Our contribution.
+In this paper we study the problem of building online models for the auction fraud detection moderation system, which essentially evolves dynamically over time.
+We propose a Bayesian probit online model framework for the binary response.
+We apply the stochastic search variable selection (SSVS) [16], a well-known technique in statistical literature, to handle the dynamic evolution of the feature importance in a principled way.
+Note that we are not aware of any previous work that tries to embed SSVS into online modeling.
+Similar to [38], we consider the expert knowledge to bound the rule-based coe cients to be positive.
+Finally, we consider to combine this online model with multiple instance learning [30] that gives even better empirical performance.
+We report the performance of all the above models through extensive experiments using fraud detection datasets from a major online auction website in Asia.
+The paper is organized as follows.
+In Section 2 we  rst summarize several speci c features of the application and describe our online modeling framework with  tting details.
+We review the related work in literature in Section 3.
+In Section 4 we show the experimental results that compare all the models proposed in this paper and several simple baselines.
+Finally, we conclude and discuss future work in Section 5.
+Our application is to detect online auction frauds for a major Asian site where hundreds of thousands of new auction cases are posted every day.
+Every new case is sent to the proactive anti-fraud moderation system for pre-screening to assess the risk of being fraud.
+The current system is featured by:   Rule-based features: Human experts with years of experience created many rules to detect whether a user is fraud or not.
+An example of such rules is  blacklist , i.e. whether the user has been detected or complained as fraud before.
+Each rule can be regarded as a binary feature that indicates the fraud likeliness.
+  Linear scoring function: The existing system only supports linear models.
+Given a set of coe cients (weights) on features, the fraud score is computed as the weighted sum of the feature values.
+  Selective labeling: If the fraud score is above a certain threshold, the case will enter a queue for further investigation by human experts.
+Once it is reviewed, the  nal result will be labeled as boolean, i.e. fraud or clean.
+Cases with higher scores have higher priorities in the queue to be reviewed.
+The cases whose fraud score are below the threshold are determined as clean by the system without any human judgment.
+  Fraud churn: Once one case is labeled as fraud by human experts, it is very likely that the seller is not trustable and may be also selling other frauds; hence all the items submitted by the same seller are labeled as fraud too.
+The fraudulent seller along with his/her cases will be removed from the website immediately once detected.
+loss if they are recently deceived by fraudulent sellers.
+Motivated by these speci c attributes in the moderation system for fraud detection, in this section we describe our Bayesian online modeling framework with details of model  tting via Gibbs sampling.
+We start from introducing the online probit regression model in Section 2.1.
+In Section 2.2 we apply stochastic search variable selection (SSVS), a well-known technique in statistics literature, to the online probit regression framework so that the feature importance can dynamically evolve over time.
+Since it is important to use the expert knowledge, as in [38], we describe how to bound the coe cients to be positive in Section 2.3, and  nally combine our model with multiple instance learning in Section 2.4.
+Consider splitting the continuous time into many equal-size intervals.
+For each time interval we may observe multiple expert-labeled cases indicating whether they are fraud or non-fraud.
+At time interval t suppose there are nt observations.
+Let us denote the i-th binary observation as yit.
+If yit = 1, the case is fraud; otherwise it is non-fraud.
+Let the feature set of case i at time t be xit.
+The probit model [3] can be written as P [yit = 1|xit,  t] =  (x  (1) where  ( ) is the cumulative distribution function of the standard normal distribution N (0, 1), and  t is the unknown regression coe cient vector at time t.
+it t), Through data augmentation the probit model can be expressed in a hierarchical form as follows: For each observation i at time t assume a latent random variable zit.
+The binary response yit can be viewed as an indicator of whether zit > 0, i.e. yit = 1 if and only if zit > 0.
+If zit <= 0, then yit = 0. zit can then be modeled by a linear regression zit   N (x  it t, 1).
+(2) In a Bayesian modeling framework it is common practice to put a Gaussian prior on  t,  t   N ( t,  t), (3) where  t and  t are prior mean and prior covariance matrix respectively.
+Model  tting.
+Since the posterior  ( t|yt, xt,  t,  t) does not have a closed form, this model is  tted by using the latent vector zt through Gibbs sampling.
+For each iteration we  rst sample (zt|yt, xt,  t) and then sample ( t|zt, yt,  t,  t).
+Speci cally, for each observation i at time t, sample  (zit|yit = 1, xit,  t)   N (x  it t, 1), truncated by 0 as lower bound.
+And  (zit|yit = 0, xit,  t)   N (x  it t, 1), truncated by 0 as upper bound.
+Then sample  ( t|zt, yt, xt) = ( t|zt, xt)   N (  mt,  Vt), where  Vt = ( 1 t + x  txt) 1,  mt =  Vt( 1 t  t + x  tzt).
+(4) (5) (6) (7) By iterative sampling the conditional posterior of zt and  t for N iterations plus B number of burn-in samples (in our experiments we let N = 10000 and B = 1000), we can obtain N posterior samples of  t.
+We can thus obtain the posterior sample mean  t and sample covariance  t, to serve as the posterior mean and covariance for  t respectively.
+Online modeling.
+At time t, given the prior of  t as N ( t,  t) and the observed data, by Gibbs sampling we obtain the posterior of  ( t|yt, xt,  t,  t)   N (  t,  t).
+At time t+1, the parameters of the prior of  t+1 can be written as  t+1 =  t,  t+1 =  t/ , (8) where     (0, 1] is a tuning parameter that allows the model to evolve dynamically.
+When   = 1, the model updates by treating all historical observations equally (i.e. no  forgetting ).
+When   < 1, the in uence of the data observed k batches ago decays in the order of O( k), i.e. the smaller   is, the more dynamic the model becomes.
+  can be learned via cross-validation.
+This online modeling technique has been commonly used in literature (see [1] and [37] for example).
+ t+1 = diag(  t)/  to ignore the covariance among the co-e cients of  t.
+In practice, for simplicity we let  0 =  2 Besides the probit link function used in this paper, another common link function for the binary response is logistic [26].
+Although logistic regression seems more often used in practice, there does not exist a conjugate prior for the coe cient  t hence the posterior of  t always does not have a closed form; therefore approximation is commonly applied (e.g.
+[20]).
+Probit model through data augmentation, on the other hand, allows us to sample the posterior of  t through Gibbs sampling without any approximation.
+It also allows us to plugin more complicated techniques such as SSVS conveniently.
+For regression problems with many features, proper shrinkage on the regression coe cients is usually required to avoid over tting.
+For instance, two common shrinkage methods are L2 penalty (ridge regression) and L1 penalty (Lasso) [33].
+Also, experts often want to monitor the importance of the rules so that they can make appropriate adjustments (e.g.
+change rules or add new rules).
+However, the fraudulent sellers change their behavioral pattern quickly: Some rule-based feature that does not help today might helps a lot tomorrow.
+Therefore it is necessary to build an online feature selection framework that evolves dynamically to provide both optimal performance and intuition.
+In this paper we embed the stochastic search variable selection (SSVS) [16] into the online probit regression framework described in Section 2.1.
+At time t, let  jt be the j-th element of the coe cient vector  t.
+Instead of putting a Gaussian prior on  jt, the prior of  jt now is  jt   p0jt1( jt = 0) + (1   p0jt)N ( jt,  2 jt), (9) where p0jt is the prior probability of  jt being exactly 0, and with prior probability 1  p0jt,  jt is drawn from a Gaussian distribution with mean  jt and variance  2 jt.
+Such prior is called the  spike and slab  prior in the literature [19] but how to embed it to online modeling has never been explored before.
+Model  tting.
+Let  j,t be the vector  t excluding  jt.
+The model  tting procedure for this model is again through Gibbs sampling since the conditional posterior  (zt|yt, xt,  t) ically, sampling zit for observation i at time t has the same formula as in Section 2.1.
+ (zit|yit = 1, xit,  t)   N (x  it t, 1), truncated by 0 as lower bound.
+And  (zit|yit = 0, xit,  t)   N (x  it t, 1), truncated by 0 as upper bound.
+Denote  zit = zit   X k6=j xikt kt.
+(10) (11) (12) We also let function dnorm(x; m, V ) be the density function of Gaussian distribution N (m, V ), i.e.
+dnorm(x; m, V ) =
+  2 V exp(  (x   m)2
+
+ ).
+To sample  ( jt| j,t, zt, yt, p0jt,  jt,  jt),  ( jt| j,t, zt, yt, p0jt,  t,  t) =  ( jt| j,t, zt, p0jt,  t,  t) (  zit   xijt jt)2 )]   [ exp( 
+ nt i=1
+ (13) (14) [p0jt1( jt = 0) + 1   p0jt q2 2 jt exp(  ( jt    jt)2 2 2 jt )]    jt1( jt = 0) + (1    jt)N (  mjt,  Vjt), where  Vjt = ( 2 jt + x  jtxjt) 1,  mjt =  Vjt(x  jt  zt +  jt  2 jt ), (15) (16)  jt = p0jt p0jt + (1   p0jt) dnorm(0; jt , 2 jt) dnorm(0;  mjt ,  Vjt ) .
+(17) Since the conditional posterior  ( jt| j,t, zt, yt, p0jt,  jt,  jt)    jt1( jt = 0) + (1    jt)N (  mjt,  Vjt), it implies that to sample  jt we  rst  ip a coin with probability of head equal to  jt.
+If it is head, we let  jt = 0; otherwise we sample  jt from N (  mjt,  Vjt).
+After B burn-in samples for convergence purpose, denote the collected k-th posterior sample of  jt as  (k) jt , k = 1,   , N .
+We estimate the posterior distribution of  ( jt|yt, p0jt,  jt,  jt) by  ( jt|yt, p0jt,  jt,  jt)    pjt1( jt = 0)+(1   pjt)N (  jt,  jt where
+ (18)  pjt =
+
+ k=1 1( (k) jt = 0)/N,  jt =
+
+ k=1  (k) jt /
+
+ k=1 1( (k) jt
+  jt
+
+ Pk=1 1( (k) jt 6= 0)( (k) jt    jt)2
+ Pk=1 1( (k) jt
+ (19) (20) , (21) Online modeling.
+When t = 0, we could set p0j0 = 0.5 for all j, i.e. before observing any data we consider the probability of the j-th feature coe cient being zero or nonzero is equal.
+At time t + 1, we let p0j(t+1) =    pjt + 0.5(1    ), (22) 2/ ,  j(t+1) =  jt,  2 j(t+1) =  jt (23) where     (0, 1) and     (0, 1] are both tuning parameters.
+Although it seems more natural to let p0j(t+1) =  pjt, note that in practice we often see  pjt becomes 1 or 0 even though N is large (say 10000), which implies that there are some features which are very important (i.e.  pjt = 1) or can be excluded from the model to avoid over tting (i.e.  pjt = 0).
+In such scenario, simply letting p0j(t+1) =  pjt will make the posterior  pj(t+1) be 1 or 0 again regardless of what data is observed at time t + 1, and so for all the latter batches.
+Therefore, to allow the feature importance indicator  pj(t+1) to evolve by using both the observed data at time t + 1 and the prior knowledge learned before time t+1, it is important to let p0j(t+1), the prior probability for time t + 1, to drift slightly away from  pjt towards the initial prior belief (i.e.
+p0j0 = 0.5).
+Intuitively, the value of   controls how much we  forget  the prior knowledge: the smaller   is, the more dynamic the model becomes.
+In practice we can tune both   and   via cross-validation.
+Incorporating expert domain knowledge into the model is often important and has been proved to boost the model performance (see [38] for instance).
+In our moderation system, the feature set x is proposed by experts with years of experience in detecting auction frauds.
+Most of these features are in fact  rules , i.e., any violation of one rule should ideally increase the probability of the seller being fraud to some extent.
+A simple example of such rules is the  blacklist , i.e. whether the seller has ever been detected or complained as fraud before.
+However, for some of such rules simply applying probit regression as described in Section 2.1 or logistic regression as in [38] might give negative coe cients, because given limited training data the sample size might be too small for those coe cients to converge to right values, or it can be because of the high correlation among the features.
+Hence we bound the coe cients of the features that are in fact binary rules, to force them to be either positive or equal to 0.
+Note that this approach couples very well with the SSVS described in Section 2.2: all the coe cients which were negative are now pushed towards zero.
+Suppose feature j is a binary rule and we wish to bound its coe cients to be greater than or equal to 0.
+At time t, the prior of  jt now becomes  jt   p0jt1( jt = 0) + (1  p0jt)N ( jt,  2 jt)1( jt > 0), (24) where N ( jt,  2 N ( jt,  2 jt)1( jt > 0) means  jt is sampled from jt), truncated by 0 as lower bound.
+Model  tting.
+For observation i at time t, the sampling step for zit is the same as Section 2.1 and 2.2.
+To sample nt  ( jt| j,t, zt, yt, p0jt,  t,  t)
+ (  zit   xijt jt)2 exp(  )]
+   [ i=1 (25) all the Kit cases the labels should be identical, hence can be denoted as yit.
+For probit link function, through data augmentation denote the latent variable for the l-th case of seller i as zilt.
+the multiple instance learning model can be written as [p0jt1( jt = 0) + 1   p0jt q2 2 jt exp(  ( jt    jt)2 2 2 jt )1( jt > 0)] yit = 0 iff zilt < 0,  l = 1,   , Kit; otherwise yit = 1, and (32) (33)    jt1( jt = 0) + (1    jt)N (  mjt,  Vjt)1( jt > 0), where  Vjt = ( 2 jt + x  jtxjt) 1,  mjt =  Vjt(x  jt  zt +  jt  2 jt ), (26) (27)  jt = p0jt + (1   p0jt) p0jt  (  mjt /   Vjt )  ( jt / jt) dnorm(0; jt , 2 jt) dnorm(0;  mjt ,  Vjt ) .
+(28) After B number of burn-in samples we collect N posterior jt as the k-th sample.
+Similar to samples of  jt.
+Denote  (k) Section 2.2,  ( jt|yt, p0jt,  jt,  jt)    pjt1( jt = 0) + (1    pjt)N (  jt,  jt (29) 2)1( jt > 0), where  pjt =
+
+ k=1 1( (k) jt = 0)/N.
+(30) 2 actually can not be The estimated values of  jt and  jt obtained directly from the posterior sample mean and variance for the nonzero samples.
+Since it is a truncated normal distribution and non-symmetric, the mean of the nonzero posterior samples tends to be higher than the real value of  jt.
+Let qjt =
+ Pk=1 1( (k) jt 6= 0), we  nd  jt and  jt 2 via maximizing the density function L = (2   jt
+ qjt 2 exp( 
+ Pk=1 ( (k) jt    jt)21( (k) jt
+ 2  jt (31) We  nd the optimal solution to equation (31) by alterna-2|  jt) to maximize the func- The online modeling component is the same as that in tively  tting (  jt|  jt tion using [6].
+2) and (  jt Section 2.2.
+When we look at the procedure of expert labeling in the moderation system, we noticed that experts do the labeling in a  bagged  fashion: i.e. when a new labeling process starts, an expert picks the most  suspicious  seller in the queue and looks through all of his/her cases posted in the current batch (e.g.
+this day); if the expert determines any of the cases to be fraud, then all of the cases from this seller are labeled as fraud.
+In literature the models to handle such scenario are called  multiple instance learning  [30].
+Suppose for each seller i at time t there are Kit number of cases.
+For zilt   N (x  ilt t, 1), where  t can have any types of priors that are described in Section 2.1 (Gaussian), Section 2.2 (spike and slab), and Section 2.3 (spike and slab with bounds).
+Model  tting.
+The model  tting procedure via Gibbs sampling is very similar to those in the previous sections.
+While the process of sampling the conditional posterior of  t remains the same, the process of sampling  (zt|yt, xt,  t) is di erent.
+For seller i at time t,  (zilt|yit = 0, xilt,  t)   N (x  ilt t, 1), (34) truncated by 0 as upper bound for all l = 1,   , Kit.
+If yit =
+ We construct pseudo label  yilt such that  yilt = 0 if zilt < 0; otherwise  yilt = 1.
+The density  ( yi1t,    ,  yiKitt|yit = 1, xit,  t) ilt t))  yilt (1    (x  ( (x  Ql=1 Kit ilt t))1   yilt (35) .
+= PKit
+ l=1  yilt>0 Kit Ql=1 ( (x  ilt t))  yilt (1    (x  ilt t))1   yilt To sample zilt when yit = 1, we  rst sample  yilt for all l = 1,  , Kit using Equation (35).
+Then we sample zilt by (36)  (zilt|yit = 1,  yilt = 1, xilt,  t)   N (x  ilt t, 1), truncated by 0 as lower bound.
+And  (zilt|yit = 1,  yilt = 0, xilt,  t)   N (x  ilt t, 1), (37) truncated by 0 as upper bound.
+The estimation of the posterior of  t and the online modeling component are the same as those in the previous sections.
+).
+[35, 14]).
+Online auction fraud is always recognized as an important issue.
+There are articles on websites to teach people how to avoid online auction fraud (e.g.
+[10] categorizes auction fraud into several types and proposes strategies to  ght them.
+Reputation systems are used extensively by websites to detect auction frauds, although many of them use naive approaches.
+[31] summarized several key properties of a good reputation system and also the challenges for the modern reputation systems to elicit user feedback.
+Other representative work connecting reputation systems with online auction fraud detection include [32, 17, 28], where the last work [28] introduced a Markov random  eld model with a belief propagation algorithm for the user reputation.
+Other than reputation systems, machine learned models have been applied to moderation systems for monitoring and detecting fraud.
+[7] proposed to train simple decision trees to select good sets of features and make predictions.
+[23] analysis and decision trees.
+[38] proposed an o ine logistic regression modeling framework for the auction fraud detection moderation system which incorporates domain knowledge such as coe cient bounds and multiple instance learning.
+In this paper we treat the fraud detection problem as a binary classi cation problem.
+The most frequently used models for binary classi cation include logistic regression [26], probit regression [3], support vector machine (SVM) [12] and decision trees [29].
+Feature selection for regression models is often done through introducing penalties on the coe cients.
+Typical penalties include ridge regression [34] (L2 penalty) and Lasso [33] (L1 penalty).
+Compared to ridge regression, Lasso shrinks the unnecessary coe cients to zero instead of small values, which provides both intuition and good performance.
+Stochastic search variable selection (SSVS) [16] uses  spike and slab  prior [19] so that the posterior of the co-e cients have some probability being 0.
+Another approach is to consider the variable selection problem as model selection, i.e. put priors on models (e.g.
+a Bernoulli prior on each coe cient being 0) and compute the marginal posterior probably of the model given data.
+People then either use Markov Chain Monte Carlo to sample models from the model space and apply Bayesian model averaging [36], or do a stochastic search in the model space to  nd the posterior mode [18].
+Among nonlinear models, tree models usually handles the non-linearity and variable selection simultaneously.
+Representative work includes decision trees [29], random forests [5], gradient boosting [15] and Bayesian additive regression trees (BART) [8].
+Online modeling (learning) [4] considers the scenario that the input is given one piece at a time, and when receiving a batch of input the model has to be updated according to the data and make predictions and servings for the next batch.
+The concept of online modeling has been applied to many areas, such as stock price forecasting (e.g.
+[22]), web content optimization [1], and web spam detection (e.g.
+[9]).
+Compared to o ine models, online learning usually requires much lighter computation and memory load; hence it can be widely used in real-time systems with continuous support of inputs.
+For online feature selection, representative applied work include [11] for the problem of object tracking in computer vision research, and [21] for content-based image retrieval.
+Both approaches are simple while in this paper the embedding of SSVS to the online modeling is more principled.
+Multiple instance learning, which handles the training data with bags of instances that are labeled positive or negative, is originally proposed by [13].
+Many papers has been published in the application area of image classi cation such as [25, 24].
+The logistic regression framework of multiple instance learning is presented in [30], and the SVM framework is presented in [2].
+We conduct our experiments on a real online auction fraud detection data set collected from a major Asian website.
+We consider the following online models:   ON-PROB is the online probit regression model described in Section 2.1.
+  ON-SSVSB is the online probit regression model with Distribution of Bag Size Clean Sellers Fraudulent Sellers
+
+ + e
+
+
+   e
+
+
+   e
+
+
+   e
+ s g a
+ f o n o i t c a r
+
+
+
+
+
+
+
+
+
+ Bag size Figure 1: Fraction of bags versus the number of cases per bag ( bag size ) submitted by fraudulent and clean sellers respectively.
+A bag contains all the cases submitted by a seller in the same day.
+ spike and slab  prior on the coe cients, and the coef- cients for the binary rule features are bounded to be positive (see Section 2.2 and 2.3).
+  ON-SSVSBMIL is the online probit regression model with multiple instance learning and  spike and slab  prior on the coe cients.
+The coe cients for the binary rule features are also bounded to be positive (Section
+ For all the above online models we ran 10000 iterations plus
+ sampling.
+We compare the online models with a set of o ine models that are similar to [38].
+For observation i, we denote the binary response as yi and the feature set as xi.
+For multiple instance learning purpose we assume seller i has Ki cases and denote the feature set for each case l as xil.
+The o ine models are   Expert has the human-tuned coe cients set by domain experts based on their knowledge and recent fraud ghting experience.
+  OF-LR is the o ine logistic regression model that minimizes the loss function
+ i )) + i yi log(1 + exp( x  (1   yi) log(1 + exp(x  i )) +  k k2, (38) where   is the tuning L2 penalty parameter that can be learned by cross-validation.
+  OF-MIL is the o ine logistic regression with multiple instance learning that optimizes the loss function
+ i  yi log(1   Ki
+ l=1
+ 1 + exp(x  il ) ) + (1   yi) Ki
+ l=1 log(1 + exp(x  il )) +  k k2.
+(39) Expert
+
+
+
+
+
+
+
+
+ Rate of Missed Complaints Batch Size
+
+
+
+
+
+
+
+
+
+         Day Day Day
+
+
+ Best          
+
+
+
+
+
+ Table 1: The rates of missed customer complaints for all the models given 100% workload rate.
+  OF-BMIL is the bounded o ine logistic regression with multiple instance learning that optimizes the loss function in (39) such that     T , where T is the for feature pre-speci ed vector of lower bounds (i.e.
+j, Tj = 0 if we force its weight to be non-negative; otherwise Tj =  ).
+All the above o ine models can be  tted via the standard L-BFGS algorithm [39].
+This section is organized as follows.
+In Section 4.1 we  rst introduce the data and describe the general settings of the models.
+In Section 4.2 we describe the evaluation metric for this experiment: the rate of missed customer complaints.
+Finally we show the performance of all the models in Section 4.3 with detailed discussion.
+Our application is a real fraud moderation and detection system designed for a major Asian online auction website that attracts hundreds of thousands of new auction postings every day.
+The data consist of around 2M expert labeled auction cases with   20K of them labeled as fraud during September and October 2010.
+Besides the labeled data we also have unlabeled cases which passed the  pre-screening  of the moderation system (using the Expert model).
+The number of unlabeled cases in the data is about 6M-10M.
+For each observation there is a set of features indicating how  suspicious  it is.
+To avoid future fraudulent sellers gaming around our system, the exact number and format of these features are highly con dential and can not be released.
+Besides the expert-labeled binary response, the data also contains a list of customer complaints every day,  led by the victims of the fraud.
+Our data in October 2010 contains a sample of around 500 customer complaints.
+As described in Section 2, human experts often label cases in a  bagged  way, i.e. at any point of time they select the current most  suspicious  seller in the system and examine all of his/her cases posted on that day.
+If any of these cases is fraud, all of this seller s cases will be labeled as fraud.
+Therefore we put all the cases submitted by a seller in the same day into a bag.
+In Figure 1 we show the distribution of the bag size posted by fraudulent and clean sellers respectively.
+From the  gure we do see that there are some proportion of sellers selling more than one item in a day, and the number of bags (sellers) decays exponentially as the bag size increases.
+This indicates that applying multiple One Day Batch
+
+
+
+
+
+
+
+
+
+
+
+
+ i l s t n a p m o c d e s s m i f o e t a
+
+
+  
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+  
+
+
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+  
+
+ y a
+
+ y a
+
+ /
+ y a
+
+ /
+ y a
+
+ /
+ Figure 2: The boxplots of the rates of missed customer complaints on a daily basis for all the o ine and online models.
+It is obtained given 100% workload rate.
+instance learning can be useful for this data.
+It is also interesting to see that the fraudulent sellers tend to post more auction cases than the clean sellers, since it potentially leads to higher illegal pro t.
+We conduct our experiments for the o ine models OF-LR, OF-MIL and OF-BMIL as follows: we train the models using the data from September and then test the models on the data from October.
+For the online models ON-PROB, ON-SSVSB and ON-SSVSBMIL, we create batches with various sizes (e.g.
+one day, 1/2 day, etc.)
+starting from the beginning of September to the end of October, update the models for every batch, and test the models on the next batch.
+To fairly compare them with the o ine models, only the batches in October are used for evaluation.
+In this paper we adopt an evaluation metric introduced in [38] that directly re ects how many frauds a model can catch: the rate of missed complaints, which is the portion of customer complaints that the model cannot capture as fraud.
+Note that in our application, the labeled data was not created through random sampling, but via a pre-screening moderation system using the expert-tuned coe cients (the data were created when only the expert model was deployed).
+This in fact introduces biases in the evaluation for the metrics which only use the labeled observations but ignore the unlabeled ones.
+This rate of missed complaints metric however covers both labeled and unlabeled data since customers do not know which cases are labeled, hence it is unbiased for evaluating the model performance.
+Recall that our data were generated as follows: For each case the moderation system uses a human-tuned linear scoring function to determine whether to send it for expert labeling.
+If so, experts review it and make a fraud or non-fraud judgment; otherwise it would be determined as clean and not reviewed by anyone.
+Although for those cases that are not labeled we do not immediately know from the system whether they are fraud or not, the real fraud cases would still show up from the complaints  led by victims of the frauds.
+Therefore, if we want to prove that one machine-learned model is better than another, we have to make sure
+
+
+
+
+ Rate of Missed
+
+
+
+
+ Complaints Table 2: The rates of missed customer complaints for ON-SSVSBMIL (100% workload rate, batch size equal to 1/2 day and w = 0.9), with di erent values of  .
+Finally, almost all the o ine and online models, except LR, are better than the Expert model.
+This is quite expected since machine-learned models given su cient data usually can beat human-tuned models.
+In Figure 2 (the left plot) we show the boxplots of the rates of missed customer complaints for 100% workload on a daily basis for all the o ine and online models (daily batch).
+In Figure 3 we plot the rates of missed customer complaints versus di erent workload rates for all models with daily batches.
+From both  g-ures we can obtain very similar conclusions as those drawn in Table 1.
+Impact of di erent batch sizes.
+For our best model ON-SSVSBMIL we tried di erent batch sizes, i.e. 1 day, 1/2 day, 1/4 day and 1/8 day, and tuned   for each batch size.
+The overall model performance is shown in Table 1, and Figure 2 (the right plot) shows the boxplots of the model performance for di erent batch sizes on a daily basis.
+It is interesting to observe that batch size equal to 1/2 day gives the best performance.
+In fact, although using small batch sizes allows the online models to update more frequently to respond to the fast-changing pattern of the fraudulent sellers, large batch sizes often provide better model  tting than small batch sizes in online learning.
+This brings a trade-o  in performance between the adaptivity and stability of the model.
+From Table 1 and Figure 2 we can clearly see this trade-o  and it turns out that 1/2 day becomes the optimal batch size for our application.
+From the table we also observe that as the batch size becomes smaller, the best   becomes larger, which is quite expected and reasonable.
+Tuning  .
+In Table 2, we show the impact of choosing di erent values of   for ON-SSVSBMIL with 100% workload rate, batch size equal to 1/2 day and w = 0.9.
+Intuitively small   implies that the model is more dynamic and puts more weight on the most recent data, while large   means the model is more stable.
+When   = 0.99, it means that the model treats all of the historical observations almost equally.
+From the table it is obvious to see that   has a signi cant impact on the model performance, and the optimal value   = 0.8 implies that the fraudulent sellers do have a dynamic pattern of generating frauds.
+Changing patterns of feature values and importance.
+Embedding SSVS into the online modeling not only helps the fraud detection performance, but also provides a lot of insights of the feature importance.
+In Figure 4 for ON-SSVSBMIL with daily batches,   = 0.7 and   = 0.9 we selected a set of features to show how their posterior probabilities of being 0 (i.e.  pjt) evolve over time.
+From the  gure we observe four types of features: The  always important  features are the ones that have  pjt close to 0 consistently.
+The  always non-useful  features are the ones that have  pjt always close to 1.
+There are also several features with  pjt close to the prior probability 0.5, which implies that we do not have much data to determine whether they are useful Figure 3: The rates of missed customer complaints for workload rates equal to 25%, 50%, 75% and 100% for all the o ine models and online models with daily batches.
+that with the same or even less expert labeling workload, the former model is able to catch more frauds (i.e. generate less customer complaints) than the latter one.
+For any test batch, we regard the number of labeled cases as the expected 100% workload N , and for any model we could re-rank all the cases (labeled and unlabeled) in the batch and select the  rst M cases with the highest scores.
+We call M/N the  workload rate  in the following text.
+For a speci c workload rate such as 100%, we could count the number of reported fraud complaints Cm in the M cases.
+Denote the total number of reported fraud complaints in the test batch as C, we de ne the rate of missed complaints as 1  Cm/C given the workload rate M/N .
+Note that since in model evaluation we re-rank all the cases including both labeled and unlabeled data, di erent models with the same workload rate (even 100%) usually have di erent rates of missed customer complaints.
+We argue model A is better than model B if given the same workload rate, the rate of missed customer complaints for A is lower than B.
+We ran all of the o ine and online models on our real auction fraud detection data and show the rates of missed customer complaints given 100% workload rate for Oct 2010 in Table 1.
+Note that for online models we tried   (one key parameter to control how dynamically the model evolves) for di erent values (0.6, 0.7, 0.75, 0.8, 0.9, 0.95 and 0.99) and report the best in the table.
+For   we also did similar tuning and found that   = 0.9 seems to be a good value for all models.
+From the table it is very obvious that the online models are generally better than the corresponding o ine models (e.g.
+ON-PROB versus OF-LR, ON-SSVSBMIL versus OF-BMIL), because online models not only learn from the September training period but also update for every batch during the October test period.
+Comparing the online models described in this paper, ON-SSVSB is signi cantly better than ON-PROB since it considers online feature selection and also bounds coe cients as domain knowledge.
+ON-SSVSBMIL further improves slightly over ON-SSVSB because it considers the  bagged  behavior of the expert labeling process using multiple instance learning.
+i
+ = t n e c i f f e o
+ f o b o r
+ r o i r e t s o
+
+ .
+.
+.
+.
+.
+.
+Day
+
+
+ Figure 4: For ON-SSVSBMIL with daily batches,   = 0.7 and   = 0.9, the posterior probability of  jt = 0 (j is the feature index) over time for a selected set of features.
+Model ON SSVSBMIL t i n e c i f f e o
+
+
+ .
+.
+.
+.
+.
+.
+.
+.
+Day
+
+
+ Figure 5: For ON-SSVSBMIL with daily batches,   = 0.7 and   = 0.9, the posterior mean of  jt (j is the feature index) over time for a selected set of features.
+or not (i.e. the appearance rates of these features are quite low in the data).
+Finally, the most interesting set of features are the ones that have a large variation of  pjt day over day.
+One important reason to use online feature selection in our application is to capture the dynamics of those unstable features.
+In Figure 5 we show the posterior mean of a randomly selected set of features.
+It is obvious that while some feature coe cients are always close to 0 (unimportant features), there are also many features with large variation of the coe cient values.
+In this paper we build online models for the auction fraud moderation and detection system designed for a major Asian online auction website.
+By empirical experiments on a real-word online auction fraud detection data, we show that our proposed online probit model framework, which combines online feature selection, bounding coe cients from expert knowledge and multiple instance learning, can signi cantly improve over baselines and the human-tuned model.
+Note that this online modeling framework can be easily extended to many other applications, such as web spam detection, content optimization and so forth.
+Regarding to future work, one direction is to include the adjustment of the selection bias in the online model training process.
+It has been proven to be very e ective for o ine models in [38].
+The main idea there is to assume all the unlabeled samples have response equal to 0 with a very small weight.
+Since the unlabeled samples are obtained from an e ective moderation system, it is reasonable to assume that with high probabilities they are non-fraud.
+Another future work is to deploy the online models described in this paper to the real production system, and also other applications.

@@ -1,0 +1,495 @@
+Search engine users  information needs span a broad spectrum [11, 15]: simple needs, such as homepage  nding, can mostly be satis ed via a single query; but users may also issue a series of queries, collect,  lter, and synthesize information from multiple sources to solve a complex task, e.g., planning a vacation.
+To comprehensively and accurately understand these needs from recorded actions in the user query Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+IW3C2 reserves the right to provide a hyperlink to the author s site if the Material is used in electronic media.
+logs, we must segment and associate chronologically-ordered queries into a semantically-coherent structure.
+The primary mechanisms for segmenting the logged query streams are session-based, where short inactivity timeouts between user actions are applied as a means of demarcating session boundaries [17, 19].
+Recently, there has been sig-ni cant research on identifying tasks within these sessions, e.g., Lucchese et al [15] proposed the concept of a  task-based session : where a cluster of queries within the same session serves a particular common search intent.
+However, those methods rely on the accurate identi cation of the original session boundaries and the empirically-set timeout threshold may not be a valid criterion for identifying the semantic structure among queries: many tasks have been shown to span multiple search sessions [1, 11].
+It suggests that there is value in studying and improving task identi cation methods spanning session boundaries.
+Table 1: An example of cross-session search tasks.
+SessionID TaskID Query Time
+
+
+
+
+
+ bank of america sas sas shoes credit union 6pm.com coupon for 6pm
+
+
+
+
+
+
+
+
+
+
+
+ Motivating Example: Consider a real example of search tasks from a single user shown in Table 1, which is extracted from the logs of Bing.com.
+We manually annotated the in-session tasks in the last column of the table and segmented the sessions using 30-min inactivity threshold.
+We can observe that the user performed two tasks in the  rst search session on May 29, 2012, one for personal banking and another for shopping (for shoe-brand San Antonio Shoes).
+And on the second day, the user performed two individual search sessions, and each session consists of one single task, i.e., banking and shopping (at the online discount merchant 6pm.com) accordingly.
+However, humans can easily recognize that those four tasks annotated in three di erent sessions happen to be only two unique tasks: a shopping task including queries of  sas ,  sas shoes ,  6pm.com  and  coupon for 6pm , and a personal banking task including queries of  bank of america  and  credit union.  Prior work on identifying cross-session tasks has targeted pairs of queries, and made predictions about whether they share the same goal or represent the same task [11, 13].
+Unfortunately, pairwise predictions alone cannot generate the partition of tasks, and post-processing is needed to obtain
+ tions might not be consistent: e.g., predicting query i and j, query i and k to be in the same task, but query j and k are not.
+As a result, de nite decisions have to be made in post-processing; but such decisions are isolated from the classi er training, and are therefore not guaranteed to be optimal.
+To understand this limitation, taking the search tasks shown in Table 1 as an example.
+A lexicon-similarity-based classi er can easily recognize the query  6pm.com  and  coupon for 6pm,  and  sas  and  sas shoes  belong the same search tasks, because of query overlap; but it can hardly associate  sas  with  6pm.com.  Furthermore, the query  sas  is ambiguous: it has other interpretations such as the business analytic software SAS or special air service in British Army.
+Hence, even the features leveraging external knowledge bases [15] may be unable to assist.
+But when we consider the temporal juxtaposition of  sas shoes  and  sas,  we can con dently infer that the  sas  here refers to  San Antonio Shoes ; and since we know that the queries  6pm.com  and  sas shoes  are both associated with shoe shopping, we can safely conclude that those four di erent queries are part of the same shopping task.
+From this example, we can conclude that the queries belonging to the same search task convey rich dependency relationships, which provide us with valuable information to analyze and exploit the search task structure.
+In contrast, traditional binary clas-si cation methods are only optimized for independent predictions and thus cannot explore such in-depth relationships among queries.
+Moreover, existing methods for cross-session search task extraction heavily depend on the manual annotation of tasks [11, 13, 14], which is expensive to acquire at scale.
+Fortunately, we have the opportunity to leverage problem-speci c knowledge to assist with model learning, where various informative signals are available for us to identify such knowledge.
+For example, identical and reformulated queries, e.g.,  sas  and  sas shoes  in Table 1, and queries with identical returned URLs should belong to the same search task with high con dence.
+Such knowledge can be summarized by a set of annotation rules, i.e., must-link and cannot-link [22], and applied at scale to reduce the burden of manual annotation.
+We refer to such knowledge as weak supervision, because it only provides pairwise supervision over a subset of queries; and the quality of such supervision might vary.
+The research described in this paper addresses the above challenges and makes the following research contributions:   Address the cross-session search task extraction problem in a structural learning framework, where we treat a user s entire query log as a whole and explicitly model the dependency among queries in the same task.
+  Explore helpful weak supervision from di erent perspectives to reduce the burden of manual annotation and guide the supervised model learning for cross-session task extraction.
+  Provide a detailed analysis of the proposed method whereby we compare it against state-of-the-art cross-session task extraction baselines and demonstrate sig-ni cant performance gains on a variety of metrics.
+Various methods have been proposed to segment and organize query logs into semantically coherent structures.
+The most commonly used unit, the search session, was often de- ned based on a timeout criterion, where di erent thresholds, ranging from 5 to 120 minutes, have been proposed [4, 9, 19].
+In addition, Radlinski and Joachims [17] used a 30-minute timeout together with query similarity measures to de ne sequences of similar queries that combine to form so-called query chains.
+Search tasks within the temporally-demarcated session boundaries have also been studied.
+Spink et al. [20] demonstrated that multitasking behavior, whereby multiple tasks are intertwined within the same time period, occurs frequently.
+Lucchese et al.
+[15] referred to such sessions as task-based sessions (or in-session tasks).
+Various methods, based on time splitting [2, 9], lexicon similarity [11, 15], and query reformulation patterns [9, 11], have been proposed to identify in-session tasks.
+Recently, researchers have realized the necessity of going beyond the session timeout, and several methods have been proposed to tackle the problem by classifying whether two queries share the same search goal, i.e., same-task prediction.
+Jones et al.
+[11] claimed that no particular timeout threshold is necessary a valid constraint for identifying task boundaries.
+They found over 15% of search tasks are performed across timeout based session boundaries in their search log data set.
+To extract the cross-session tasks (which were de ned as mission and goal), they built classi ers to identify task and sub-task boundaries, as well as pairs of queries belonging to the same task.
+Kotov et al.
+[13] and Agichtein et al. [1] studied the problem of cross-session task extraction via binary same-task classi cation, and found different types of tasks demonstrate di erent life spans.
+In this work, although we focus on cross-session tasks, our solution is actually more general than cross-session only.
+Our only criterion for extracting search tasks is that queries in the same task should serve for the same high-level information need; tasks can be performed in a single session or can span multiple sessions.
+The major di erence between our work and existing cross-session task extraction work is that instead of making a series of binary same-task predictions, we cast this problem as a structural learning problem, which explicitly models the dependency among queries in a search task.
+As we have discussed in Section 1, independent binary classi cation cannot capitalize on dependencies between pairs of predictions.
+In addition, existing classi cation-based methods heavily depend on manual annotations for model training.
+This will greatly limit their generalization capability when there is few or no task annotation available.
+In this work, we explored a variety of informative signals as weak supervision to release the burden of manual annotation and guide model learning.
+In this section, we formally de ne the problem of cross-session search task extraction.
+Query log records the interaction behaviors from a set of di erent users, U = {u1, u2, .
+.
+.
+, uN}, in a search engine.
+It stores a sequence of queries Qn = {qn1, qn2, .
+.
+.
+, qnM} from user un, together with the timestamp tni when the query is submitted and the corresponding list of returned URLs, URLni = {urlni1, urlni2, .
+.
+.
+, urlniL}.
+Each query qni is represented as the original string that users submitted to the search engine, and Qn is ordered according to query timestamp tni.
+Each URL urlnil has two attributes: URL string and click timestamp cnil (cnil=0 if it was not clicked).
+and a  xed timeout threshold  cut, a session Snt is a set of consecutive queries from Qn, such that  qni   Snt, qnj   Snt, qnl /  Snt, |tni   tnj|    cut and |tni   tnl| >  cut.
+The de nition of session implies that {Snt}T t=1 is a set of disjoint partitions of query sequence Qn, such that  i (cid:5)= j, Sni Snj =   and Qn = i Sni.
+A typical timeout threshold is set to be 30 minutes [13, 15, 17].
+(cid:2) De nition (Search Task) Given user un s search history Qn, a search task Tnk is a maximum subset of queries in Qn, such that all the queries in Tnk correspond to a particular information need.
+(cid:2) This de nition of search task indicates {Tnk}K k=1 is also a set of disjoint partitions of query sequence Qn:  j (cid:5)= k, Tnj   Tnk =   and Qn = k Tnk.
+Therefore, each Tnk is not con ned to a particular session Snt; instead they can overlap, or one search task can contain multiple sessions.
+To emphasize such a di erence, we will refer to our de nition of search task as Cross-session Search Task as opposed to the previous de nition of In-session Search Task [15, 20].
+Based on the above notations and de nitions, we de ne the problem of cross-session search task extraction as, De nition (Cross-Session Search Task Extraction) Given user un s search query log Qn, partition the sequence into disjoint subsets {Tn1, Tn2, .
+.
+.
+,T nk}, such that the partition is consistent with the user s underlying information need; when explicit task annotation is available, the extracted tasks should be consistent with the annotation.
+In particular, such task partition can be uniquely determined by a mapping function y(qni)   Tnk from query qni to its corresponding task partition Tnk for the query sequence Qn.
+In addition, we should note that the number of tasks, e.g., K, user un can take is not speci ed in our de nition, and therefore the learning method should  nd the appropriate K for each given Qn automatically.
+We model the cross-session search task extraction as a supervised clustering problem (SCP) [6, 8, 22], where given the clustering membership, we need to build up a model which captures the connection between queries.
+A commonly used assumption in SCP is the all-link clustering structure [8, 10], where one needs to associate the queries belonging to the same task together, such that the in-cluster similarity de ned by the summation of similarities over all the pairs of instances within a cluster is maximized.
+However, this objective may not be the most appropriate for our problem: in a task consisting of m queries, many of the O(m2) pairs are not necessarily similar, or even quite di erent.
+Recall the example search tasks shown in Table 1, the query  sas  and  coupon for 6pm  are not directly related under most of similarity metrics, e.g., edit distance or term overlap; putting them into the same task can only hurt the in-cluster similarity.
+As a result, any algorithm aims at maximizing the all-link based in-cluster similarity can hardly discover this type of task.
+A more reasonable way for clustering queries into tasks is to  nd the strongest link between a candidate query and queries in the target cluster, i.e., bestlink [10].
+For example, after scanning through all the queries listed in Table 1, we can easily infer the relation between  sas  and  coupon for 6pm  based on the decision over the other two queries,  sas shoes  and  6pm.com , which have been recognized as being in the same shoe shopping task.
+This motivates us to revise the objective of clustering queries: a query belonging to one particular search task does not need to be similar to all the other queries in this task (all-link ), but there has to be at least one query, which is strongly associated with this query in that task (bestlink ).
+Intuitively, this modeling assumption simulates how a human editor annotates the search tasks in the query log: one might determine if two queries belong to the same task by reasoning transitively over strong connections between queries in the same task.
+Unfortunately, the bestlink structure is hidden in the query log, and it is even impossible for the human editors to explicitly annotate, since such structure might not be unique.
+Therefore, we adopt the structural learning method with latent variables, i.e., latent structural SVMs [5, 24], to realize the bestlink modeling assumption, and utilize the hidden structure to explore the dependency among queries within the same task.
+We name our method as bestlink SVM.
+To formalize the idea of bestlink SVM, we denote the hidden best-link structure as h. Before stating clearly the detailed de nition of h, it helps to consider h as a graph whose edges connect the  most similar  queries.
+Given a query sequence Q = {q1, q2, .
+.
+.
+, qM}1, we de ne a feature vector for the task partition y speci ed by the hidden best-link structure h as  (Q, y, h).
+And based on  (Q, y, h), our bestlink SVM is a linear model parameterized by w, and predicts the task partition at testing time by,
+  (Q, y, h), ( y,  h) = arg max (y,h) Y H w (1) where Y and H represent the sets of possible structures of y and h respectively.
+ y becomes the output for cross-session tasks and  h is the inferred latent structure.
+In this paper, we refer to solving Eq (1) as the decoding problem.
+The decoding problem of Eq (1) clearly distinguishes the proposed bestlink SVM model from the previous binary-classi cation-based methods.
+In bestlink SVM, we model the entire query sequence Q as a whole, and predict the task membership for all the queries simultaneously; while the previous two-step approaches cannot explore the interactions among queries in the same task, and isolated predictions are made on each pair of queries in those methods.
+The de nition of h needs to be carefully designed, otherwise the decoding problem (hence the training algorithm as well) can be intractable.
+We de ne h(qi, qj ) = 1 if query qi and qj are directly connected in h; and otherwise, h(qi, qj ) =
+ query that does not have a strong connection with any previous queries, we add a dummy query q0 at the beginning of each user s query log.
+All the queries connecting to q0 would be treated as the initial query of a new search task.
+Besides,
+ we drop the index n for user un to simplify the notations.
+1355we enforce that a query can only link to another query in the past, or formally, j 1(cid:3) h(qi, qj) = 1, j   1 i=0 Taking the search tasks shown in Table 1 as an example, we illustrate the idea of bestlink structure in Figure 1.
+From the  gure, we can clearly notice that the bestlink de nes a hierarchical tree structure of  strong  connections among the queries: rooted in the dummy query q0, each subtree of q0 corresponds to one speci c search task in a user s search history.
+For a new query, it can only belong to a previous search task or be the  rst query of a new task.
+Therefore, the temporal order provides us a helpful signal to explore the dependency between queries.
+Figure 1: Illustration of hidden search task structure speci ed in bestlink SVM.
+{S1,S2,S3} are the sessions segmented by the 30-minutes inactivity threshold, {T1,T2} are the search tasks annotated by human editor.
+The dotted arrows indicate one possible hidden structure identi ed by bestlink SVM.
+We require h to be consistent with y   that is, h(qi, qj ) = 1 implies y(qi) = y(qj); in other words, the task partition y is determined by the connected components in h. As a result, the dependency among the queries belonging to the same task is explicitly encoded by the latent bestlink structure h: as shown in Figure 1, predicting  sas  and  sas shoes ,  sas shoes  and  6pm.com  belonging to the same task would immediately lead to the conclusion that all these three queries belong to the same task, even though  sas  and  coupon for 6pm.com  are not directly connected to each other.
+Accordingly, our feature vector for a particular task partition y is de ned over the links in h as, S(cid:3) (cid:3)  (Q, y, h) = h(qi, qj )  s(qi, qj ), (2) i,j s=1 where a set of symmetric pairwise features { s( , )}S s=0 is given to characterize the similarity between query qi and qj .
+In particular, to accommodate the dummy query q0, we set  0(q0,  ) = 1 and  s >0 ,  s(q0, ) = 0.
+Based on our feature vector design and the directed linkage structure of h, exact inference can be e ciently calculated for the decoding problem in Eq (1).
+Algorithm 1 described an incremental implementation to solve the exact inference problem, where we only need the queries appearing before the given query to determine its task membership.
+This makes bestlink SVM feasible to be deployed in Algorithm 1: Task Partition Prediction Input: Query sequence Q = {q1, q2, .
+.
+.
+, qM}, pairwise k=0 and linear weight w.
+features { k( , )}K Output: Task partition  y.
+//Step 1: Initialize the latent structure  h  h( ,  ) = 0; //Step 2: Search for the best latent structure  h for i = 1 .
+.
+.
+M do = arg max0 j<i wT k  k(qi, qj); k=1 (cid:2)K j(cid:3)  h(i, j(cid:3) ) = 1; end //Step 3: Construct the best task partition  y: t = 0; for i = 1 .
+.
+.
+M do j(cid:3) if j(cid:3) = arg max0 j<i h(i, j); = 0 then  y(i) = t; t = t + 1;  y(i) =  y(j(cid:3) ); end else end end return  y the search engine query log system in an online fashion, since the newly arrived queries will not a ect the method s prediction on previous queries.
+For a given set of query logs with annotated tasks, {(Qn, yn)}N n=1, we need to retrieve the optimal weight setting w for the proposed bestlink SVM.
+Empirically, the optimal weight w should minimize the error between the predicted task partition  yn and ground-truth yn.
+In addition, w should also be optimized for good generalization capability, e.g., maximize the margin between ground-truth partition and wrong partitions [21].
+This naturally gives rise to the following optimization problem within the latent structural SVMs framework [5, 24]: N(cid:3) n=1
+
+
+ ||w||2 + C min w,  s.t.
+ n, max h H w (  y, h) Y H[w max  2 n (3)  (Qn, yn, h)    (Qn,  y,  h) +  (yn,  y,  h)]    n
+ where  (yn,  y,  h) characterizes the distance between the ground-truth partition yn and predicted partition  y speci ed by the latent structure  h, { n}N n=1 is a set of slack variables to allow errors in the training set, and C controls the trade-o  between empirical loss and model complexity.
+n for Qn is   Because the ground-truth bestlink structure h unobservable in the training data, we cannot measure the   n) and ( y,  h).
+As a result, we de-distance between (yn, h  ne the margin between the ground-truth task partition yn and predicted task partition  y based on the inferred latent structure  h as,  (yn,  y,  h) = |Qn|   |Tn|   (cid:3) (4) where |Qn| is the number of queries in Qn, |Tn| is the number of annotated tasks in Qn, and  (y, (i, j)) = 1 if y(i) = h(i, j) (yn, (i, j)) i,j
+ Feature Query -based
+ based maxurl URLi (cid:2) url clicked URLi
+
+
+
+
+
+
+
+ Q-CLICK-URL-MATCH-MAX maxurl clicked URLi
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Table 2: Pairwise Similarity Features.
+Description cosine similarity between the term sets of qi and qj norm edit dist between query strings of qi and qj Jaccard coe  between the term sets of qi and qj 1.0/(absolute time di erence in seconds between qi and qj) (# of queries in between of qi and qj)/|Qn| (cid:2) (cid:3) (cid:3) (cid:4) c(qi, url) url URLi (cid:2) (cid:3) (cid:4) c(qj, url) + (cid:4) (cid:3) c(qj, url) + maxurl URLj url URLj (cid:4) (cid:3) c(qj, url) + (cid:4) (cid:3) c(qj, url) (cid:2) (cid:4) c(qi, url) (cid:4) (cid:3) c(qi, url) url clicked URLj + maxurl clicked URLj (cid:4) (cid:3) c(qi, url) min norm edit dist between domain of URLi and domain of URLj min norm edit dist between URLi and URLj min norm edit dist between clicked URLi and clicked URLj avg norm edit dist between domain of URLi and domain URLj avg norm edit dist between URLi and URLj avg norm edit dist between clicked URLi and clicked URLj Jaccard coe  between clicked URLi and clicked URLj Jaccard coe  between URLi and URLj Jaccard coe  between domain of clicked URLi and domain of clicked URLj Jaccard coe  between domain of URLi and domain of URLj max ODP category similarity of clicked URLi and clicked URLj avg ODP category similarity of clicked URLi and clicked URLj max ODP category similarity of URLi and URLj avg ODP category similarity of URLi and URLj if qi and qj are in the same session if both qi and qj are the  rst query of session # queries in between of qi and qj Session -based
+
+
+ Note: 1) norm edit dist is the edit distance between string s and t divided by the maximum length of s and t; 2) c(q, url) is a function counting the number of query terms in q contained in url;
+ y(j), otherwise  (y, (i, j)) =  1.
+It is easy to verify that  (yn,  y,  h) is non-negative, and equals to zero if and only if the task partition  y is the same as yn.
+Since we are minimizing the square hinge loss over the predictions in the training set, the optimization problem introduced in Eq (3) can be e ciently solved by the iterative algorithm proposed in [5]: the optimization procedure minimizes Eq (3) by constructing a sequence of convex problems in each iteration, and each iteration guarantees to decrease the ob-In the employed optimization algorithm, jective function.
+two types of inference are required: loss-augmented inference, i.e., max(  y, h) Y H[wT (Qn,  y,  h)+ (yn,  y,  h)]; and latent variable completion inference, i.e., maxh H wT (Qn, yn, h).
+Since the calculation of  (yn,  y,  h) can be decomposed onto the edges in h, loss-augmented inference can be directly solved via Algorithm 1 by adding an additional cost  (yn, (i, j)) into Step 2 when  nding the best link for query qi.
+And the latent variable completion inference can also be achieved via Algorithm 1 by restricting Step 2 to only search in the queries with the same task label as qi.
+Both inference algorithms are exact, which renders us a more precise optimization result for Eq (3).
+The detailed algorithm is omitted due to the lack of space.
+Our bestlink SVM requires a set of pairwise similarity features as input to characterize the connection between a pair of queries.
+In this work, we explored a variety of signals, from lexicon similarity to query semantic category similarity, to measure the similarity between a pair of queries.
+Our proposed pairwise similarity features are list in Table 2, and categorized into three types: query-based, URL-based and session-based similarities.
+To analyze the semantic relationships between queries, we assign each URL to a topic distribution over 385 categories from the second level of  Open Directory Project  (ODP, dmoz.org) with a content-based classi er [18].
+The inner product of the predicted topic distribution is used to measure the semantic similarity between queries.
+Besides, to make the features comparable across each other, we normalize them into the range of [0,1] accordingly, e.g., taking reciprocal of the absolute time di erence between two queries.
+The bestlink SVM proposed in Section 4.2 is a supervised clustering algorithm that requires full annotation of tasks in the query log.
+As we have discussed in Section 1, various types of signals, which can be automatically derived from the query logs, are helpful for identifying the search tasks.
+In this section, we discuss how to make use of large quantities of unlabeled data with weak supervision signals in the proposed bestlink SVM.
+We explore weak supervision signals for the cross-session search task extraction problem from di erent perspectives, and formalize them in terms of  must-link  and  cannot-link  [22].
+Query matching, e.g., identical or reformulated queries, is a strong indication that two queries belong to the same task.
+Besides, the returned URLs for the given query are also an important source for determining the task membership: because modern search engines have sophisticated query pre-
+Type Must-link ( y(i) =  y(j)) URLi = URLj Description qi = qj qi   qj or qj   qi clicked URLi=clicked URLj qi (cid:5)= qj AND URLi   URLj =   Cannot-link ( y(i) (cid:5)=  y(j)) processing procedures, e.g., spelling correction [7] and query rewriting [12], when it decides to return identical URLs for two di erent queries, it is a strong signal that the two queries are related.
+Table 3 lists four types of must-link and one type of cannot-link we have de ned in this work.
+When there is con ict between the automatically generated must-links and cannot-links, e.g., nontransitive, we will drop the cannot-links to make the annotations consistent.
+Though one may treat such signals as features and manually tune the weights to stress their importance, we want emphasize that this approach is sub-optimal for the following two reasons: 1) features are independent in linear models, the knowledge about one feature cannot help the model learn for other features; instead, if we treat such information as supervision, all the features can be adjusted accordingly; 2) it is di cult to manually set the appropriate weights for all the features; while optimizing the objective function de ned on both weak supervision and manual annotations would estimate the weights in a systematic way.
+Note that when we apply the proposed must-link and cannot-link to the unlabeled user query logs, we can only get partial annotations on those queries given that the coverage of the weak supervision is not perfect.
+We denote the partial annotation as  y, and to accommodate such partial annotations in bestlink SVM, we modify the margin de ned in Eq (4) as follows,  ( yn,  y,  h) = |Qn|   |Cn|   (cid:3) h(i, j) (y, (i, j)) (5) i,j where |Cn| is the number of connected components (including singletons) de ned by must-links in Qn, and  (y, (i, j)) =  + if  y(i) =  y(j),  (y, (i, j)) =   if  y(i) (cid:5)=  y(j), other  wise  (y, (i, j)) = 0 when there is no annotation between query i and j.
+This modi catoin makes our bestlink SVM a semi-supervised clustering algorithm.
+We can easily verify that  ( yn,  y,  h) is a more general de nition of the distance between the given (or partial) task partition and the predicted task partition, in which we count how many edges in  h are consistent with given annotation (or must-links) in  y, and how many of them are con icting with the annotation (or must-/cannot-links).
+In addition, to distinguish the creditability of the rule-based must-link and cannot-link, we assign them di erent cost factors, i.e.,  + > 0 and   > 0, which can be set according to model s performance on a manually annotated held-out set.
+ 
+
+ In order to evaluate the proposed method, we performed a series of experiments on a large scale search dataset sampled from the query logs from Bing.com.
+First, we compared the performance of the proposed bestlink SVM to several state-of-the-art methods for the cross-session search task extraction problem.
+Then, a set of experiments were conducted to study the e ectiveness of using weakly supervised data, which is automatically derived from user query logs, for identifying cross-session search tasks.
+We extracted  ve days  search logs from Bing.com, from May 27 2012 to May 31 2012, for our experiments.
+During this period, a subset of users are randomly selected and all their search activities are collected, including the anonymized user ID, query string, timestamp, returned URL sets and the corresponding user clicks.
+The 30-minutes inactivity threshold is used to segment queries into sessions as pre-processing [14, 23].
+Since the focus is identifying cross-session search tasks, we further  ltered out the users who submitted less than two queries or had less than two sessions during this period.
+As a result, we collected 7,628 users with 114,723 queries.
+The basic statistics of this data set are shown in Table 4.
+Table 4: Statistics of evaluation query log data set.
+# User
+ Query/User
+ # Session
+
+ # Query
+
+ Session/User Query/Session Table 5: Statistics of annotated search tasks.
+Single-query Task Multi-query Task
+
+ Multi-session Task Interleaving Task Query/Task*
+ Task/User
+
+
+  count only in multi-query tasks
+
+ Session/Task* Task duration (mins)* In order to evaluate the performance of the proposed method in identifying cross-session search tasks, three editors were recruited to annotate the search tasks.
+Editors were instructed to group the queries into tasks according to their understanding of users  information needs, and they were encouraged to use external resources, e.g., search for the logged queries and browse the clicked URLs, to infer the relation between queries.
+The same set of 200 users  query logs are distributed in each editor s annotation assignment to measure their annotation agreement.
+Cohen s kappa on pairwise annotation of queries showed high inter-annotator agreement, 0.68, 0.73 and 0.77, for the three pairs of editors.
+After aggregating the three editors  annotations, we got a collection of 10,327 tasks annotated out of 1,436 users  search logs, and the basic statistics of this data set are shown in Table 5.
+From Table 5, we observed that in average a user takes 7.2 di erent tasks during this period, 22.1% of which contain multiple queries, more than 57.2% multi-query tasks span across session boundaries, and 31.1% of them are interleaving.
+This shows the need of going beyond session boundaries to extract the long-term search tasks.
+In particular, when we look into those multi-query tasks, they span 6.6 queries, 2.8 sessions and more than 8 hours in average.
+This indicates that cross-session task extraction is not a trivial problem, and one needs to leverage rich information for identifying the structure of a cross-session search task.
+Several methods have been proposed to identify cross-session search tasks based on the idea of same-task classi cation [11, 13].
+However, those methods only provide predictions over pair of queries, and post-processing is needed to obtain the  nal task partitions.
+In our experiment, we adapted two best performing clustering methods from Luc-chese et al. s work [15], i.e., QC wcc and QC htc, as the post-processing procedure for the baselines.
+QC wcc performs clustering by dropping  weak edges  among queries and extracting the connected components as tasks.
+QC htc assumes a cluster of queries can be well represented by only the chronologically  rst and last query in the cluster, and therefore only the similarity among the  rst and last queries of two clusters is considered in agglomerative clustering.
+We trained a linear SVM model to classify if two queries are in the same task, treated the predicted positive query pairs as  strong edges,  and applied QC wcc and QC htc to obtain the  nal task partition.
+In this setting, QC wcc works exactly the same as Liao et al. proposed in [14].
+Since our proposed bestlink-SVM can be viewed as a supervised clustering method [6, 8, 22], we also included two state-of-the-art supervised clustering methods, i.e.,  adaptive-clustering  [6] and  cluster-svm  [8] as baselines.
+Adaptive clustering (AdaptClu) performs single-link agglomer-ative clustering based on binary classi cation results.
+To avoid over tting, it selects a representative subset of all the candidate pairs based on their similarities when training the binary classi er.
+In our experiment, we used the summation of all the pairwise similarities as de ned in Table 2 between two queries (with negative signs for edit-distance-based similarities) for selecting the representative subset of queries.
+cluster-svm performs correlation clustering by learning a structural SVM model, which simultaneously optimizes the pairwise accuracy and in-cluster similarity de ned by all-link in one cluster.
+To make a fair comparison, all the methods are trained on the same set of pairwise features de ned in Table 2.
+A commonly used evaluation metric for search task extraction is pairwise precision/recall [11, 13] de ned as, (cid:4) i<j   (cid:4) i<j   (cid:5) y(qi), y(qj) (cid:4) (cid:5) y(qi), y(qj) (cid:4) i<j   (cid:5) (cid:6)   (cid:5) (cid:6)    y(qi),  y(qj ) (cid:5)  y(qi),  y(qj ) (cid:6)  y(qi),  y(qj ) (cid:5) y(qi), y(qj) (cid:6) i<j   (cid:6) (cid:6) (6) (7) ppair = rpair = (cid:5)  y(qi),  y(qj ) where ppair evaluates how many pairs of queries predicted in the same task, i.e.,   = 1, are actually anno-= 1; and rpair tated as in the same task, i.e.,   evaluates how many pairs annotated as in the same task are recovered by the algorithm.
+(cid:5) y(qi), y(qj) (cid:6) (cid:6) However, it is worth noting that these metrics cannot directly measure the clustering quality, and have some limitations: 1) they ignore singleton tasks, since no pairs can be formed from such tasks; 2) they intrinsically favor methods producing fewer tasks [16].
+Inspired by the metrics used in the problem of co-reference resolution in natural language processing, we employed the Constrained Entity-Alignment F-Measure (f 1CEAF) as proposed in [16] to evaluate the clustering quality.
+CEAF de nes the clustering precision and recall based on the best alignment between the predicted cluster and ground-truth cluster, where the alignment can be measured by any similarity function de ned on two sets: (cid:4) i  (  Ti, g(  Ti)) (cid:4) i  (  Ti,  Ti) (cid:4) i  (  Ti, g(  Ti)) (cid:4) j  (Tj,Tj) pCEAF = rCEAF = (8) (9) (10) where  (A, B) is a similarity measure between set A and B, which is chosen to be Jaccard coe cient in our evaluation; and g( ) is the optimal mapping between the predicted task partition T and ground-truth task partition  T .
+Then, f 1CEAF can be calculated as, f 1CEAF =
+ pCEAF + rCEAF Furthermore, we also included Normalized Mutual Information (NMI), a standard metric for evaluating the clustering quality, as one of our evaluation metrics.
+The detailed de nition of NMI can be found in [3].
+Basically, the higher the NMI score the better clustering performance an automatic system achieves: NMI= 1 if the prediction is identical to the ground-truth; and NMI= 0 if the prediction is independent from the ground-truth.
+We randomly split the annotated user query logs into a training set with 712 annotated users, and a testing set with the rest 725 annotated users.
+The parameters in each model, e.g., C in SVM-based models, are tuned by 5-fold cross-validation on the training set (splitting the annotated users into di erent folds).
+We trained all the methods on the manually annotated training set, and compared their task extraction performance in Table 6, where we averaged the performance under each metric over all the testing cases.
+A paired two-sample t-test is performed to validate the signi cance of improvement from the best performing method against the runner-up method under each metric.
+Table 6: Search Task Extraction Performance.
+f 1CEAF ppair rpair Q wcc Q htc AdaptClu
+
+
+ cluster-svm 0.9232   bestlink SVM 0.9330
+
+ indicates p-value<0.01  
+
+
+
+
+
+
+ AdaptCluall Rule-based  
+
+
+
+  
+
+ -
+
+
+
+ 
+
+ In Table 6 we  rst observed that cluster-svm, which is also a structural learning method, performed much worse than bestlink SVM, especially on rpair.
+The reason is that cluster-svm optimizes the in-cluster similarity de ned by all-link among the queries; while in bestlink SVM, the in-cluster similarity is only de ned on the bestlink among the queries, or more precisely, the edges exist in h (as shown in Eq (2)).
+To validate this hypothesis, we implemented an additional baseline of all-link based adaptive clustering (AdaptCluall).
+r i a p p
+
+
+
+
+
+
+
+
+
+
+ f
+
+
+
+
+
+
+
+
+
+
+
+ r i a p r
+
+
+
+
+
+
+ Unannotated User Size
+
+ Unannotated User Size (a) ppair (b) rpair
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Unannotated User Size
+
+ Unannotated User Size
+
+ htc wcc
+
+ AdaptClu clustser SVM bestlink SVM
+
+ (c) f 1CEAF (d) NMI Figure 2: Task extraction performance with increasing volume of weakly supervised data.
+In AdaptCluall, we changed the original single-link agglom-erative clustering to all-link agglomerative clustering, where the in-cluster similarity is de ned the same as in cluster-svm.
+As observed in the result, AdaptCluall performed sig-ni cantly worse than AdaptClu, especially on rpair.
+This result validates our basic modeling assumption in the proposed bestlink SVM, i.e., a query belonging to a particular task should have a strong connection with at least another one query rather than all the other queries in the same task.
+Besides, as discussed in Section 2, due to the lack of interaction between the binary classi er training and query clustering in post-processing, the two-step approaches are likely to give suboptimal task extraction performance.
+Q wcc and Q htc are based on the same binary classi er s output, but their performance di ers because of distinct strategies used in post-processing.
+Q wcc tends to connect all the queries together, and results in a high rpair, but poor performance on other metrics.
+On the other hand, because Q htc only compares the  rst and last queries between two di erent clusters, it gives a relatively lower rpair, but better clustering performance due to a better ppair, as compared to Q wcc.
+In Section 5, we proposed a method for automatically generating weak supervision from search logs in the form of must-link and cannot-link.
+In Table 6, we also evaluated the quality of such weak supervision.
+Since the rule-based supervision merely provides pairwise annotations, we only evaluated its ppair and rpair.
+In general, ppair of these auto-generated annotations is reasonably good, while rpair is relatively poor.
+This result is expected: the method described in Table 3 uses strong signals for annotation; but the coverage of such signals is limited, since some relations between two distinct queries can only be inferred by reasoning over the whole query sequence by human judges.
+To investigate the e ectiveness of the weak supervision in helping to train the supervised model, we gradually added the weakly supervised data into our training set.
+We  rst obtained the pairwise annotations, as de ned in Table 3, for those users who have not been manually annotated; then we gradually added such partially labeled user query logs into the manually-annotated training set.
+For binary-classi cation-based baselines, i.e., Q wcc, Q htc and AdaptClu, the newly added pairwise annotations are used as regular training supervision; for cluster-svm, the loss function is modi ed to adopt the partial annotations (similar as Eq (5)).
+The experimental results are summarized in Figure 2.
+From Figure 2 we can study the utility of weakly supervised data on cross-session task extraction.
+As shown in Figure 2 (c) and (d), the supervised learning methods bene t from a medium volume of weakly supervised data; but when the volume reaches certain limit, the performance stops improving, and even degrades.
+Figure 2 (a) and (b) help to explain why this happens: all methods  rpair performance drops when adding the weakly supervised data for training, but their ppair performance improves.
+With the improved ppair, all methods  clustering performance, in terms of f 1CEAF and NMI, gets improved.
+As shown in Table 6, the weakly supervised data has high precision but low recall, adding more such training signals would bias the models toward recognizing the pairs similar to those high-precision must-links.
+When the volume of weakly supervised data passes a limit, it will overwhelm the signals from human annotations; and therefore hinders further improvement.
+Figure 2 also shows that, compared to the two-step methods, the structural learning based method, i.e., cluster-svm and bestlink SVM, can utilize more weakly supervised data be-
+tural learning method directly optimizes (or approximates) the clustering metrics during training.
+The two-step methods perform classi cation and clustering independently, and there is inconsistency between training objective and evaluation in these two-step methods.
+As a result, errors in the learned binary classi er cannot be recovered easily in the clustering stage in those methods.
+We are also interested in investigating how well the models could perform when there is only weakly supervised data generated by the proposed must-link and cannot-link.
+In other words, we want to test if the learning methods  task extraction capability can go beyond the simple annotation rules.
+In this experiment, we only trained the models on the 6,192 unannotated users with weak supervision, and tested them on the same manually annotated testing set as before.
+In order to analyze how well the methods generalize from the weakly supervised data, we included a naive baseline Rule-Q wcc: we adopted Q wcc by treating the queries connected by the must-links as a task.
+Table 7: Task extraction performance when trained only on the weakly supervised data.
+ppair rpair f 1CEAF
+ Rule-Q wcc Q wcc Q htc AdaptClu
+
+
+
+ cluster-svm 0.9155   bestlinkSVM 0.9334  
+
+
+  
+
+
+
+
+
+
+
+  
+
+
+
+
+
+  
+ indicates p-value<0.01 As shown in Table 7, all the methods improved ppair and rpair against Rule-Q wcc, and especially for rpair.
+However, not all of them can improve the clustering quality metric: besides bestlink SVM, only Q htc improves NMI metric.
+We looked into the detailed output of those methods and found that: Rule-Q wcc generated many singleton tasks because of the low coverage of must-links; the baseline models merged some of the small clusters into larger ones, but they still created too many smaller clusters than ground-truth.
+bestlink SVM further merged the small clusters correctly, making the number of predicted tasks closest to the ground-truth, and therefore it achieved better clustering performance.
+We wanted to further investigate how many  complex tasks,  which are not covered by the must-links de ned in Table 3, can be extracted by learning from the weak supervision.
+Speci cally, we de ne the complex task as: T   strict, in which no must-link can be applied on any pair of queries in it (strict criterion); or T   loose, there exists at least one pair of queries cannot be connected via must-links in it (loose criterion).
+Based on this notation, we de ne the coverage of complex task as the proportion of complex tasks which can be perfectly recovered by the automatic methods, cloose = (11) (cid:4) (cid:4) (cid:4) (cid:4) Ti   T Ti   T loose loose Tj T  
+ Tj T  
+ | |  (Ti,Tj)  (Ti,Tj ) cstrict = (12) where  (X ,Y) = 1 when the set X and Y are the same, and otherwise  (X ,Y) = 0.
+strict strict In this experiment, we used all the 1436 annotated users as testing set, where we collected 357 strict complex tasks and 1540 loose complex tasks out of the total 2283 multi-query tasks.
+All the models are trained on the rest 6192 unannotated users with weak supervision, and the experimental results are list in Table 8, where we used sign-test for validating the improvement over the baselines.
+We should note that all those complex tasks cannot be identi ed by the straightforward Rule-Q wcc baseline, so that the newly de ned task coverage metric measures how well the learning methods can generalize from the weak supervision.
+From the results we can notice that bestlink SVM, which achieved the best performance against all the other baselines, can successfully recover about 30% of complex tasks by leveraging the knowledge from weak supervision, which validates the e ectiveness of using such signals as supervision for model training.
+Table 8: Coverage of complex tasks when trained only on the weakly supervised data.
+cloose cstrict AdaptClusingle Q wcc Q htc
+
+
+ cluster-svm
+   bestlinkSVM 0.3207
+
+
+
+  
+   indicates p-value<0.01
+ In order to understand which similarity features are important for the problem of cross-session task extraction, we list the top two positive and top two negative features learned by the proposed bestlink SVM under each category of pairwise similarity features de ned in Table 9.
+To avoid bias introduced by weak supervision, we only demonstrated the weights learned from the manually annotated training set.
+Table 9: Top 2 positive and top 2 negative features under each type of pairwise similarity features in bestlink SVM model.
+Feature Weight
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ -3.38 -2.73 -1.39 -0.83 -0.28 As can be noticed in Table 9, Q-COSINE has the largest importance weight for identifying queries belonging to the same task; and U-JAC-ALL is also very informative for recognizing the similar queries.
+Besides, we found that bestlink SVM assigns relatively low positive weight to S-SAME, and Q-TIME is not the most important feature in the model.
+The reason is that we already knew 12.7% tasks span cross session boundaries (as shown in Table 5), and placing too large a weight on S-SAME and Q-TIME will forbid the method from identifying those cross-session tasks.
+wic recipes@5/29/2012 8:38:19 AM banana strawberry smoothie recipe@5/29/2012 8:43:21 AM smoothie recipe banana frozen orange juice@5/29/2012 8:47:44 AM smoothie recipes@5/29/2012 8:50:23 AM smoothie recipes banana frozen orange juice@5/29/2012 8:51:10 AM orange pineapple banana smoothie@5/29/2012 8:53:38 AM orange pineapple banana smoothie@5/29/2012 8:58:48 AM tip martin attorney@5/29/2012 11:20:57 AM dcs clinic for free obama@5/29/2012 11:23:58 AM rate my doctor@5/29/2012 11:29:47 AM united healthcare community plan in tn@5/29/2012 11:41:17 AM breast pump rental in tn@5/29/2012 2:7:48 PM breast pump rental in tn@5/29/2012 2:8:23 PM sumner regional medical center@5/29/2012 2:8:43 PM tn map by counties@5/29/2012 2:16:22 PM driving directions@5/29/2012 2:17:16 PM wic gallatin tn@5/29/2012 2:22:18 PM User2 www.dailyastorian.info@5/28/2012 1:8:34 PM www.dailyastorian.com@5/30/2012 11:45:15 AM scott somers reedsport@5/30/2012 1:6:57 PM scott somers reedsport@5/30/2012 1:8:0 PM www.dailyastorian.com@5/31/2012 11:8:1 AM plantar fasciitis symptoms@5/29/2012 2:35:53 PM plantar fasciitis pictures@5/29/2012 2:36:22 PM toe pain@5/29/2012 2:39:31 PM toe pain@5/29/2012 2:40:55 PM toe pain symptoms@5/29/2012 2:43:21 PM foot pain@5/29/2012 2:43:57 PM foot pain@5/29/2012 2:45:47 PM hammer toe@5/29/2012 2:45:55 PM hammer toe@5/29/2012 2:47:57 PM chagas disease@5/31/2012 4:57:3 PM clatsop community college columbia address@5/29/2012 2:31:47 PM breast pumps gallatin tn@5/29/2012 2:28:58 PM astoria safeway address@5/29/2012 4:37:11 PM Figure 3: Identi ed latent search task structure.
+As we have discussed in Section 4.2, the latent structure h de ned in bestlink SVM is a tree formed by strong connections between queries, where each subtree of the dummy query q0 corresponds to a search task.
+In Figure 3, we illustrated the latent task structure inferred by our bestlink SVM from two di erent users  query logs.
+Comparing to the  at clustering structure given by the traditional search task extraction methods [13, 15], the hierarchical structure inferred by bestlink SVM provides us with more in-depth details to understand users  search behaviors and their information needs.
+For example, in Figure 3 we can clearly notice that the identi ed task structure for User2 is more complex than that for User1: User1 attempted three consecutive tasks on May 29; while User2 s two major search tasks, i.e., checking daily news and looking for solutions of her health issue, spanned from May 28 to May
+ subtrees in an identi ed search task represent  ner grained subtasks.
+For instance, as shown in Figure 3, in User2 s second identi ed task of  plantar fasciitis symptoms,  there are two subtasks, one starts with  plantar fasciitis pictures  and another starts with  chagas disease.  At the beginning of Section 6, we listed a brief overview of basic properties of search tasks based on a limited number of human annotations.
+Now we can get a more comprehensive understanding of user s search behaviors based on the automatically extracted search tasks in our whole query log data set.
+We listed a set of statistics in Table 10, where we applied a proprietary multi-class classi er to categorize a query into 80 di erent categories, e.g., navigational, commerce, celebrity and etc., in order to annotate the search intent of queries.
+As shown in Table 10, user s search intent in each extracted task is quite concentrated: despite the fact that there are in average 4.41 queries in a task, there are only
+ purely navigational, the task will get mostly simpli ed: only
+ tasks only contain navigational queries.
+Another interesting phenomenon we found is the transition probability between the navigational and non-navigational queries, which is estimated within the identi ed tasks, is quite di erent: the chance a user issues a non-navigational query after a nav-Table 10: Statistics of extracted search tasks.
+UniQuery/Task
+ % of NavTask Query/Task
+ Intent/Task
+
+
+ Query/NavTask UniQuery/NavTask P(nav|non-nav) P(non-nav|nav)
+
+
+ igational query is much lower than the opposite direction.
+One possible explanation for this is that when user issues a non-navigational query, they usually do not have a clear sense of where to  nd the information yet, so they are more likely to keep submitting the questions to the search engine; but when they have speci c destination in mind, they would start to issue questions to explore more perspectives of the information they are interested in.
+Search tasks frequently span multiple sessions, and thus developing methods to extract these tasks from historic data is central to understanding longitudinal search behaviors and in developing search systems to support users  long-running tasks.
+In this paper, we have presented a novel method for learning to accurately extract cross-session search tasks from users  historic search activities.
+We developed a semi-supervised clustering model based on the latent structural SVM framework, which is capable of learning inter-query dependencies from users  searching behaviors.
+A set of e ective automatic annotation rules are proposed as weak supervision to release the burden of manual annotation.
+Comprehensive experimentation using large-scale search logs from a commercial search engine demonstrated the superior performance of our method in identifying cross-session search tasks versus a number of state-of-the-art algorithms.
+Importantly, we were able to obtain performance gains while reducing the reliance on costly human annotations via the automatically generated weak supervision.
+The results are promising and pave the way for a range of future work in this area, including user modeling and long-term task based personalization.

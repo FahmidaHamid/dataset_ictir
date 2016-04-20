@@ -1,0 +1,679 @@
+As the number of available data sources increases, the problem of database selection, that is, determining which from a set of available databases are the most relevant to a given user query, is attracting considerable attention [9, 4,
+ a query is derived from the relevance of the data (or documents) in the database to the query.
+Most current research has considered the selection of text [9, 4] or relational [26,
+ data representation and exchange on the web and a large amount of XML document collections are available, in this Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+Distribution of these papers is limited to classroom use, and personal use by others.
+paper, we address the problem of database selection for XML document collections.
+Keyword queries o er a popular, easy and intuitive way of searching.
+The main di erence between keyword search for XML and text documents is that, for XML documents, the relevance of a document to a query also depends on the relative position of the query keywords in the XML tree.
+We support keyword queries and rank their results by adopting lowest common ancestor (LCA) query semantics [10, 6, 11, 14, 13, 24, 15, 21, 25, 17] based on which the result of a key word query is de ned by the LCA node of the keywords.
+We then determine the relevance (similarity) of a document to a query based on the LCA semantics and derive the goodness of a collection of documents by aggregating over the similarities of each of its documents to the query.
+To avoid the processing overhead entailed in evaluating a query against each document, we propose an approximate approach that estimates the similarity of a document to a query by exploiting appropriate information about the lowest common ancestors of all pairs of keywords that appear in a document.
+That is, it estimates the LCA of the query result based on the LCA of each pair of keywords in the query.
+In addition, we present a novel data structure based on Bloom  lters to e ciently summarize this LCA pairwise information.
+We study both a boolean and a weighted selection problem.
+Our experimental results both on real and synthetic datasets show that our approximations are su -ciently accurate, while requiring signi cantly less space and processing overheads.
+The rest of the paper is organized as follows.
+In Section 2, we de ne the lowest common ancestor semantics, and the selection problem.
+Section 3 describes our pairwise approximation approach, while Section 4 introduces the Bloom  lter based structures.
+Section 5 includes our experimental evaluation and Section 6 presents related work.
+We conclude in Section 7.
+We  rst describe the keyword query model and the lowest common ancestor semantics deployed for query evaluation.
+Then, we formally de ne the problem of database selection over XML document collections by de ning similarity and goodness measures under both a boolean and a weighted model.
+Keyword queries present an easy and intuitive way for querying XML data without requiring from the user to write complex queries or be aware of the data schema.
+To capture the structural information that is inherent in XML documents, keyword queries are usually interpreted through lowest common ancestor (LCA) semantics [10, 6, 11, 14, 13, 24,
+ Consider a conjunctive keyword query q = {w1, .
+.
+.
+, wk} consisting of k keywords w1, .
+.
+.
+, wk and an unordered labeled XML tree T = (V, E) of an XML document d. Each node vi   V corresponds to an XML element and edges e(vi, vj)   E capture that vj is a subelement of vi.
+We say that an element (node) v   V directly contains a keyword wi (contains(v, wi)), if the keyword appears as the label of the element, the label of one of its attributes, the value for one of its attributes, or in the content of the element.
+We denote as S1 to Sk the sets of nodes such that Si = {v|v   V and contains(v, wi)}, 1   i   k.
+(cid:2) (cid:2) = {v1, .
+.
+.
+, vk} (V Intuitively, the result set for q consists of the subtrees in T whose nodes contain all the keywords of q.
+We refer to such subtrees (query results) by their root node.
+More speci cally, all approaches supporting LCA semantics de- ne the results of q based on some variation of the lowest common ancestor of the nodes in d that contain the query keywords.
+The Lowest Common Ancestor (LCA) of a set of (cid:2)   V ) is de ned as the deepest nodes V node v in T which is an ancestor of all nodes in V and is evaluated by a function lca(v1, .
+.
+.
+, vk).
+A node v of tree T (V, E) of document d belongs to the result set of query q = {w1, .
+.
+.
+, wk}, denoted Result(q), if v = lca(v1, .
+.
+.
+, vk), where v1   S1, .
+.
+.
+, vk   Sk.
+Similarly to lca(v1, .
+.
+.
+, vk), we de ne a function lca(S1, .
+.
+.
+, Sk) that evaluates the set of = lca(v1, .
+.
+.
+, vk) LCA nodes V and v1   S1, .
+.
+.
+, vk   Sk.
+It is obvious that lca(S1, .
+.
+.
+, Sk) computes the result set for q.
+, such that v (cid:2)   V if v (cid:2)(cid:2) (cid:2)(cid:2) (cid:2) We discern between two groups of LCA-based approaches: (i) the Smallest LCA [24] and the Exclusive LCA [25] with their variations [10, 16, 21], and (ii) the Meaningful LCA [14] and the Valuable LCA [13].
+The  rst group de nes query results solely on the structural relationships between the nodes in an XML document, while the second group also takes into account node types derived from the schema of the documents.
+Table 1 brie y presents each approach.
+A common property of all the variations of the LCA is that for any query q and document d the set of the LCA nodes of the keywords in q as we have de ned them above, referred to as basic LCA nodes in the following, is a superset of any type of LCA nodes we mentioned.
+The set of SLCA nodes is the set of basic LCA nodes if we exclude nodes that contain other LCA nodes for the query keywords in their subtree.
+The set of ELCA nodes is the set of basic LCA nodes if we exclude any node v that is a basic LCA of a set of nodes V that also belongs to the subtree of another node u that is also a descendant of v. Similarly for the MLCA and VLCA, for a node to be an MLCA or VLCA, it also needs to be a basic = {v1, v2, .
+.
+.
+, vk} such that  vi   V (cid:2) (cid:2) LCA by de nition (Table 1).
+This means that if for any query q, we evaluate its result set against a document d using basic LCA semantics, the results for any of the other LCA types are included in this set.
+Thus, in our approach, for the document-query similarity evaluation, we do not focus on a speci c type of LCA nodes, but instead, adopt a more general approach by supporting basic LCA semantics.
+Since basic LCA-based results are a superset of any of the other types of results, our approach can be used to approximate the results attained by any of the LCA-based approaches.
+LCA semantics ensure that all query keywords appear in the result.
+However, intuitively, we would like to favor results where keywords appear close to each other in the tree, since for example two keywords that appear in the same chapter of a book are more related than two keywords that appear in the same book, but in di erent chapters.
+A common approach for quantifying the distance among the keywords in a result is the one presented in XRank [10] that uses Exclusive LCA semantics.
+In this case, the evaluation of the rank for a result takes into account the distance of each keyword from their Exclusive LCA by including a decay factor whose value increases with this distance.
+Here, we take the maximum of all such distances which is the one that determines the height of the subtree that has the LCA node as a root and the nodes directly containing the keywords as its leaves.
+In particular, we de ne the height, h, of each node v   Result(q) as: i dist(v, vi), h(v) = max (1) where vi (1   i   k) is a node that directly contains keyword wi, and dist is the length of the shortest path between v and vi in the XML tree.
+The lower the height, the more closely connected the keywords in the XML tree, that is, they are contained into a more speci c element.
+For example, in Fig.
+1, for query (b,o), we have two results, one with height 2 (located under the left most a element) and one with height 1 (located under the second from the left a element).
+In deep XML trees, i.e. trees with a large depth, a result with great height may still represent only a small percentage of the XML tree, while in shallow trees, even a result with low height may represent a large portion of the tree.
+Depending on the semantics one wants to convey, normalizing the height with respect to the tree depth may be required.
+The goal of database selection is to determine which databases or document collections are more useful (relevant) to a user query and rank them accordingly.
+More formally, we de ne the problem of database selection over collections of XML documents as: Given N collections of XML documents (D1, D2, .
+.
+.
+, DN ) and a keyword query q, rank the collections according to their goodness to q.
+For a document collection to be useful (good) for a query, the documents that are contained in the collection should provide relevant results for the query.
+Thus, the goodness of a collection D for query q is determined by the relevance of its documents to q.
+Similarly to [9], we consider that no user feedback is available to determine such relevance, and thus, de ne the relevance of a document d   D to q based solely on the similarity of d to q.
+Furthermore, we consider that a document is relevant only if this similarity measure exceeds a user-speci ed similarity threshold l. This threshold is used v is an SLCA if all keywords of q appear in the subtree rooted at v and none of its descendants has such a subtree containing all keywords.
+v is an ELCA if it contains at least one occurrence of each keyword in the subtree rooted at v, excluding the occurrences of the keywords in subtrees of its descendants already containing all the keywords Table 1: Lowest Common Ancestor Semantics De nition v   slca(S1, S2, .
+.
+.
+, Sk) if v   lca(S1, .
+.
+.
+, Sk) and  u   lca(S1, S2, .
+.
+.
+, Sk) v not an ancestor of u.
+v   elca(S1, S2, .
+.
+.
+, Sk) i   v1   S1, .
+.
+.
+, vk   Sk : v = lca(v1, .
+.
+.
+, vk) and  vi(1   i   k) the child of v in the path from v to vi is not an LCA of S1, .
+.
+.
+, Sk itself or an ancestor of such an LCA.
+v is an MLCA, if all pairs of nodes (vi, vj) in the subtree rooted at v that contain the keywords of q are such that (cid:2) v(cid:2) such that lca(vi, vj ) is an ancestor of lca(v(cid:2) For v = lca(v1, .
+.
+.
+, vk), v is the VLCA of v1, .
+.
+.
+, vk i   vi, vj there are no other two nodes of the same label/tag.
+v is a VLCA, i  for the nodes vi, vj , containing keywords (wi, wj), in the subtree rooted at v, there are no other two nodes of the same label/tag except vi, vj .
+j containing the same keywords i, v(cid:2) j) i, v(cid:2) Meaningful LCA v is an MLCA if in the subtree rooted at v, the nodes
+ containing the keywords are pairwise meaningfully related LCA-type Smallest LCA
+ Exclusive LCA
+ Valuable LCA
+ to enable the user to specify what she considers as relevant for her query.
+We estimate the goodness of D by aggregating the similarity scores of all relevant documents.
+In particular: Definition 1.
+Given a user speci ed similarity threshold l and a query q, the goodness of an XML document collection D to q is de ned as: (cid:2) Goodness(q, D, l) = sim(q, d, l), d D where sim(q, d, l) determines the similarity of a single document to a query.
+Thus, we rank highly (estimate high goodness values for) both collections that have a large number of documents with a relatively small similarity score, as well as collections that contain less documents but with higher similarity scores.
+By using the similarity threshold, we somewhat limit the tendency of the model to favor large collections and consider only documents that are considered relevant by the user.
+Alternatively, we can consider for the goodness evaluation of D, instead of the entire collection, only its top-K most relevant documents to q, where K is, similarly to l, user-de ned.
+We distinguish between a boolean and a weighted model for the selection problem, which di er on the de nition of the similarity of a document to a query.
+Boolean model.
+For a given similarity threshold l, a document d is considered to match query q if there exists at least one result v   Result(q) such that h(v)   l.
+(cid:3) sim(q, d, l) = if minu Result(q) h(u)   l
+ 0, otherwise The goodness of a document collection is then de ned according to Def.
+1 as the number of matching documents d   D.
+Note that our model is not purely boolean, as the similarity threshold is used as a means to discard the irrelevant If l has a high documents from the goodness estimation.
+enough value, i.e., if l is greater than the depth of a document d, then the similarity measure becomes purely boolean as it only checks for the existence of the keywords in d.
+Weighted model.
+In the weighted model, besides determining whether a document d matches a query q, i.e.,  v   Result(q) such that h(v)   l, we also take into account the height of the result into the computation of the query similarity to d. We de ne a function F of the height h of a result node v such that the similarity of d to q is greater when h(v) is small.
+For example, F can be de ned as the inverse of the height of the node, 1/h(v).
+With this similarity measure, we obtain greater similarity scores for documents that contain all query keywords within more speci c elements.
+Since a document d may contain many results for a query q, to determine its similarity to q, we consider in the similarity computation the height of the most speci c element node in the result set, i.e., the node in Result(q) with the smallest height.
+    F (minv Result(q) h(v)), if minv Result(q) h(v)   l 0, otherwise sim(q, d, l) = The goodness of a collection is evaluated this time by accumulating the similarity scores of all documents that have at least one result node with height smaller than l.
+To evaluate a keyword query q against a document d, the straightforward approach is to apply on d an algorithm for  nding the LCA nodes of the k keywords that appear in q, which constitute Result(q).
+Since there may be multiple occurrences of each keyword w in d, there may also exist more than one such LCA nodes which we need to compute.
+For the selection problem, after the evaluation of the LCAs, the LCA node v   Result(q) with the minimum height is selected and if h(v)   l, the boolean model returns a match for d, while the weighted model computes the similarity based on function F .
+Thus, to estimate the goodness of an XML document collection D for a query q, we need to compute the LCA nodes of the keywords in q, for each document d   D. This evaluation is expensive processing-wise and leads to low response times especially for large collections with many documents.
+For instance, if the Exclusive LCA (ELCA) is used, then, for the evaluation of the ELCA nodes a brute force algorithm has a O((k)(depth)|S1| .
+.
+.|Sk|) processing cost, for a tree with depth depth and k keywords in q.
+Even the state-of-the-art algorithms for ELCA, only reduce the complexity to O((k)(depth)|S|log|S (cid:2)|) is the car-dinality of the set with the nodes that directly contain the least (most) frequent keyword in the query.
+To avoid this step at execution time, a preprocessing phase may be deployed.
+In this phase, for each document d   D, (cid:2)|) [25], where |S| (|S of keywords that appear in D and maintain their heights.
+Based on this information, we may evaluate the similarity of any query q to d very e ciently.
+However, the number of all possible combinations of keywords is very large and its precomputation imposes a large overhead both on processing cost and on storage, since this information needs to be maintained.
+In particular, the number of the LCAs that need to be computed for an XML doc-i) = O(2n).
+ument with n (non-distinct) keywords is: (cid:7)n i=2 ( n sim: f pF lg: similarity, false positive Algorithm 1 Boolean Similarity Evaluation Input: q: keyword query, Htab(d): keyword pair table for document d, l: similarity threshold Output:  ag
+
+ 3: if a pair does not appear in the table then
+ 5: else
+
+
+
+ 10: end if
+ sim(q, d, l) = 1 if for any (ws, wt), hmax(s, t) = N U LL then sim(q, d, l) = 0 f pF lg=1 end if
+ We claim that one does not need to compute and maintain the LCA nodes of all the possible combinations of keywords in a document d to evaluate the document similarity to a query q.
+Instead, we rely on pairwise LCAs to estimate the height of the LCA for any set of keywords.
+(cid:2) (cid:2) = lca(vl, vm) where vl, vm   V Proposition 1.
+Let G(V, E) be an acyclic directed graph, = {v1, .
+.
+.
+, vM} any subset of M nodes in G, V (cid:2)   V .
+and V Then, h(lca(v1, .
+.
+.
+, vM )) = maxvi,vj V (cid:2) h(lca(vi, vj )).
+Proof.
+Let u   V and u = lca(v1, .
+.
+.
+, vM ) and there is also (cid:2)   V and u (cid:2) u , such that: (cid:2) h(u ) > h(u).
+However, u is a common ancestor of vl,vm and ) > h(u), then, u cannot be the LCA of all v   V (cid:2) (cid:2) since h(u .
+= lca(vl, vm), vl, vm   (cid:2)(cid:2) Let us now assume there is a u (cid:2)(cid:2) ) = maxvi,vj V (cid:2) h(lca(vi, vj )), and h(u) >
+ , such that h(u (cid:2)(cid:2) ).
+Then, there is at least one pair of nodes (vs, vt), h(u vs, vt   V .
+But since the LCA with the greatest height is u, there cannot be such a node.
+Thus, h(lca(v1, .
+.
+.
+, vM )=maxvi,vj V (cid:2) h(lca(vi, vj )).2 Thus, h(lca(v1, .
+.
+.
+, vM ))   maxvi,vj V (cid:2) h(lca(vi, vj )).
+(cid:2) (cid:2)(cid:2) , such that lca(vs, vt) = u (cid:2) Based on Prop.
+1, we can estimate the height for the result of any query q against an XML document d. If the keywords in d are distinct (i.e., each keyword appears only once), then any query q has only a single result in d, i.e., the keywords of q have a single LCA node and we can provide an exact estimation of its height.
+If we maintain all possible pairs of keywords that appear in d along with the corresponding height of their LCA node, the maximum height of all the height values of the LCAs that are recorded for any pair of keywords in q corresponds to the height of the result of q against d.
+(cid:2) However, in most cases, there are multiple occurrences of each keyword in an XML document and each pair of keywords may have multiple LCAs of di erent heights.
+Thus, for each distinct pair of keywords (wi, wj ) in a document d, we maintain two values: (i) the height hmin(i, j) of the LCA node v   lca(Si, Sj ) with h(v)   h(u), u   lca(Si, Sj ) and (cid:2)   lca(Si, Sj ) (ii) the height hmax(i, j) of the LCA node v )   h(u),  u   lca(Si, Sj ).
+Let us denote with with h(v Htab(d), the three column table in which we maintain this information for document d. In the  rst column of Htab(d), we store the pair of keywords (wi, wj ), in the second column, the hmin(i, j) value, and in the third, the hmax(i, j) value.
+For a query q with k keywords, we look up each pair of keywords (ws, wt) of q in Htab(d) to determine if these keywords appear in d.
+If they do, we also derive from the information maintained for the matching pair of keywords in Htab(d), the minimum and maximum value height (hmin(s, t), hmax(s, t)) of the LCA nodes under which the pair appears in d. After looking up all pairs of keywords of q in Htab(d), let (ws(cid:2) , wt(cid:2) ) be the pair which has the maximum hmin(s ) value.
+We denote this value as Hmin(d, q).
+Similarly, we consider the pair (ws(cid:2)(cid:2) , wt(cid:2)(cid:2) ) which has the maximum hmax(s ) value among all pairs and denote it as Hmax(d, q).
+, t , t (cid:2)(cid:2) (cid:2)(cid:2) (cid:2) (cid:2) Theorem 1.
+Given a keyword query q and a document d, the height of any v   Result(q) is such that: Hmin(d, q)   h(v)   Hmax(d, q).
+Proof.
+We  rst prove that any v   Result(q) has a height h(v)   Hmin(d, q).
+Let us assume that there exists u   Result(q), such that h(u) < Hmin(d, q).
+Then, for all keyword pairs (ws, wt) in table Htab(d) that correspond to pairs of keywords in q, hmin(s, t) should also be lower or equal to h(u), since due to Prop.
+1, the height of a result is determined by the maximum height value of all the node pairs.
+But Hmin(d, q) is de ned as the maximum value of the hmin(s, t) of all (ws, wt) in q, therefore we have at least one keyword pair (ws(cid:2) , wt(cid:2) ) in q such that hmin(s ) > h(u).
+Thus, there cannot be a result node with height lower to Hmin(d, q).
+Let us now prove that v   Result(q) has a height h(v)   Hmax(d, q).
+Let us assume that there exists u   Result(q) such that h(u) > Hmax(d, q).
+Then, according to Prop.
+1, there is at least one pair of keywords associated with an LCA node with a height value greater than Hmax(d, q), which is impossible since Hmax(d, q) is de ned as the maximum value of all height values associated with any pair of keywords corresponding to q.
+Thus, there cannot be a result node u with h(u) > Hmax(d, q).2 , t (cid:2) (cid:2) According to Th.
+1, we can bound the height of any result of q in d between Hmin(d, q) and Hmax(d, q).
+Thus, if we maintain the appropriate information for all distinct pairs of keywords (wi, wj ) in d in the table Htab(d), we can provide an estimation for the height of the result of any keyword query q against d. That is, we determine that the height of any result cannot be lower than Hmin(d, q) and higher than Hmax(d, q).
+For example, in Fig. 1, the height of the result for query (o,b) is bounded between 1 and 2.
+Given a query q and a similarity threshold l, if for document d, Hmin(d, q) > l, then we can safely deduce that there are no results in d that exceed the similarity threshold the user has set.
+Theorem 1 guarantees, that we have no false negatives, there are no results with lower height is surely relevant to q.
+False positives may appear only for documents for which Hmin(d, q)   l and Hmax(d, q) > l, in which case pairs of nodes belonging to di erent subtrees may be combined to give a false Hmin(d, q) estimation.
+lower bound for similar-sim(q, d, l) = 0 Algorithm 2 Weighted Similarity Evaluation Input: q: keyword query, Htab(d): keyword pair table for document d, l: similarity threshold Output: sim: similarity, bsim: ity
+
+ 3: if a pair does not appear in the table then
+ 5: else
+
+ 8: end if
+ sim(q, d, l) = F (Hmin(d, q)) bsim(q, d, l) = F (Hmax(d, q))
+ n Based on the above observations, we de ne appropriate algorithms for estimating the similarity of a document to a query under both the boolean and weighted models based on the pairwise LCA nodes.
+Thus, we reduce the complexity of the preprocessing phase from O(2n) to (
+ processing and storage-wise.
+For each document d   D, we maintain the table Htab(d), in which we insert information for the LCA with the minimum and maximum height value (hmin(i, j), hmax(i, j)) for all distinct keyword pairs (wi, wj) that appear in d. Since we know that any pair of keywords (wi, wj ) with hmin(i, j) greater than l does not contribute in the similarity evaluation, we can safely omit such pairs from Htab(d) for space and processing e ciency.
+Furthermore, we do not need to maintain the value of hmax(i, j) for any keyword pair (wi, wj) for which hmax(i, j) > l and simply set that value to N U LL in Htab(d).
+Given Htab(d), we describe how any keyword query q is processed against document d under the boolean model.
+All keyword pairs from q are extracted and looked up in Htab(d).
+If any of the pairs is not found, then we set the similarity of the document to the query to 0 (q does not match d).
+Otherwise, we set the similarity equal to 1.
+We also check the hmax(s, t) values for all the keyword pairs (ws, wt) of q to determine whether there is a possibility for a false positive and set a corresponding  ag (f pF lg) accordingly.
+The algorithm is detailed in Alg.
+1.
+To compute the goodness of a collection D of XML documents, the above algorithm is applied for all documents d in the collection.
+The goodness of the collection based on Def.
+1 is estimated as the sum of the similarity values for each relevant document in the collection.
+We can derive a lower bound for the goodness of D, by counting the number of documents in D that have set their false positive  ags and subtracting it from the estimated goodness value.
+For the weighted version of the problem, we do not only determine whether a document matches or not a query, but we also evaluate a measure for its similarity as a function of the height of the LCA node.
+As in the boolean version, since Figure 2: The MBFs for the XML tree in Fig. 1.
+there may be several occurrences of the query keywords in a document to determine the similarity value, we rely again on the height of the LCA with the minimum height and the height of the LCA with the maximum height among all the LCA nodes in our result set.
+The table Htab(d) for a document d still su ces for determining the similarity value for the weighted model.
+While it can also provide an estimation on the number of false positives, Htab(d) cannot be used for providing an estimation on the maximum height of the LCA node that may contain our query keywords, i.e., a lower bound for the similarity value.
+For the evaluation of a lower bound, we insert in the table for all keyword pairs (wi, wj ) with hmin(i, j) < l their hmax(i, j) value even if hmax(i, j) > l. Then, we can derive a lower bound for the similarity (bsim) of the document d to query q based on Hmax(d, q).
+The detailed procedure for the evaluation is presented in Alg.
+2.
+To evaluate the goodness of the entire collection D, we evaluate the similarity score for each document based on Hmin(d, q) and sum these scores; thus, acquiring an upper bound for the goodness value.
+Furthermore, by summing the lower bound similarity estimations based on Hmax(d, q), we also provide a lower bound for the goodness estimation of the collection.
+Instead of maintaining the information about the keyword pairs for every document in a table, for space e ciency, we summarize this information using a well known hash-based structure, the Bloom  lters [3].
+Bloom  lters are compact data structures for the probabilistic representation of a set of elements that support membership queries.
+Consider a set A = {a 1,..., a n} of n elements.
+The idea is to allocate a vector x of s bits, initially all set to 0, and then choose m independent hash functions, h 1, .
+.
+.
+, h m, each with range 1 to s. For each element a   A, the bits at positions h 1(a), .
+.
+.
+, h m(a) in x are set to 1.
+Given a membership query for b, the bits at positions h 1(b), .
+.
+.
+, h m(b) are checked.
+If any of them is 0, then certainly b /  A.
+Otherwise, we conjecture that b is in the set, although there is a probability that we are wrong (false positive).
+To support updates, we maintain for each location i in the bit vector a counter of the number of times the corresponding bit is set to 1.
+For the boolean problem, we replace the table Htab(d), for each document d in the collection, with two Bloom  lters, BF min(d) and BF max(d) corresponding to the second and tained the hmin(i, j) and hmax(i, j) values for each distinct keyword pair (wi, wj ) in d. Given a similarity threshold l, any keyword pair (wi, wj ) in d for which hmin(i, j)   l is hashed as one key and inserted into BF min(d).
+All keyword pairs (wi, wj) inserted in BF min(d) for which hmax(i, j)   l are also inserted into BF max(d).
+sim: similarity, Algorithm 3 Bloom-Based Boolean Similarity Evaluation Input: q: query, BF min(d), BF max(d): Bloom  lters for document d, l: similarity threshold Output:  ag
+ 2: for all (ws, wt)   q do
+
+ Apply the hash functions to (ws, wt) Lookup the output of the hash functions for (ws, wt) in BF min(d) if there is a miss then false positive f pF lg: sim(q, d, l) = 0 RETURN(sim)
+
+
+ end if
+ 9: end for 10: sim(q, d, l) = 1 11: for all (ws, wt)   q do
+ f pF lg = 1 RETURN(sim, f pF lg)
+
+
+ end if
+ 17: end for
+
+ Lookup the output of the hash functions for (ws, wt) in BF max(d) if there is a miss then To evaluate the similarity of d to q,  rst every pair of keywords of q is checked against BF min(d) and if there are no misses, the similarity is set to 1.
+Then BF max(d) is also checked to identify any possible false positives (Alg.
+3).
+The goodness estimation proceeds as when Htab(d) is used.
+Note that this time the sum of false positive  ags over all the collection only gives an estimation of the false positives present and not an upper bound.
+This is because the use of the Bloom  lters introduces additional false positives due to the hash function collisions.
+Bloom  lters cannot be directly used for the weighted problem since they cannot maintain the value of the height of the LCA nodes which is required to determine the similarity value.
+Instead, we deploy a variation, called Multi-Level Bloom  lters.
+Instead of inserting all pairs of keywords (wi, wj ) in d with hmin(i, j)   l in a single Bloom  lter BF min(d), we group the keyword pairs according to their hmin(i, j) value and we use a separate Bloom  lter for each such group.
+Thus, we construct a multilevel Bloom  lter M BF min(d), which is de ned as a set of l simple Bloom  lters BF 1, BF 2, .
+.
+.
+, BF l such that all pairs of keywords (wi, wj ) in d with hmin(i, j) =
+ so on until hmin(i, j) = l. Again, we are not interested in any keyword pair for which hmin(i, j) > l, since such pairs do not contribute to the similarity of d to q.
+Similarly to the M BF min(d), we de ne M BF max(d) instead of BF max(d).
+However, if we want to provide a lower bound for the similarity value of document d to q, as explained, maintaining only l levels in our  lter is not enough.
+In this case, the number of levels in the  lter is at most equal to the depth of the XML tree T of document d, since the highest value for the height of any LCA node in the tree is at most equal to the XML tree height.
+Figure 2 shows the M BF min(d) and M BF max(d) for the XML tree of Fig. 1 and l = 3.
+To provide a lower bound for the similarity value, for each document d   D, we maintain both the M BF min(d) with l levels and the M BF max(d) with depth levels, where depth is the depth of the XML tree corresponding to d. For each query q, we  rst examine the M BF min(d) and maintain for each pair of keywords (ws, wt) of q the highest level at (cid:2) which we found a match (y s,t).
+If a pair cannot be found in any level, then we set similarity to 0.
+Otherwise, the s,t, (ws, wt)   q, is used (cid:2)(cid:2) (cid:2) highest level y to estimate the similarity.
+A similar procedure is followed then against the M BF max(d) to estimate the lower bound for the similarity.
+By adding the similarity estimation and the lower bound for the similarity for all the documents in the collection, we determine an estimation (upper bound) and a lower bound for the goodness of the collection.
+, such that: y > y (cid:2)(cid:2)
+
+ We assume one of the popular LCA-type semantics, and in particular, exclusive lowest common ancestor (ELCA) semantics [10, 25], and examine whether our approximation approach can be e ciently used to estimate the goodness of a collection.
+That is, we compare our approach with an algorithm, we refer to as the tree-based (tree) approach, that estimates the goodness of a collection by evaluating a query against each document to retrieve the ELCA-based results, and returns a similarity measure based on the height of these results.
+Since the evaluation of the results and thus, the similarity of each document to the query is exact, we consider that the tree-based approach provides also the exact value for goodness.
+We include in our comparison a keyword-based (keyword) approach, which ignores the structure of the XML data and evaluates the goodness of a collection by considering a document as relevant to a query q based solely on the appearance of the k keywords in the document, returning similarity 1 if all keywords exist, and 0 otherwise.
+We evaluate both a pair-based (pair ) approach that uses the Htab(d) table, and a bloom-based (bloom) approach that uses the Bloom-based summaries for maintaining the LCA information.
+We  rst perform a set of experiments on synthetic data to examine the performance of our approach under di erent settings and also explore the in uence of the di erent parameters.
+In a second set of experiments, we evaluate our approach against a real data set to demonstrate how it works in real conditions.
+For data generation, we use the Niagara generator [18].
+The accuracy of our pairwise estimation of goodness depends mainly on the structure of documents and in particular on the relative position of the query keywords.
+Thus, to generate documents, we keep the number of elements  xed and vary the percentage of distinct elements and the tree height.
+The generated queries consist of keywords of which 90% be-Parameter # of documents per collection (|D|) # of elements per document (n) depth of XML tree (depth) % of repeating element names (r) query length (k) similarity threshold (l) number of collections (N ) number of Bloom  lter hash functions size of Bloom  lter Range Default
+ -
+
+
+
+
+
+
+
+
+
+
+
+996bits long to the documents and 10% are other random keywords.
+Table 2 summarizes our parameters.
+Goodness Estimation.
+We  rst evaluate the quality of the goodness estimation for a single document collection.
+Collection Size.
+We vary the number of documents in the collection from 20 to 200, and measure the goodness estimation for all four approaches and the lower bound estimation for our two approaches (lower-pair and lower-bloom) for the boolean (Fig. 3c) and the weighted model (Fig. 3a).
+Our approaches provide a very accurate estimation for both the boolean and weighted models having only a small di erence from the actual value of the goodness as given by the tree-based approach.
+The keyword-based approach, in most cases, overestimates the goodness, and only provides accurate estimations for 10% of the queries, which include keywords that do not appear in the documents.
+While, our approaches also overestimate the goodness, the estimation error is signi cantly smaller.
+For the weighted model, we observe lower goodness values than the boolean one because of the use of function F .
+The keyword-based approach is not considered in this case since it ignores structure.
+The bloom-based approach trades o  accuracy for storage and processing e ciency.
+While it increases the estimation error compared to the pair-based approach because of the false positives caused by the Bloom  lters, it also reduces the required storage to about 8% of the storage occupied by the Htab(d) table.
+It also reduces the processing cost by relying on hash-based lookups instead of table scans.
+If we also evaluate the lower bounds for the goodness estimation, we provide tight bounds in which the actual goodness value for a collection is always included.
+The bloom-based approach usually presents a more optimistic lower bound estimation due to false positives introduced by the structure, which are around 10%.
+Finally, we observe that as the number of documents in a collection increases, the estimation error of our approaches scales gracefully (around 20%) at the most.
+The bloom-based approach behaves a bit worse for larger collections also due to an increase of the false positives as the size of the Bloom  lters remains  xed in the experiment.
+Allocating larger sizes for the Bloom  lters alleviates this problem.
+Similarity threshold.
+We maintain the number of documents  xed, and vary the similarity threshold l (Fig. 3d-Fig.
+with respect to the depth of the XML documents.
+When l is small, then our approaches provide better estimations (Fig. 3d).
+As the value of l increases estimation errors in the height of the LCA nodes cause larger estimation errors in both the goodness estimation and the lower bound estimation.
+For values closer to the tree depth our estimation again improves since most documents are considered matches.
+In particular, for the boolean model, if l becomes equal to the tree depth, then our estimation is similar to the one of the keyword-based approach that only checks for keyword containment.
+Document and Query Structure.
+To examine the in uence of the document structure and the size of the query, we measure the absolute estimation error of our approaches which is de ned as the absolute value of the di erence between the actual goodness value as provided by the tree-based approach and the value provided by each approximation approach.
+We observe similar results under both the boolean and the weighted model (Fig. 4).
+XML tree depth.
+All approaches provide the best estimations for tree depths close to the similarity threshold (Fig.
+for larger depths, where in the worst case, for depth = 16, the pair-based approach overestimates goodness by 27% and the bloom-based one by 34%.
+The keyword-based approach is not a ected by the depth of the tree.
+If the tree depth increases even further, since we keep the number of elements  xed, due to the small fan-out of the tree, our approach again behaves better.
+Percentage of repeating elements.
+Our approach is 100% accurate when we have no repeating element names and its accuracy decreases as the percentage of repeating elements increases (Fig. 4b).
+After a point the accuracy starts to improve, since the probability that two keywords appear close to each other at least once increases.
+Again, the keyword-based approach is not signi cantly a ected.
+Query length.
+As the query length increases, our approach behaves better since it considers more pairs for the ELCA evaluation (Fig. 4c).
+For a single-keyword query, all approaches except the bloom-based one provide accurate estimations.
+XML Document Selection.
+We evaluate the quality of the rankings we derive based on our goodness estimation.
+We consider 12 document collections and compare both boolean and weighted versions of the keyword-based, the pair-based and the bloom-based approach.
+We measure for each of the approaches, the Spearman Footrule distance to the actual ranking for varying similarity thresholds.
+The Spearman Footrule (SF) distance between two ranked lists is de ned as the absolute di erence of their pairwise elements and is normalized by dividing with
+ also evaluate the M AP , mean average precision of each approach, which is de ned for a set of di erent queries as the average of the precision value (percentage of relevant collections) attained after each di erent query, divided by the number of queries.
+While the SF distance focuses on comparing the respective rank of each collection in two rankings, MAP is more precision oriented.
+The document collections are constructed as follows: for a given set of queries, we produced a collection in which each document has at least one result with height 1, another collection in which each document has no results with height 1 but at least one result with height 2, and so on.
+Each document is constructed with the default parameter values.
+We consider three di erent sets of document collections.
+The  rst set contains collections of equal size, i.e., collections having the same number of documents.
+The sec-o i t a m i t s e s s e n d o o g
+
+
+
+
+
+
+
+
+
+
+ number of documents n o i t a m i t s e s s e n d o o g
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ similarity threshold n o i t a m i t s e s s e n d o o g
+
+
+
+
+
+
+
+
+
+
+
+ number of documents n o i t a m i t s e s s e n d o o g
+
+
+
+
+
+
+
+
+
+
+ (a) Number of documents (b) Similarity threshold (c) Number of documents tree pair lower-pair bloom lower-bloom keyword
+
+
+
+
+ similarity threshold
+
+ (d) Similarity threshold Figure 3: Goodness estimation for (ab) the weighted and (c-d) the boolean problem.
+r o r r e n o i t a m i t s e
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ XML tree depth
+
+
+ (a) XML tree depth r o r r e n o i t a m i t s e
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ elements reappearance percentage (b) Repeated elements r o r r e n o i t a m i t s e
+
+
+
+
+
+
+
+
+
+
+
+ keyword boolean-pair weighted-pair boolean-bloom weighted-bloom
+
+
+ query length (c) Query length
+ Figure 4: Goodness estimation for di erent document and query structures.
+ond set contains collections of di erent size.
+In particular, we set the collection with the greatest ELCA height result we constructed (the 12th collection) as the one with the most documents, and decrease the size of the collection as the ELCA height decreases.
+That is, the collection with the results with ELCA height equal to 1, thus, the most relevant collection, is the one with the smallest size.
+Finally, we include a third set of random size collections as constructed in the  rst set of experiments.
+The keyword-based approach has the worst overall performance with regards to the SF distance (Fig. 5a), since all collections are regarded as equally relevant despite their di erent structural properties.
+The approach approximates the real ranking best for collections of di erent sizes (Fig.
+5b), since both the actual ranking in the boolean model and the keyword-based approach favor collections with large size.
+The pair-based and the bloom-based approaches provide a ranking very close to the real one (maximum SF distance
+ est SF distance to the real ranking, in general, but the bloom-based approach sometimes outperforms it because of the more optimistic estimations it provides (Fig. 5).
+In the boolean model, similar to the actual ranking, our approaches also order all the collections with ELCA lower than l according to their size, and give a 0 goodness estimation to the others.
+Their SF distance is in most cases lower than 0.15.
+For the weighted problem, for di erent size collections, the performance is slightly worse than for equal size collections.
+In this case, large collections are not favored against smaller ones with more speci c ELCA-based results.
+For l = 12, for example, the 5-6th collections, that have ELCA with height 5 and 6, and are about average size among all, are the ones ranked the highest.
+Finally, the random collections induce the largest estimation errors, since there are more errors in the ELCA height estimation, and the weighted model is more sensitive to such errors than the boolean one.
+With regards to the MAP measure, we obtain similar results.
+For the boolean model, the keyword-based approach has the worst precision since it considers any document that contains the query keywords as relevant (Fig. 6).
+Both our approaches behave well with a MAP that does not drop below 0.67, while it is in most cases around 0.75 to 0.85 (Fig.
+ferent size and when l takes values from 2 to 6.
+For larger values, the precision increases, since the percentage of irrelevant collections in our data set is reduced.
+The bloom-based approach is less precise than the pair-based one, because of the errors caused by the false positives in the structure.
+To evaluate our approach under a realistic setting, we use the DBLP bibliographic data collection.
+We split the DBLP data set into di erent documents so as to have one document for all the publication in one conference for each year, i.e., we have a document with the publications for  VLDB
+ ted.
+We then form two sets of collections, one set by grouping the documents based on their year of publication and one based on their conference.
+For instance, in the  rst set, we have collections such as  2009  which include documents  VLDB 2009 ,  ICDE 2009 , and so on, while in the second set we have collections such as  VLDB  with documents corresponding to  VLDB 2009 ,  VLDB 2008 , etc.
+We pose queries using author names as our keywords and report our results.
+Note that according to the format of the DBLP data, if author  X  is a coauthor with author  Y  in an article, then the minimum height of the ELCA-based result for query  X and Y  is 1, while if they are authors in di erent articles then the minimum height is 2.
+We evaluate our approach under the boolean model and set l equal to 1 in order to retrieve documents including publications cowritten by  X  and  Y .
+Next, we report some indicating results.
+c n a t s d i
+
+
+
+
+
+
+ e c n a t s d i
+
+
+
+
+
+
+ keyword boolean-pair boolean-bloom weighted-pair weighted-bloom e c n a t s d i
+
+
+
+
+
+
+
+
+
+
+
+
+ similarity threshold (c)
+
+
+
+
+
+ similarity threshold (b)
+
+
+
+
+
+ similarity threshold (a) Figure 5: Database selection for (a) equal size collections, (b) di erent size collections and (c) random collections.
+i i n o s c e r p e g a r e v a n a e m
+
+
+
+
+
+
+
+
+
+
+
+
+ similarity threshold (a) i i n o s c e r p e g a r e v a n a e m
+
+
+
+
+
+
+ i i n o s c e r p e g a r e v a n a e m
+
+
+
+
+
+ similarity threshold (b) keyword boolean-pair boolean-bloom weighted-pair weighted-bloom
+
+
+
+
+
+
+
+
+
+
+
+
+ similarity threshold (c) Figure 6: MAP for (a) equal size collections, (b) di erent size collections and (c) random collections.
+We posed the following query:  Omar Benjelloun and Serge Abiteboul  against the document collections split by year.
+According to the DBLP data, the two authors had the most publications together (excluding journals) in 2004 with 4, followed by 2002 with 3, 2003 with 3, and 2005 with
+ lem is 2004, 2002, 2003 and 2005, while all other collections contain no results of interest.
+By applying the pair-based approach, we retrieved the collections in this exact order, i.e., with 0 SF distance from the actual ranking and precision equal to 1.
+For the bloom-based approach, the SF distance becomes 0.2 while the precision drops to 5/6 because of the false positives caused by the Bloom  lters.
+Finally, for the keyword-based approach, the SF distance dropped to 0.46 and the precision became 1/2.
+In particular, the  rst two top-ranked collections were the ones corresponding to years 2006 and 2007 in which both authors had a lot of publica- tions and many of them in common conferences, but not as coauthors.
+We performed a second experiment against the collections split by conference, with query  Alon Y. Halevy and Zachary G. Ives .
+The authors have the most articles together in SIG-MOD (6 articles) followed by several venues such as WebDB, Both our approaches and the keyword based approach are able to identify SIGMOD as the collection with the most articles of interest.
+The pair-based approach again returns exactly the actual ranking, while the bloom-based one has an SF of 0.75 and a precision of 6/8.
+The keyword-based approach has the worst behavior.
+Keyword-based XML Queries: Most approaches to keyword query evaluation are based on some type of LCA semantics [10, 24, 13, 14].
+All such approaches can be approximated by our pairwise LCA estimations and can exploit the proposed compact statistics to e ciently support database selection.
+We have also shown experimentally the accuracy of such approximations for the ELCA [10, 25] semantics.
+Other related approaches include variations of the basic types of LCAs that we have presented, such as the Multi-Way Smallest LCA [21], which extends the Smallest LCA [24].
+There is also related work towards more e cient evaluation of the LCA-based results, such as [25] that proposes e cient stack-based algorithms for the evaluation of the ELCAs, and [16] that uses materialized views to evaluate SLCAs.
+Recently, MaxMatch [17] extends previous LCA-based semantics to compute results that follow more strict querying properties, such as consistency and monotonicity.
+XKeyword [11] is a di erent approach that builds appropriate path indices summarizing the data, which however requires schema information.
+IR techniques have also been deployed for keyword queries processing over XML data such as [8, 6].
+Selectivity Estimation for XML Documents: Summaries for XML documents have also been used to provide selectivity estimations for queries against XML documents.
+For this problem, most approaches rely on the use of path indexes [2] or summary graphs [19] and are designed to support queries on structure (such as twigs) instead of keyword queries.
+Also, [7] presents a tool for extracting statistics from XML schema to construct compact and accurate structural summaries.
+The approach requires schema information.
+Bloom  lters were also used for summarizing the path expressions in an XML document in the form of Bloom histograms [23].
+A histogram based on the frequencies of the paths in an XML tree is built, and the paths that fall in each bucket are summarized by a Bloom  lter.
+This structure supports e cient matching similar to ours, but as [2] supports path and not keyword queries.
+Bloom-based sum-processing in peer-to-peer networks [12, 1].
+The focus there is on using such summaries for indexing collections as opposed to ranking collections.
+Database Selection: The problem of database selection has been mainly addressed for text and relational databases.
+Most approaches rely on summaries of the database content.
+Previous research has not addressed what should such summaries for XML contain.
+This paper proposes maintaining information about the LCA of pairs of document keywords.
+In [9], the vector-space model is deployed for maintaining statistical summaries of each document of a text collection that contain information such as the tf/idf frequencies of the terms in the collection.
+Similarly in [4], inference networks based on information retrieval principles are used to estimate the goodness of document collections.
+In Kite [20], keyword queries are deployed against relational data.
+Similarly, in [26] and [22], database selection is supported based on keyword queries.
+In [26, 22] meaningful relationships between keywords are de ned against summaries built on top of relational databases.
+The relationships are de ned based on the number of joins required to combine the tuples that hold the respective keywords and evaluated based on the tuple query tree that contains all query keywords and connecting tuples.
+Our approach uses a similar measure to de ne the importance of a result based on the height of the respective result tree that contains all keyword queries.
+A matrix summarizing the relationships of each keyword pair in a database is constructed as a summary in [26], while the same information is maintained in a more compact graph-based structure in [22].
+Instead, we summarize the respective information in the Bloom  lter structures.
+While both we and [26] rely on keyword pairs in the query to determine our results, [22] treats queries holistically.
+Finally, both [26, 22] deploy frequency statistics appropriate for relational databases for measuring the importance of each result.
+While these approaches could be applied for XML document collections if they were trans-fered into appropriate relational databases, they cannot be directly applied to the document collections.
+Furthermore, the main di erence between our work and keyword queries on relational data is that in our case similarly to [9, 4] and based on IR principles when dealing with text document collections, the basic unit of information is a document, while in relational databases the basic unit is a tuple.
+In this paper, we dealt with the problem of selection for XML document collections.
+We considered keyword queries and evaluated the similarity of a document to a query based on the height of the LCA node de ning the query result.
+We introduced an e cient approach for approximating the height of the LCA node of any keyword query by maintaining information about the LCAs of the pairs of keywords that appear in a document.
+Furthermore, we presented a compact index structure for maintaining this information and exploited these approximations to estimate the goodness of an XML collection under both a boolean and a weighted model.
+Through our experimental evaluation on both real and synthetic data, we evaluated our approach with respect to approximating exclusive LCA [10, 25] semantics and showed that it is accurate, e cient and provides rankings close to the actual one.
+We plan to experimentally study how well our approach can approximate other types of LCA semantics, such as smallest LCA [24] semantics.
+Furthermore, we plan to examine other forms of statistical information about the pairwise LCAs for the goodness estimation for speci c types of LCA semantics.

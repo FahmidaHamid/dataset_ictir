@@ -1,0 +1,2582 @@
+Estimating Sizes of Social Networks via Biased Sampling
+
+Liran Katzir
+
+Yahoo! Labs., Haifa, Israel
+lirank@yahoo-inc.com
+
+Edo Liberty
+
+Yahoo! Labs., Haifa, Israel
+edo@yahoo-inc.com
+
+Oren Somekh
+
+Yahoo! Labs., Haifa, Israel
+orens@yahoo-inc.com
+
+ABSTRACT
+Online social networks have become very popular in recent
+years and their number of users is already measured in many
+hundreds of millions. For various commercial and sociolog-
+ical purposes, an independent estimate of their sizes is im-
+portant. In this work, algorithms for estimating the num-
+ber of users in such networks are considered. The proposed
+schemes are also applicable for estimating the sizes of net-
+works’ sub-populations.
+The suggested algorithms interact with the social networks
+via their public APIs only, and rely on no other external in-
+formation. Due to obvious traﬃc and privacy concerns, the
+number of such interactions is severely limited. We there-
+fore focus on minimizing the number of API interactions
+needed for producing good size estimates. We adopt the
+abstraction of social networks as undirected graphs and use
+random node sampling. By counting the number of col-
+lisions or non-unique nodes in the sample, we produce a
+size estimate. Then, we show analytically that the estimate
+error vanishes with high probability for smaller number of
+samples than those required by prior-art algorithms. More-
+over, although our algorithms are provably correct for any
+graph, they excel when applied to social network-like graphs.
+The proposed algorithms were evaluated on synthetic as well
+real social networks such as Facebook, IMDB, and DBLP.
+Our experiments corroborated the theoretical results, and
+demonstrated the eﬀectiveness of the algorithms.
+Categories and Subject Descriptors
+F.2.2 [Theory of Computing]: Analysis of Algorithms
+and Problem Complexity—Nonnumerical Algorithms and
+Problems
+General Terms
+Algorithms, Experimentation, Performance
+Keywords
+Population Estimator, Sampling, Undirected Graph, Social
+Network
+1.
+
+INTRODUCTION
+
+Online social networks have become increasingly popular
+in the recent decade which gave rise to an increasing need
+in analyzing their properties and comparing them to one
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2011, March 28–April 1, 2011, Hyderabad, India.
+ACM 978-1-4503-0632-4/11/03.
+
+another. Many properties of online social networks are con-
+sidered important. These include, for example: their user
+age distribution, net activity, connectivity, and many more.
+The literature on attaining such parameters is vast and any
+eﬀort to reference all of it is bound to fail. We cite here
+only a handful of directly related works as examples. In [12,
+9] the authors present a way to detect proximity between
+two users. In [20] the authors analyze the degree distribu-
+tion, clustering property, degree correlation, and evolution
+over time for three networks. That said, the total number
+of users (or users in a certain demographic) seems to be one
+of the most crucial factors in deriving the worth and over-
+all performance of social networks. These ﬁgures are also
+critical for business development issues, choosing between
+networks for advertisement campaigns or for launching so-
+cial applications. Although countless sites, blogs, and other
+reports often present such numbers, these are usually based
+on reports of the social networks themselves or on traﬃc
+[2]).1
+analysis and are not guaranteed to be accurate (e.g.
+Moreover, since each network reports slightly diﬀerent ﬁg-
+ures, it is almost impossible to compare between them. For
+example, Facebook reported lately on crossing the 500 mil-
+lion active users mark. However, it is unclear what consti-
+tutes as an “active user”. Thus, it is extremely important
+to be able to accurately and reliably estimate the size of
+social networks in a uniﬁed and unbiased way (without the
+networks’ consent or control).
+
+Since online social networks provide public interfaces, it
+is possible to traverse their members’ network externally.
+By “crawling” the network, we can collect statistics on any
+of the above characterizes. In a similar spirit, in [3, 4] the
+authors suggested ways to measure various parameters of
+search engines by interacting with their public search inter-
+face only. One approach, is to crawl the network extensively.
+In other words, since online social networks can be modeled
+as undirected unweighted graphs (where the users are nodes
+and edges are connections/friendships) we can perform a
+breadth-ﬁrst search (BFS) on the graph.2 This method is
+impractical when dealing with online social networks since
+the communication and computational burden of such an
+undertaking would probably be prohibitive.
+
+The second approach is to sample users uniformly at ran-
+
+1Moreover, the published statistics do not provide an es-
+timate for connected sub-graphs (For example, 20-30 year
+olds living at the US).
+2Note that online social networks’ public APIs provide lists
+of connected users for every user, Thus, acting like a neigh-
+bor list representation of the graph.
+
+WWW 2011 – Session: ClusteringMarch 28–April 1, 2011, Hyderabad, India597dom from the network. From a uniform sample, most statis-
+tics can be estimated. This includes estimating the size
+of the network using methods such as mark-and-recapture.
+These methods have the advantage of requiring only O(√n)
+users to be sampled to get a good estimate (where n is the
+overall number of users). Their disadvantage though, is that
+users must be sampled uniformly. Since online social net-
+works interfaces usually do not provide this functionality, it
+must be simulated by other API queries which give for each
+user the list of their neighbors. Alas, producing a single uni-
+formly chosen user might require many such queries. This
+is explained in the next section.
+
+In this work we show that there is no need to sample users
+uniformly.
+In fact, by using the sampling bias we reduce
+the number of required samples dramatically. For example,
+for networks with a Zipﬁan-like degree distribution our al-
+gorithms require only O(n1/4 log(n)) samples to converge.
+Moreover, since the bias does not have to be corrected, each
+such sample requires considerably less API queries. Surpris-
+ingly, our algorithm is extremely simple and gives provable
+error guarantees with high probability.
+
+Experiments with our algorithm performed over a wide
+range of real and synthetic data corroborate that it con-
+verges signiﬁcantly faster and to a more accurate estimate
+than uniform sampling based approaches.
+
+As a side note, simple variants of our algorithm also give
+eﬃcient sub-linear algorithm for estimating the size of tran-
+sitive closures in graphs and for estimating the size of search-
+indexes as in [3]. However, this is a matter of farther research
+and is beyond the scope of this paper.
+
+The rest of this work is organized as follows. Section 2
+surveys related work. Our algorithms are presented and
+analyzed in Sections 3 and 4. In Section 5 we report our ex-
+perimental results and conclude in Section 6. Various proofs
+and discussions are included in the Appendix.
+
+2. BACKGROUND AND PRIOR WORK
+
+From this point on we consider the general problem of
+estimating the size of undirected graphs. The graph repre-
+sentation of online social networks is the obvious one. Each
+node refers to one user and an edge is present between two
+nodes if their corresponding users are “friends” in the social
+network. Although our algorithms are correct for general
+graphs, they are especially suited for graphs which naturally
+occur in large social networks.
+
+In [17] the authors provide a possible solution for another
+problem which could be used to solve the problem at hand
+as well. They present an algorithm for estimating the num-
+ber of attributes in a database. The algorithm samples rows
+from the database uniformly at random. It then estimates
+the total number of attributes using the collected informa-
+tion of how many times each attribute was picked. This is
+identical to a well known problem in statistics called “esti-
+mating the number of unseen types”. Their algorithm can be
+applied to estimating the size of graphs if the graph is rep-
+resented as a database table containing two rows per edge,
+one for each adjacent node.3 Clearly, the number of distinct
+attributes in this database is n, the number of nodes. The
+algorithm presented in [17] is guaranteed to take at most
+r = O(n) samples. However, in graphs, unlike in databases,
+
+3Sampling uniformly from this table is possible in our setting
+since random walks on graphs sample edges uniformly.
+
+it is possible to sample nodes (analogously, attributes) uni-
+formly at random which can dramatically decrease the num-
+ber of samples.
+
+In ecology, a method known as mark and recapture is used
+to estimate population sizes.4
+It relies on the same phe-
+nomenon as the so called “birthday paradox” eﬀect. Infor-
+mally, after sampling r nodes uniformly at random we expect
+to encounter C ≈ r2/2n collisions (nodes already picked).
+Thus, n can be estimated by r2/2C. Surprisingly, taking
+only O(√n) samples can guarantee that this estimate for n
+is rather accurate.5 In [7] the authors present a maximum
+likelihood estimator for this problem and show that their es-
+timator converges almost surly when the number of samples
+increases.
+In [6, 10] the authors extend these methods to
+non-uniform, but known, distributions.
+
+That said, to use these methods one must sample nodes
+uniformly at random from a graph, which is not straight
+forward. To see how this can be done we remind the reader
+a few basic facts from spectral graph theory. A random
+walk on an undirected graph with n nodes {v1, . . . , vn} is
+deﬁned as such: start from an arbitrary node, then move to
+a neighboring node uniformly at random and repeat. After
+many such steps, the probability of being at any node vi is
+close to pi = di/D where di is the degree of node vi and D =
+i=1 di is the sum of all node degrees in the graph. This
+is called the stationary distribution of the random walk on
+the graph. The number of random walk steps needed for the
+stationary distribution to be reached depends on the mixing
+rate property of the graph (see a survey by Lov´asz [14]).
+Fortunately, social network graphs and small world graphs
+are known to have good mixing rates. We therefore assume
+that nodes can be repeatedly sampled from the stationary
+distribution without much computational overhead.
+
+Pn
+
+Using these properties of random walks, one can sample
+nodes also uniformly at random by using, for example, re-
+jection sampling. To be precise, a node vi is ﬁrst sampled
+according to the stationary distribution. Then, with proba-
+bility 1/di it is kept. With probability 1− 1/di it is rejected.
+Clearly the set of kept nodes is uniformly sampled. How-
+ever, since we only expect to accept a node with probabil-
+ity n/D, to sample Ω(√n) un-rejected nodes would require
+an expected r = Ω(D/√n) biased samples. Several rejec-
+tion sampling ideas and other methods for turning the node
+sampling distribution to uniform were suggested for speciﬁc
+graphs. Namely, the bipartite graph between search queries
+and search results [5, 3].6 Another approach was considered
+in [8]. The authors present a modiﬁed Metropolis-Hastings
+random walk which transitions from node vi to an adjacent
+node vj with probability 1/ max(di, dj ). With the remain-
+ing probability, it stays in vi. Due the symmetry in the
+transition probabilities it can be shown that the stationary
+distribution of this walk is uniform on the nodes. However,
+the mixing rate of this walk can be signiﬁcantly worse than
+that of the original graph, and so, it is unclear when it is ex-
+pected to outperforms rejection sampling, i.e., require fewer
+random walk steps.
+
+4Other names for this method or closely related ones,
+include capture-recapture, capture-mark-recapture, mark-
+recapture, and mark-release-recapture.
+5We make a more general statement later in this paper.
+6In fact, the authors try to compare between two diﬀerent
+search services but their approach is suitable for this task as
+well.
+
+WWW 2011 – Session: ClusteringMarch 28–April 1, 2011, Hyderabad, India598An interesting tangentially related problem is known as
+the “German tank problem” [1]. It was supposedly used dur-
+ing world-war II to estimate the number of German tanks
+based on manufacturing numbers found on those captured
+by the allied forces.
+In its mathematical formulation, ele-
+ments with serial ID’s are sampled uniformly without re-
+placement and the objective is to provide an estimate for
+the total number of elements. This is not applicable to our
+scenario since the users do not have serially allocated and
+publicly available ID’s.
+
+Estimating the number of nodes in a graph was also stud-
+ied. In [11] the authors estimate the size of a tree. Their
+motivation was to estimate the running time of a backtrack-
+ing programs. Later [18] extends their argument to acyclic
+graphs. Finally [15] extends this idea to general undirected
+graphs. However, the running time of the the latter is un-
+bounded in the worst case and expected to be more than the
+number of nodes in the graph. Recently, in [19] the authors
+try to estimate the size of social networks in a setup very
+similar to ours’. However, they either require that the users
+be sampled uniformly or use the algorithm from [15] which
+their experiments show is impractical.
+
+3. COLLISION COUNTING
+
+In this section we present our graph size estimator. We
+start by taking r samples {x1, . . . , xr} independently from
+the stationary distribution of the graph, i.e., each node vi is
+sampled with probability pi = di/D where D =Pn
+
+We deﬁne three variables that the algorithm keeps track
+of. First, the number of collisions. A collision is a pair of
+identical samples. More precisely, deﬁne Yi,j to be 1 if xi =
+
+i=1 di.
+
+xj and 0 else. C = Pi<j Yi,j. Second, Ψ1 is the sum of all
+sampled node degrees Ψ1 = Pr
+as the sum of the reciprocal degrees, Ψ−1 =Pr
+
+Using linearity of expectation and the fact that the sam-
+ples are taken independently it is easy to compute their ex-
+pectation.
+
+i=1 dxi . Last, we deﬁne Ψ−1
+
+i=1 1/dxi .
+
+r
+
+E [Ψ1] = E [
+
+E [C] = E [Xi<j
+Xi=1
+Xi=1
+
+E [Ψ−1] = E [
+
+r
+
+Yi,j] = r
+
+2! n
+Xi=1
+
+p2
+i
+
+n
+
+2!E [Yi,j] = r
+Xi=1
+
+n
+
+n
+
+dxi ] = rE [dx1 ] = r
+
+pidi = rD
+
+1/dxi ] = rE [1/dx1 ] = r
+
+pi/di =
+
+Xi=1
+
+p2
+i
+
+Xi=1
+
+rn
+D
+
+.
+
+From the above three equations we can isolate n and get
+that:
+
+n = r
+
+2! E [Ψ1]E [Ψ−1]
+
+r2E [C]
+
+E [Ψ1]E [Ψ−1]
+
+2E [C]
+
+≈
+
+Intuitively, if C, Ψ1 and Ψ−1 are all close to their expected
+values then the estimator Ψ1Ψ−1/2C should be close to n
+as well.7 This is stated in the following Corollary.
+
+7It is also possible to use E [Ψ1Ψ−1] directly and get a
+slightly diﬀerent estimator. Namely, ˆn = (Ψ1Ψ−1 − r)/2C.
+This however is diﬀerent from Ψ1Ψ−1/2C only by a factor
+of O(r/nc).
+
+Corollary 1. For any degree distribution and C, Ψ1,
+
+and Ψ−1 deﬁned as above we have the estimator:
+
+ˆn , Ψ1Ψ−1
+
+2C
+
+(1)
+
+which guarantees for any ǫ ≤ 1/2 and δ ≤ 1:
+
+Pr[n(1 − ǫ) ≤ ˆn ≤ n(1 + ǫ)] ≥ 1 − δ
+as long as the number of samples, r, satisﬁes:
+
+i=1 p3
+i
+i=1 p2
+
+i )2 + Pn
+
+i=1 1/pi
+
+ǫ2δn2 )
+
+r ≥ rc ∈ O(
+
+1
+
+ǫ√δpPn
+
+i=1 p2
+i
+
++ Pn
+ǫ2δ(Pn
+
+Proof. The proof goes by ﬁrst calculating the variance
+of C, Ψ1 and Ψ−1. Then, using Chebyshev’s inequality we
+require that each of them gives an ǫ/4 approximations to
+their expected values with probability at least 1− δ/3. This
+gives us a lower bound on the required number of sam-
+ples. See Appendix A for more details. Since the prob-
+ability of each for deviating from its expected value is at
+most δ/3, the probability of one or more of them deviat-
+ing is at most δ (the union bound). This gives us that
+with probability at least 1 − δ all three variables are ǫ/4
+close to their respective expectations. We then use the
+facts that ˆn/n ≤ (1 + ǫ/4)2/(1 − ǫ/4) ≤ 1 + ǫ and ˆn/n ≥
+(1 − ǫ/4)2/(1 + ǫ/4) ≥ 1 − ǫ to complete the proof for
+ǫ ≤ 1/2.
+
+Note that for regular graphs, where the degree distribu-
+tion is uniform, this estimator is identical to the “birthday
+paradox” estimator presented in the introduction. Moreover,
+it will also require O(√n) samples to converge (to see this
+substitute 1/n for pi).
+3.1 Performance for online social networks
+
+In order to argue that our algorithm is suitable for sizing
+social networks we have to assume something about their
+node degree distributions. In [16], [20] and in [8] the authors
+argue that, in several networks, the nodes’ degrees exhibits
+diﬀerent kinds of heavy tail distributions. Mainly: Expo-
+nential, Double-Pareto and Zipﬁan. Here we analyze, as an
+example, the Zipﬁan distribution. Similar analyses can be
+performed for the other distributions as well.
+
+If the nodes’ degrees are distributed according to a Zipﬁan
+distribution with maximum degree of dm and parameter α =
+2 we have:
+
+P r(d = j) =
+
+;
+
+j = 1, . . . , dm ,
+
+j−2
+H
+
+6 and 1 ≪ dm = Θ(√n). The ℓ’th
+where H =Pdm
+moment of the degree distribution is deﬁned as Mℓ = E [dℓ]
+and the ﬁrst few moments of the Zipﬁan distribution are:
+
+j=1 j−2 ≈ π2
+
+1
+H
+
+log dm
+
+dm
+H
+
+d2
+m
+2H
+
+.
+
+H
+
+; M3 ≈
+
+; M2 ≈
+
+; M1 ≈
+
+M−1 ≤
+We also assume that the moments of the observed degree
+distribution are close to those of the generating distribu-
+tion. This is true for large graphs by the strong law of large
+numbers (SLLN). This gives us that Pn
+nℓ−1(M1)ℓ .
+Substituting the above into Corollary 1 and using the fact
+that dm = Θ(√n) we get that rc ∈ O(n1/4 log(n)). There-
+
+fore, only O(n1/4 log(n)) samples suﬃce for our estimator to
+be accurate. Note the signiﬁcant reduction in the number
+of samples over the uniform distribution. For example, for
+
+i=1 pℓ
+
+i ≈
+
+n = 109, √n ≈ 30, 000 while n1/4 log(n) ≈ 6000.
+
+Mℓ
+
+WWW 2011 – Session: ClusteringMarch 28–April 1, 2011, Hyderabad, India5993.2 Subgraph size estimation
+
+One surprising aspect of this estimator is that it works for
+subgraphs as well. Let X ′ be the subset of samples X who
+are also in the subgraph (not necessarily connected). We
+perform the same random walk (over the original graph)
+and compute the same parameters C ′, Ψ′
+−1, which
+are deﬁned as above but for X ′ instead of X. The subgraph
+−1/2C ′. The proof provided above
+size is estimated by Ψ′
+works for this case as well. The only change is that D is
+replaced by D′ which is the sum of node degrees in the sub-
+graph. However, since D (and therefore D′ as well) cancels
+itself in the analysis our estimator remains unchanged.
+
+1 and Ψ′
+
+1Ψ′
+
+However, it turns out that it is usually more eﬃcient to
+ﬁrst estimate the size of the entire graph and then estimate
+the subgraphs’ relative size. From the above we have that
+E [Ψ−1] = rn/D, similarly for the subgraph, E [Ψ′
+−1] =
+r′n′/D′ (n′ being the number of nodes in the subgraph).
+Isolating n′ we get:
+
+n′ = n
+
+r
+r′
+
+D′
+D
+
+−1]
+
+E [Ψ′
+E [Ψ−1] ≈ n
+
+Ψ′
+−1
+Ψ−1
+
+−1
+
+If the number of samples is large enough, the last step is cor-
+−1] ≈ Ψ′
+rect since r′/r ≈ E [r′/r] = D′/D and since E [Ψ′
+and E [Ψ−1] ≈ Ψ−1. Under most conditions, the ratio es-
+timator requires only a constant number of samples to con-
+verge. Thus, the main computational eﬀort is in estimating
+n, which is surprisingly lower than that of directly estimat-
+ing n′. To see this, let rc and r′
+c be the number of samples
+needed to estimate the sizes of the graph and the subgraph
+respectively. Since, in a random walk we only hit a node
+in the subgraph with probability D′/D, we are expected to
+require Dr′
+c samples from
+the subgraph. Thus, if r′
+c/D′ ≥ rc/D the second method is
+preferable. Note that this holds in the natural situation that
+the nodes’ degree distributions of the graph and subgraph
+are similar.
+4. NON-UNIQUE ELEMENT COUNTING ES-
+
+c/D′ random samples to obtain r′
+
+TIMATOR
+
+In this section we present another estimator which is based
+on counting non-unique elements instead of collisions. On
+the one hand, it tends to be consistently, yet marginally,
+more accurate. On the other hand, its proof is much more
+involved. We thus choose to present the estimator along
+with its performance (in the experimental results section)
+without providing a proof of its correctness.
+
+An element in the sample is considered non-unique if it
+was sampled at least once before. This is slightly diﬀer-
+ent from counting collisions. For example, in the sequence
+{1, 2, 3, 1, 1} there are two non-unique elements (the last two
+1’s) but three collisions (x1 = x4, x1 = x5, and x4 = x5).
+The intuition is that counting non-unique elements is less
+sensitive to errors in which a speciﬁc node is oversampled.
+This is because the non-unique count is linear in the number
+of times each item was sampled whereas the collision count
+is quadratic.
+
+We estimate n by ˜n which is the unique solution to the
+
+following ﬁxed point equation:
+
+˜n = r − ˜C +
+
+˜n
+
+Ψ−1
+
+r
+
+Xi=1
+
+1
+
+dxi (cid:18)1 −
+
+dxi Ψ−1
+
+˜nr (cid:19)r
+
+(2)
+
+Note that r, ˜C , Ψ−1 and dxi are all observed quantities. To
+
+n
+
+Ψ−1
+
+1
+pi
+
+Now, consider that
+
+(1 − pi)r = E [
+
+see why this is correct, ﬁrst note that the expected number
+i=1 (1 − pi)r.
+
+of non-unique elements is E [ ˜C] = r − n +Pn
+Xi=1
+(1 −
+Also, D ≈ rn
+. Making these substitutions into the expec-
+tation expression gives the above ﬁxed point equation. Intu-
+itively, the size estimate ˜n is chosen such that the observed
+number of non-unique elements is equal to its expectation.
+As a remark, if the node distribution is uniform, this esti-
+mator is identical to the maximum likelihood estimator [7].
+
+(1 − pi)r] ≈
+
+Xi=1
+
+D
+dxi
+
+dxi
+D
+
+)r .
+
+r
+
+1
+r
+
+5. EXPERIMENTAL EVALUATION
+5.1 Networks of known sizes
+
+In order to test our estimators’ accuracy we ﬁrst experi-
+
+mented with three networks whose exact sizes are known.
+A synthetic network; a synthetically constructed graph
+consisting of 1 million nodes whose degree distribution is
+Zipﬁan with parameter α = 2 and maximal degree dm =
+1, 000.
+The Digital Bibliography and Library Project; we
+used the Digital Bibliography and Library Project’s (DBLP)
+entire database.8 Edges in the graph were associated with
+co-authorship of at least one paper. The resulting graph
+included 845, 211 nodes, each with at least one edge (authors
+with no co-authors were omitted).
+The Internet Movie Database; we useed public Internet
+Movie Database’s (IMDB) entire database.9 Edge connec-
+tions between actors were established according to joint par-
+ticipation in at least one movie or TV episode. The resulting
+graph included 1, 955, 508 nodes.
+
+We produced three types of curves. All three were plot-
+ted as functions of the percent of sampled nodes. Error
+curves present the normalized absolute estimation error, i.e.,
+|n − ˆn| /n where n is the true size of the network and ˆn is
+our estimate of it. Conﬁdence interval curves give for each
+estimator the 5’th and 95’th percentile value from 10, 000
+independent estimations. In other words, 90% of the esti-
+mated sizes fell between the lower and upper curves. Lastly,
+comparison curves present the ratio between the errors of
+the non-unique element estimator and that of the collision
+estimator. It is important to stress that this ratio is between
+the normalized absolute estimation errors and not between
+the estimated values. All presented plots were produced by
+averaging over 10, 000 independent experiments.
+
+Examining the error curves depicted in Figure 1, the supe-
+riority of degree sampling estimation (both non-unique and
+collisions based) over uniform sampling estimation is well
+observed. In particular, for the synthetic network, uniform
+sampling estimation requires 5 times as many samples as
+required by degree sampling estimation (0.5% vs. 2.5%), to
+ensure a normalized absolute estimation error of less than
+5%. Also, for the IMDB network, uniform sampling esti-
+mation required almost 3 times more samples than required
+by degree sampling estimation (0.3% vs. 0.8%) to ensure a
+normalized absolute error of less than 10%.
+
+8The DBLP database can be found at http://dblp.uni-
+trier.de/xml/.
+9The IMDB database can be found at
+berlin.de/pub/misc/movies/database/.
+
+ftp://ftp.fu-
+
+WWW 2011 – Session: ClusteringMarch 28–April 1, 2011, Hyderabad, India6000.4
+
+0.35
+
+0.3
+
+0.25
+
+0.2
+
+0.15
+
+0.1
+
+0.05
+
+0
+
+ 
+0
+
+0.5
+
+0.45
+
+0.4
+
+0.35
+
+0.3
+
+0.25
+
+0.2
+
+0.15
+
+0.1
+
+0.05
+
+i
+
+]
+e
+z
+s
+ 
+k
+r
+o
+w
+t
+e
+n
+ 
+o
+t
+ 
+e
+v
+i
+t
+a
+e
+R
+
+l
+
+[
+ 
+r
+o
+r
+r
+e
+ 
+e
+t
+u
+o
+s
+b
+A
+
+l
+
+i
+
+]
+e
+z
+s
+ 
+k
+r
+o
+w
+e
+n
+
+t
+
+ 
+
+o
+
+t
+ 
+
+e
+v
+i
+t
+
+l
+
+a
+e
+R
+
+[
+ 
+r
+o
+r
+r
+e
+
+ 
+
+e
+
+t
+
+l
+
+u
+o
+s
+b
+A
+
+0
+
+ 
+0
+
+0.7
+
+0.6
+
+0.5
+
+0.4
+
+0.3
+
+0.2
+
+0.1
+
+0
+
+ 
+0
+
+]
+
+i
+
+e
+z
+s
+ 
+k
+r
+o
+w
+e
+n
+
+t
+
+ 
+
+o
+
+t
+ 
+
+e
+v
+i
+t
+
+l
+
+a
+e
+R
+
+[
+ 
+r
+o
+r
+r
+e
+
+ 
+
+e
+
+t
+
+l
+
+u
+o
+s
+b
+A
+
+Synthetic network − Estimation error
+
+Unif. dist. − collision
+Unif. dist. − non−unique
+Deg. dist. − collision
+Deg. dist. − non−unique
+
+0.5
+
+1
+
+1.5
+
+2
+
+Number of samples [Percentage of network size]
+
+DBLP network − Estimation error
+
+Unif. dist. − collision
+Unif. dist. − non−unique
+Deg. dist. − collision
+Deg. dist. − non−unique
+
+0.5
+
+3
+Number of samples [Percentage of network size]
+
+1.5
+
+2.5
+
+1
+
+2
+
+IMDB − Estimation error
+
+Unif. dist. − collision
+Unif. dist. − non−unique
+Deg. dist. − collision
+Deg. dist. − non−unique
+
+0.5
+
+1
+
+1.5
+
+Number of samples [Percentage of network size]
+
+ 
+
+2.5
+
+ 
+
+3.5
+
+ 
+
+2
+
+i
+
+]
+e
+z
+s
+ 
+k
+r
+o
+w
+t
+e
+n
+ 
+o
+t
+ 
+e
+v
+i
+t
+a
+e
+R
+
+l
+
+[
+ 
+n
+o
+i
+t
+a
+m
+
+i
+t
+s
+e
+ 
+e
+z
+S
+
+i
+
+2.2
+
+2
+
+1.8
+
+1.6
+
+1.4
+
+1.2
+
+1
+
+0.8
+
+ 
+0
+
+3
+
+i
+
+]
+e
+z
+s
+ 
+k
+r
+o
+w
+t
+e
+n
+
+ 
+
+o
+
+t
+ 
+
+e
+v
+i
+t
+
+l
+
+a
+e
+R
+
+[
+ 
+
+n
+o
+
+i
+t
+
+a
+m
+
+i
+t
+s
+e
+
+ 
+
+e
+z
+S
+
+i
+
+2.5
+
+2
+
+1.5
+
+1
+
+0.5
+
+ 
+0
+
+3
+
+2.5
+
+2
+
+1.5
+
+1
+
+0.5
+
+ 
+0
+
+]
+
+i
+
+e
+z
+s
+ 
+k
+r
+o
+w
+e
+n
+
+t
+
+ 
+
+o
+
+t
+ 
+
+e
+v
+i
+t
+
+l
+
+a
+e
+R
+
+[
+ 
+
+n
+o
+
+i
+t
+
+a
+m
+
+i
+t
+s
+e
+
+ 
+
+e
+z
+S
+
+i
+
+Synthetic network − Confidence interval
+
+Unif. dist. − non−unique 95%
+Deg. dist. − non−unique 95%
+Deg. dist. − non−unique 5%
+Unif. dist. − non−unique 5%
+
+0.5
+
+1
+
+1.5
+
+2
+
+Number of samples [Percentage of network size]
+
+DBLP network − Confidence interval
+
+Unif. dist. − non−unique 95%
+Deg. dist. − non−unique 95%
+Deg. dist. − non−unique 5%
+Unif. dist. − non−unique 5%
+
+0.5
+
+3
+Number of samples [Percentage of network size]
+
+1.5
+
+2.5
+
+1
+
+2
+
+IMDB − Confidence interval
+
+Unif. dist. − non−unique 95%
+Deg. dist. − non−unique 95%
+Deg. dist. − non−unique 5%
+Unif. dist. − non−unique 5%
+
+0.5
+
+1
+
+1.5
+
+Number of samples [Percentage of network size]
+
+ 
+
+2.5
+
+ 
+
+3.5
+
+ 
+
+2
+
+Figure 1: Error curves - absolute normalized size
+estimation errors vs. the percent of sampled nodes
+for three networks: a 1-million-node synthetic net-
+work (top), a network constructed from the Digital
+Bibliography and Library Project (DBLP) database
+(middle), and a network obtained from the Internet
+Movie Data Base (IMDB) database (bottom).
+
+Figure 2: Conﬁdence interval curves - relative es-
+timated size vs.
+the percent of sampled nodes
+for three networks: a 1-million-node synthetic net-
+work (top), a network constructed from the Digital
+Bibliography and Library Project (DBLP) database
+(middle), and a network obtained from the Internet
+Movie Data Base (IMDB) database (bottom).
+
+Similar observations regarding the estimation error are
+also notable examining the conﬁdence interval curves de-
+picted in Figure 2. These curves also demonstrate that
+there is an inherent asymmetrical bias towards size over-
+
+estimation. This is probably because both estimators are
+inversely proportional to the number of collisions or non-
+unique elements. For example, a 50% discrepancy between
+the observed number of collisions and its expectation can
+
+WWW 2011 – Session: ClusteringMarch 28–April 1, 2011, Hyderabad, India6011
+
+0.99
+
+0.98
+
+o
+i
+t
+a
+r
+ 
+r
+o
+r
+r
+
+E
+
+0.97
+
+0.96
+
+0.95
+
+0.94
+
+0.93
+
+ 
+0
+
+1
+
+0.995
+
+0.99
+
+0.985
+
+0.98
+
+0.975
+
+0.97
+
+0.965
+
+0.96
+
+0.955
+
+0.95
+
+ 
+0
+
+1.004
+
+1.002
+
+1
+
+0.998
+
+0.996
+
+0.994
+
+0.992
+
+0.99
+
+0.988
+
+ 
+0
+
+o
+
+i
+t
+
+a
+r
+ 
+r
+o
+r
+r
+
+E
+
+o
+
+i
+t
+
+a
+r
+ 
+r
+o
+r
+r
+
+E
+
+Synthetic network − Performance comparison
+
+Unif. dist. − non−unique to collision error ratio
+Deg. dist. − non−unique to collision error ratio
+
+0.5
+
+1
+
+1.5
+
+2
+
+Number of samples [Percentage of network size]
+
+DBLP Network − Performance comparison
+
+Unif. dist. − non−unique to collision error ratio
+Deg. dist. − non−unique to collision error ratio
+
+0.5
+
+1
+
+3
+Number of samples [Percentage of network size]
+
+1.5
+
+2.5
+
+2
+
+IMDB − Performance comparison
+
+Unif. dist. − non−unique to collision error ratio
+Deg. dist. − non−unique to collision error ratio
+
+0.5
+
+1
+
+1.5
+
+Number of samples [Percentage of network size]
+
+ 
+
+2.5
+
+ 
+
+3.5
+
+ 
+
+2
+
+Figure 3: Comparison curves - absolute relative er-
+ror ratio between the non-unique and collision esti-
+mators vs. the percent of sampled nodes for three
+networks: a 1-million-node synthetic network (top),
+a network constructed from the Digital Bibliography
+and Library Project (DBLP) database (middle), and
+a network obtained from the Internet Movie Data
+Base (IMDB) database (bottom).
+
+result in 100% size overestimation but only in 35% size un-
+derestimation.
+
+In all the curves above and for all three networks the non-
+
+unique elements estimator slightly outperformed the colli-
+sions based estimator. This phenomenon is visible when
+examining the comparison curves depicted in Figure 3. For
+example, for DBLP, the non-unique elements estimator pro-
+vides a 5% reduced relative error over the collision based
+estimator when 3% of the network is sampled. The reader
+should note that the actual size estimates in this case diﬀer
+by only 0.25%.
+
+In all the aforementioned experiments we estimated the
+sizes of networks (whose sizes were already known) up to
+precision of a few single percents. We observed that both
+collision and non-unique based estimators perform well and
+that degree based sampling is signiﬁcantly preferred to uni-
+form sampling. In the next section we estimate the size of a
+subnetwork within Facebook and size of their entire network.
+5.2 Facebook
+
+We used two crawls performed on Facebook by the Au-
+thors of [8, 13]. The ﬁrst crawl consisted of 984, 830 uni-
+formly sampled users collected during April 2009 [8].10 The
+second crawl was performed during October 2010 and con-
+sisted of 988, 116 users [13]. This crawl performed a simple
+random walk on the Facebook graph and therefore selected
+users with probability proportional to their degree.11
+5.2.1 Subnetwork size estimation
+Since the actual size of Facebook is not known (other than
+Facebook’s own reports) we ﬁrst estimate the size of a sub-
+graph whose size is known. We selected a random subset of
+1, 000, 000 Facebook users and tried to estimate the size of
+this sub-population using the ﬁrst algorithm in Section 3.2.
+This is done for two reasons. First, to test the subgraph
+size estimation algorithm. Second, to make sure that Face-
+book’s network’s topology and statistics are suitable for our
+estimators. We present an error curve, a conﬁdence inter-
+val curve, and a comparison curve in Figure 4. Note that
+the x-axis here gives the percent of nodes sampled from the
+subnetwork and not the entire network as before.
+
+These results corroborate that our subgraph size estima-
+tors behave almost identically to the complete graph esti-
+mators. This was expected since their analysis is essentially
+identical. A more important discovery is that the network
+topology and node degree distribution of Facebook are in-
+deed suitable for our estimators to perform well.
+5.2.2 Estimating the size of Facebook
+We now estimate the size of the entire Facebook network.
+Presenting accuracy plots in this case is not possible since
+the true size of Facebook is not known. The uniform Face-
+book sample collected during April 2009, contains 2053 col-
+lisions and 2052 non-unique elements. Substituting these
+into Equations (1) and (2) yields estimates of 237, 197, 785
+and 236, 984, 623 users respectively. The very same month,
+Facebook ([2]) reported of having “more than 200 million
+active users” and “more than 250 million active users” three
+months later. The crawl that was performed during Oc-
+tober 2010 contained 4099 collisions and 4064 non-unique
+users. This gives estimates of 475, 566, 857 and 475, 864, 724
+
+10The Facebook uniformly sampled crawl can be found at
+http://odysseas.calit2.uci.edu/research/.
+11Independent sampling is achieved by taking into account
+every mth sampled node, where m > 30 is adequate for
+every practical use (see [8] and references therein).
+
+WWW 2011 – Session: ClusteringMarch 28–April 1, 2011, Hyderabad, India602i
+
+]
+e
+z
+s
+ 
+k
+r
+o
+w
+t
+e
+n
+ 
+o
+t
+ 
+e
+v
+i
+t
+a
+e
+R
+
+l
+
+[
+ 
+r
+o
+r
+r
+e
+ 
+e
+t
+u
+o
+s
+b
+A
+
+l
+
+0.5
+
+0.45
+
+0.4
+
+0.35
+
+0.3
+
+0.25
+
+0.2
+
+0.15
+
+0.1
+
+0.05
+
+0
+
+ 
+0
+
+Facebook − Estimation error
+
+Unif. dist. − collision
+Unif. dist. − non−unique
+Deg. dist. − collision
+Deg. dist. − non−unique
+
+0.5
+2.5
+Number of samples [Percentage of network size]
+
+1.5
+
+1
+
+2
+
+3.5
+
+3
+
+2.5
+
+2
+
+1.5
+
+1
+
+i
+
+]
+e
+z
+s
+ 
+k
+r
+o
+w
+t
+e
+n
+
+ 
+
+o
+
+t
+ 
+
+e
+v
+i
+t
+
+l
+
+a
+e
+R
+
+[
+ 
+
+n
+o
+
+i
+t
+
+a
+m
+
+i
+t
+s
+e
+
+ 
+
+e
+z
+S
+
+i
+
+0.5
+
+ 
+0
+
+1.005
+
+1
+
+o
+
+i
+t
+
+a
+r
+ 
+r
+o
+r
+r
+
+E
+
+0.995
+
+0.99
+
+0.985
+
+0.98
+
+ 
+0
+
+Facebook − Confidence interval
+
+Unif. dist. − non−unique 95%
+Deg. dist. − non−unique 95%
+Deg. dist. − non−unique 5%
+Unif. dist. − non−unique 5%
+
+0.5
+2.5
+Number of samples [Percentage of network size]
+
+1.5
+
+1
+
+2
+
+Facebook − Performance comparison
+
+Unif. dist. − non−unique to collision error ratio
+Deg. dist. − non−unique to collision error ratio
+
+0.5
+2.5
+Number of samples [Percentage of network size]
+
+1.5
+
+1
+
+2
+
+ 
+
+3
+
+ 
+
+3
+
+ 
+
+3
+
+Figure 4: Absolute relative estimation error (top),
+conﬁdence intervals (middle), and estimation rela-
+tive error ratio (bottom) vs. the percentage of sam-
+ples taken from a 1 million user subnetwork of Face-
+book.
+
+respectively. Facebook at the same time reported of having
+“more than 500 million active users”. This is summarized in
+Table 1.
+
+Notice that the second crawl sampled half as many users
+relative to the network size at the time it was made. Yet,
+it produced roughly twice as many collisions. This is be-
+
+Table 1: Crawl details and consequent size estimates
+of the entire Facebook network for April 2009 and
+October 2010.
+
+April 2009
+
+October 2010
+
+Sampling distribution
+
+Number of samples
+Number of collisions
+Number of non-unique
+
+Collision estimator
+
+Nun-unique estimator
+
+Facebook report
+
+uniform
+0.98 · 106
+
+2053
+2052
+237 · 106
+236 · 106
+
+200 − 250 · 106
+
+degree
+1 · 106
+4099
+4064
+475 · 106
+475 · 106
+500 · 106
+
+cause degree proportional sampling is expected to gener-
+ate more collisions than uniform sampling. The discrep-
+ancy between our estimates and the oﬃcial reports by Face-
+book stems from two main reasons. On the one hand, the
+crawler cannot distinguish between active and non active
+users. Thus our estimates include non-active users which
+causes an over estimation. On the other hand, our crawler
+cannot pass through users whose privacy settings hide their
+list of friends, which causes underestimation. Thus, our esti-
+mates and Facebook’s reports give slightly diﬀerent ﬁgures.
+While Facebook counts “active” users, we estimate the num-
+ber of Facebook users whose list of friends is visible to the
+crawler regardless of their activity.
+
+Since the crawler has no indication of users’ activity and
+since it is unclear what Facebook deﬁnes as “active”, we
+cannot oﬀset this eﬀect. However, we can try to estimate the
+number of blocked users (those whose privacy settings block
+the crawler). This can be approximated using the fraction
+of such users in other users’ friends lists which yields an
+estimate of 650 · 106 users, active and non-active.
+5.3 Synthetic network - large sample region
+
+Interestingly, for a large enough number of samples (e.g.,
+30% of the network’s size), uniform sampling estimation out-
+performs degree sampling estimation. This phenomenon re-
+peats itself for all three known size network we examined.
+We provide an error curve, a conﬁdence interval curve, and
+a comparison curve in Figure 5 for the synthetic network
+only but this time extending the number of samples all the
+way to 100%.
+
+6. CONCLUSIONS
+
+We presented two algorithms for estimating the size of
+graphs. Both algorithms rely on nodes being samples from
+the graph’s stationary distribution. We showed both an-
+alytically and experimentally that, for social-networks and
+other small world graphs, these algorithms considerably out-
+perform uniformly sampling nodes. They consistently pro-
+vide more accurate estimates while using a smaller number
+of samples. This result is even more outstanding since uni-
+formly sampling nodes is strictly harder than sampling them
+according to the stationary distribution.
+
+However, there is still room for improvement. While per-
+forming the random walk in order to sample nodes from the
+stationary distribution, we encounter many nodes whose de-
+grees or collisions we never use. Using this information can
+possibly reduce the number of random walk steps even fur-
+
+WWW 2011 – Session: ClusteringMarch 28–April 1, 2011, Hyderabad, India603x 10−3
+
+Synthetic network − Estimation error
+
+ 
+
+Unif. dist. − collision
+Unif. dist. − non−unique
+Zipf. dist. − collision
+Zipf. dist. − non−unique
+
+8
+
+7
+
+6
+
+5
+
+4
+
+3
+
+2
+
+1
+
+i
+
+]
+e
+z
+s
+ 
+k
+r
+o
+w
+t
+e
+n
+ 
+o
+t
+ 
+e
+v
+i
+t
+a
+e
+R
+
+l
+
+[
+ 
+r
+o
+r
+r
+e
+ 
+e
+t
+u
+o
+s
+b
+A
+
+l
+
+0
+
+ 
+0
+
+1.025
+
+1.02
+
+1.015
+
+1.01
+
+1.005
+
+1
+
+0.995
+
+0.99
+
+0.985
+
+i
+
+]
+e
+z
+s
+ 
+k
+r
+o
+w
+t
+e
+n
+
+ 
+
+o
+
+t
+ 
+
+e
+v
+i
+t
+
+l
+
+a
+e
+R
+
+[
+ 
+
+n
+o
+
+i
+t
+
+a
+m
+
+i
+t
+s
+e
+
+ 
+
+e
+z
+S
+
+i
+
+0.98
+
+ 
+0
+
+1
+
+0.98
+
+0.96
+
+0.94
+
+0.92
+
+0.9
+
+0.88
+
+0.86
+
+0.84
+
+0.82
+
+ 
+0
+
+o
+
+i
+t
+
+a
+r
+ 
+r
+o
+r
+r
+
+E
+
+20
+
+40
+
+60
+
+80
+
+Number of samples [Percentage of network size]
+
+Synthetic network − Confidence interval
+
+Unif. dist. − non−unique 95%
+Zipf. dist. − non−unique 95%
+Zipf. dist. − non−unique 5%
+Unif. dist. − non−unique 5%
+
+20
+
+40
+
+60
+
+Number of samples [Percentage of network size]
+
+80
+
+Synthetic network − Performance comparison
+
+Unif. dist. − non−unique to collision error ratio
+Zipf. dist. − non−unique to collision error ratio
+
+20
+
+40
+
+60
+
+80
+
+Number of samples [Percentage of network size]
+
+100
+
+ 
+
+100
+
+ 
+
+100
+
+Figure 5: Absolute relative estimation error (top),
+conﬁdence intervals (middle), and estimation rela-
+tive error ratio (bottom) vs. the percent of sampled
+nodes for a 1 million node synthetic network whose
+node degree distribution is Zipﬁan. Note the large
+number of samples relative to the network size.
+
+ther. However, analyzing the entire random walk is hard
+since this introduces dependencies on the graph topology in
+a non-trivial way.
+
+7. ACKNOWLEDGMENT
+
+We thank Minas Gjoka for being extremely helpful and
+
+providing the Facebook crawls used in the simulations. We
+also thank Ronny Lampel, Yoelle Maarek and Ravi Kumar
+for useful discussions.
+8. REFERENCES
+[1] Estimating the size of a population.
+
+http://www.rsscse.org.uk/ts/gtb/johnson.pdf.
+
+[2] Facebook statistics.
+
+http://www.facebook.com/press/info.php?statistics.
+
+[3] Z. Bar-Yossef and M. Gurevich. Eﬃcient search engine
+
+measurements. In Proc. of the 16th intl. conf. on
+World Wide Web (WWW’07), pages 401–410, Banﬀ,
+Alberta, Canada, 2007.
+
+[4] Z. Bar-Yossef and M. Gurevich. Random sampling
+from a search engine’s index. J. ACM, 55(5), 2008.
+
+[5] K. Bharat and A. Broder. A technique for measuring
+
+the relative size and overlap of public Web search
+engines. Comput. Netw. ISDN Syst., 30(1-7):379–388,
+1998.
+
+[6] A. Chao. Estimating the population size for
+
+capture-recapture data with unequal catchability. In
+Biometrics, Dec. 1987.
+
+[7] M. Finkelstein, H. G. Tucker, and J. A. Veeh.
+
+Conﬁdence intervals for the number of unseen types.
+Statistics & Probability Letters, 37(4):423–430, Mar.
+1998.
+
+[8] M. Gjoka, M. Kurant, C. T. Butts, and
+
+A. Markopoulou. Walking in Facebook: A Case Study
+of Unbiased Sampling of OSNs. In Proc. of IEEE
+INFOCOM ’10, San Diego, CA, Mar. 2010.
+
+[9] S. Han Hee, C. Tae Won, D. Vacha, Z. Yin, and
+
+Q. Lili. Scalable proximity estimation and link
+prediction in online social networks. In Proc. of the
+9th ACM SIGCOMM conf. on Internet Measurement
+(IMC’09), pages 322–335, Chicago, IL, 2009.
+
+[10] R. Huggins, H.-C. Yang, A. Chao, and P. S. F. Yip.
+
+Population size estimation using local sample coverage
+for open populations. Journal of Statistical Planning
+and Inference, 113(2):699 – 714, 2003.
+
+[11] D. E. Knuth. Estimating the eﬃciency of backtrack
+
+programs. Technical report, Stanford, CA, 1974.
+
+[12] Y. Koren, S. C. North, and C. Volinsky. Measuring
+
+and extracting proximity in networks. In Proc. of the
+12th ACM SIGKDD Intl. Conf. on Knowledge
+Discovery and Data mining (KDD’06), pages 245–255,
+Philadelphia, PA, 2006.
+
+[13] M. Kurant, M. Gjoka, C. T. Butts, and
+
+A. Markopoulou. Walking on a Graph with a
+Magnifying Glass. In Proc. of ACM SIGMETRICS
+’11, San Jose, CA, Jun. 2011.
+
+[14] L. Lovasz. Random walks on graphs. a survey.
+
+Combinatorics, 1993.
+
+[15] A. Marchetti-Spaccamela. On the estimate of the size
+
+of a directed graph. In J. van Leeuwen, editor,
+Graph-Theoretic Concepts in Computer Science,
+volume 344 of Lecture Notes in Computer Science,
+pages 317–326. Springer Berlin / Heidelberg, 1989.
+
+[16] A. Mislove, M. Marcon, K. P. Gummadi, P. Druschel,
+
+and B. Bhattacharjee. Measurement and analysis of
+online social networks. In Proc. of the 5th ACM Conf.
+on Internet Measurement (IMC’07), San Diego, CA,
+2007.
+
+WWW 2011 – Session: ClusteringMarch 28–April 1, 2011, Hyderabad, India604[17] R. Motwani and S. Vassilvitskii. Distinct values
+
+estimators for power law distributions. In Proc. of the
+Third Workshop on Analytic Algorithmics and
+Combinatorics (ANALCO’06), Miami , FL, 2006.
+
+[18] L. Pitt. A note on extending knuth’s tree estimator to
+
+directed acyclic graphs. Inf. Process. Lett.,
+24(3):203–206, 1987.
+
+[19] S. Ye and F. Wu. Estimating the size of online social
+
+networks. In Proc. of the IEEE 2nd Intl. Conf. on
+Social Computing (SocialCom), pages 169–176, Aug.
+2010.
+
+[20] A. Yong-Yeol, H. Seungyeop, K. Haewoon, M. Sue,
+
+and J. Hawoong. Analysis of topological characteristics
+of huge online social networking services. In Proc. of
+the 16th Intl. Conf. on World Wide Web (WWW’07),
+pages 835–844, Banﬀ, Alberta, Canada, 2007.
+
+APPENDIX
+A. CONCENTRATION OF C, Ψ1, AND Ψ−1
+
+In the proof of Corollary 1 we required that each of the
+variables C, Ψ1, and Ψ−1 give an ǫ/4 appropriation their
+respective expected values with probability at least 1 − δ/3.
+From Chebyshev’s inequality we get that this is true for any
+variable Z for which
+
+Var[Z] ≤ δǫ2E 2[Z]/48 .
+
+(3)
+
+To use this we must ﬁrst bound the variance of all three
+variables.
+
+We start with C, the number of collisions. We remind
+the reader our notations. Yi,j = 1 if xi = xj and 0 else,
+where {x1 . . . , xr} are the r sampled nodes. Moreover, C =
+Pr
+i<j Yi,j. We compute E [C 2] using the linearity of the
+expectation.
+
+E [C 2] = E [(
+
+Yi,j)2] =
+
+r
+
+Xi<j
+
+r
+
+r
+
+Xi<j
+
+Xi′<j ′
+
+E [Yi,jYi′,j ′ ] .
+
+ℓ )2.
+
+ℓ=1 p2
+
+ℓ=1 p2
+
+To calculate the last summation we divide it into three
+cases. When i = i′ and j = j′ we have that E [Yi,jYi′,j ′ ] =
+
+get that:
+
+ℓ . Moreover, we have (cid:0)r
+
+E [Yi,j ] =Pn
+2(cid:1) such case. In the
+case where i 6= i′ and j 6= j′, the number of the summands
+is equal to the number of ways one chooses 4 elements out of
+r elements and then split them to two pairs, i.e., 6(cid:0)r
+4(cid:1). Also,
+in this case E [Yi,jYi′,j ′ ] = (Pn
+In third and last
+possibility is where i = i′ and j 6= j′ or i 6= i′ and j = j′.
+We have 3!(cid:0)r
+3(cid:1) such summands because this is the number of
+ways to choose 3 elements out of r and then decide for each
+index if it is from the lest sum, right sum, or both. In this
+case we have E [Yi,jYi,j ′ ] =Pn
+ℓ . Summing those up we
+Var[C] = E [C 2] − E 2[C]
+ℓ + 6 r
+Xℓ=1
+ℓ + 6 r
+
+3! n
+Xℓ=1
+2!2
+ℓ )2 − r
+3! n
+Xℓ=1
+
+2! n
+Xℓ=1
++ 6 r
+4!(
+2! n
+Xℓ=1
+
+=  r
+
+≤  r
+
+Xℓ=1
+
+ℓ=1 p3
+
+p2
+ℓ )2
+
+p3
+ℓ .
+
+p3
+ℓ
+
+n
+
+(
+
+p2
+
+p2
+
+p2
+
+n
+
+Substituting this into Equation 3 and demanding that each
+of the summoned is less than half the right hand side gives
+us the condition for rc:
+
+rc ≥ max(
+
+8√3
+
+ǫ√δpPn
+
+i=1 p2
+i
+
+i=1 p3
+i
+i=1 p2
+
+i )2) .
+
+,
+
+384Pn
+ǫ2δ(Pn
+
+Since the nodes are picked independently, computing the
+
+variance of Ψ1 is easy:
+
+Var[Ψ1] = r Var[dx1 ] < rE [d2
+
+x1 ] = r
+
+n
+
+n
+
+pid2
+
+i = rD2
+
+p3
+i .
+
+Xi=1
+
+Xi=1
+
+From Equation 3, and the expectation of Ψ1 calculated in
+the body of the paper we get the requirement:
+
+rc >
+
+i=1 p3
+i
+i=1 p2
+
+48Pn
+ǫ2δ(cid:0)Pn
+
+i(cid:1)2 .
+
+We do the same for Ψ−1:
+
+Var[Ψ−1] = r Var[1/dx1 ] < rE [1/d2
+
+x1 ]
+
+= r
+
+n
+
+Xi=1
+
+pi/d2
+
+i =
+
+r
+D2
+
+n
+
+Xi=1
+
+1
+pi
+
+.
+
+Thus Ψ−1 is also ǫ/4 close to its expectation with probability
+at least 1 − δ/3 if: which is satisﬁed by
+i=1 1/pi
+.
+
+rc ≥
+
+48Pn
+
+ǫ2δn2
+
+Combining them gives us that C, Ψ1 and Ψ−1 are individ-
+ually ǫ/4 close to their expectation, each with probability at
+least 1 − δ/3 if:
+rc ≥ max(
+
+i=1 p3
+i
+i )2 ,
+i=1 p2
+
+i=1 1/pi
+
+) .
+
+8√3
+
+ǫ2δn2
+
+48Pn
+
+i=1 p2
+i
+
+,
+
+Note that the condition for the concentration of Ψ1 is sub-
+sumed by the conditions for the concentration of C.
+
+384Pn
+ǫ2δ(Pn
+
+ǫ√δpPn
+
+B. PARTIAL LISTS OF FRIENDS
+
+In some settings, only a random subset of the list of friends
+is given to the crawler. Thus, assuming the subset of given
+friends is truly random, the crawler can keep performing the
+random walk undisturbed. However, it can no longer eval-
+uate Ψ1 and Ψ−1. To this end, we provide estimators that
+do not require Ψ1 and Ψ−1. They do, however, require a
+priori knowledge of nodes’ degree distribution. A similar as-
+sumption was also made in [17] where the authors presented
+an algorithm for estimating the number of attributes in a
+database.
+
+Deﬁning as before the ℓ’th moment of the degree distri-
+
+bution as Mℓ = E [dℓ] the collision estimator becomes
+
+2! M2
+CM2
+For the non-unique estimator we get
+
+ˆn = r
+
+1
+
+.
+
+ˆn = r − C +
+
+dm
+
+Xi=1
+
+ˆnP [d = i](cid:18)1 −
+
+i
+
+ˆnM1(cid:19)r
+
+.
+
+WWW 2011 – Session: ClusteringMarch 28–April 1, 2011, Hyderabad, India605

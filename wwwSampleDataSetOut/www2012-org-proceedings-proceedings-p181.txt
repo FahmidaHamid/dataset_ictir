@@ -1,0 +1,2522 @@
+Semi-Supervised Correction of Biased Comment Ratings
+
+Abhinav Mishra
+
+Yahoo! Labs Bangalore
+
+abhinavm@yahoo-inc.com
+
+Rajeev Rastogi
+
+Yahoo! Labs Bangalore
+
+rrastogi@yahoo-inc.com
+
+ABSTRACT
+In many instances, oﬀensive comments on the internet at-
+tract a disproportionate number of positive ratings from
+highly biased users. This results in an undesirable scenario
+where these oﬀensive comments are the top rated ones. In
+this paper, we develop semi-supervised learning techniques
+to correct the bias in user ratings of comments. Our scheme
+uses a small number of comment labels in conjunction with
+user rating information to iteratively compute user bias and
+unbiased ratings for unlabeled comments. We show that the
+running time of each iteration is linear in the number of
+ratings, and the system converges to a unique ﬁxed point.
+To select the comments to label, we devise an active learn-
+ing algorithm based on empirical risk minimization. Our
+active learning method incrementally updates the risk for
+neighboring comments each time a comment is labeled, and
+thus can easily scale to large comment datasets. On real-life
+comments from Yahoo! News, our semi-supervised and ac-
+tive learning algorithms achieve higher accuracy than simple
+baselines, with few labeled examples.
+
+Categories and Subject Descriptors
+H.2.8 [Information Systems]: Database Applications -
+Data mining
+
+General Terms
+Algorithms, Experimentation
+
+Keywords
+Semi-supervised learning, active learning, iterative technique,
+bias
+
+1.
+
+INTRODUCTION
+
+With the proliferation of web applications such as blogs,
+wikis, social networking sites, etc., users can not only con-
+sume news content but also share their opinions. On many
+web sites such as Yahoo! News, a user can post comments,
+reply to other comments, and even provide ratings to other
+comments. As [19] notes, user experience on the internet
+is becoming a shared social experience through discussions,
+tweets, comments, etc. In fact, [19] reports that around 25%
+of internet users have commented on a news article.
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2012, April 16–20, 2012, Lyon, France.
+ACM 978-1-4503-1229-5/12/04.
+
+Figure 1: Sample abusive comments that receive
+many thumbs-up ratings.
+
+Depending on the news event, an article can receive either
+a few or thousands of comments. For a user, it is simply not
+possible to read and rate all the comments. To address this,
+web sites such as Yahoo! News provide a number of options
+to order the comments for an article. These include sorting
+by time, most replied, top rated, popular now, etc. Of these
+measures, top rated and popular now do require some algo-
+rithmic computation on the ratings provided by users. For
+instance, a user gives a comment a thumbs-up rating to indi-
+cate a positive vote and a thumbs-down to signal a negative
+vote. The top rated comments are then the ones with the
+highest fraction of thumbs-up ratings. Thus, crowdsourced
+ratings are used to measure the quality of a comment, and
+the whole system is moderated using crowdsourcing.
+
+A comment from a user represents his/her view on a topic.
+On sensitive topics, however, comments do appear to be
+highly biased. One study [7] found that categories like war,
+crime, law, politics, society, and many others have a higher
+fraction of comments that get ﬁltered. On many topics such
+as war and immigration, we often see hate speech directed
+at the people of another community. In Figure 1, we show
+examples of this where the content is obviously abusive. To
+a neutral (unbiased) person, such content would appear very
+oﬀensive. Clearly, such comments should either be hidden
+or deleted.
+
+Web sites do have a policy against posting abusive con-
+tent, hate speech, spam, etc. Currently, most of the auto-
+mated systems rely on some form of human activity to iden-
+
+WWW 2012 – Session: Fraud and Bias in User RatingsApril 16–20, 2012, Lyon, France181tify oﬀensive content. Such human activity includes ﬂagging
+as spam, giving thumbs-down to comments, etc. If the num-
+ber of spam ﬂags or thumbs-down ratings is high then these
+comments are removed.
+
+In [14], it was shown that crowd-based moderation is in-
+deed eﬀective (on Slashdot) in a controlled environment.
+However, due to human bias, oﬀensive comments may not
+always attract many thumbs-down ratings. Even editors and
+moderators acknowledge that there are some gray areas, and
+people’s perceptions of what constitutes distasteful material
+can vary [8]. To make matters worse, such comments often
+attract a large number of thumbs-ups (or thumbs-downs)
+from other biased users who easily outnumber the unbi-
+ased ones. For example, in Figure 1, a majority of users
+have given the comments a thumbs-up rating. Since such
+comments receive many thumbs-ups, they appear as the top
+rated comments, which is clearly undesirable. Such com-
+ments should be hidden, or at the very least, should not
+appear at the top.
+
+The main problem here lies with the metric that is used to
+compute top rated comments. Simple statistical measures
+such as fraction of thumbs-up are not suﬃciently equipped
+to identify the bad comments or reduce their ratings. They
+do not factor bias while calculating the rating for a com-
+ment. Ideally, the opinion of a highly biased user should be
+given less weight, i.e., user reputation should be considered
+as well in the calculation. Similar intuition underlies modern
+ranking algorithms like HITS [12] and PageRank [4], where
+the outlinks from a highly ranked page are considered more
+importance.
+
+In this paper, we propose unsupervised, semi-supervised,
+and active learning algorithms for correcting the bias in com-
+ment ratings provided by users; thus, our algorithms com-
+pute the unbiased ratings of comments.
+In our work, we
+only rely on the structural aspects, i.e., the user-comment
+graph containing who-rated-what. We do not make use of
+the content of comments.
+
+Our main contributions are as follows:
+
+1) We give mutually-recursive deﬁnitions of user bias and
+unbiased comment rating in terms of one another leveraging
+the user-comment graph (Section 3). We use ﬁxed-point it-
+eration to solve the mutually-recursive equations of bias and
+rating in time that is linear in the number of ratings. We
+prove that our iterations converge to a unique ﬁxed-point.
+We also present an analytical solution to our problem and
+show a connection with randomized HITS [27].
+
+2) In many instances, ratings from biased users easily out-
+number those from others. To determine the unbiased rat-
+ings in these cases, we use semi-supervision (Section 4).
+Speciﬁcally, we obtain labels from human editors that re-
+ﬂect the ground truth for a small number of comments. We
+use these comment labels in conjunction with the rating in-
+formation provided by users to iteratively compute the un-
+biased ratings for unlabeled comments.
+
+3) Since labeling comments is expensive, we propose a scal-
+able active learning algorithm to select the comments to la-
+bel (Section 5). In each step, our active learning algorithm
+greedily selects the comment with the lowest expected risk
+as the next comment to label, and incrementally updates
+the risk for neighboring comments. In the computation of
+
+expected error, we use the true rating computed for a com-
+ment (by our semi-supervised method) to approximate the
+probability of a thumbs up. We devise eﬃcient algorithms
+for incrementally updating the ratings and expected errors
+of comments in the neighborhood of a newly labeled com-
+ment.
+
+4) We conduct an extensive experimental study with real-
+life comments from Yahoo! News (Section 7). Even without
+supervision, our algorithm signiﬁcantly outperforms simple
+baselines. Furthermore, the accuracy of our predicted rat-
+ings increases as more comments are labeled. Finally, our
+active learning scheme achieves high accuracy with 5 times
+fewer labeled examples compared to random labeling schemes.
+
+2. SYSTEM MODEL
+
+We consider a model where users post comments on a news
+article expressing their views. Other users have a choice to
+show their like/dislike through a thumbs-up/thumbs-down
+rating. A user is not allowed to give more than one rating to
+a comment. We model this system using a bipartite graph G,
+where users are on one side and comments are on the other
+side. A directed edge from a user to a comment represents
+that the user has given a thumbs-up or thumbs-down. Let
+wij denote the rating given by user i to comment j. Here,
+wij ∈ {−1, +1}, where wij = +1 corresponds to a thumbs-
+up rating and wij = −1 means a thumbs-down rating. Note
+that a user will have only outgoing edges and likewise, a
+comment will have only inlinks.
+
+A user may be biased on certain topics, which makes
+his/her ratings biased as well. However, the user may behave
+normally on other topics. This phenomenon of topicality is
+also pointed out by [8], especially on many sensitive top-
+ics such as immigration. We say that a user is biased with
+respect to a topic if his/her opinion deviates signiﬁcantly
+from the correct opinion on the comments belonging to that
+topic. Therefore, we have diﬀerent bias scores for a user for
+diﬀerent topics.
+The standard method used to compute the rating of a
+comment j is to take the mean of all ratings (avgi{wij}) the
+comment receives (at times, over a certain period). However,
+such a method does not factor in bias. Our objective in
+this paper is to develop techniques which also factor in bias
+while computing the rating of a comment. We refer to such
+a rating as the unbiased rating. We compute the bias for
+users and unbiased ratings for comments separately for each
+topic.
+
+3. UNSUPERVISED TECHNIQUE
+
+In this section, we present an unsupervised algorithm to
+compute the bias and unbiased rating of a comment. We
+show a mutually recursive relationship between bias and un-
+biased rating, i.e., we write bias as a function of unbiased
+rating and unbiased rating as a function of bias. We use
+ﬁxed-point iteration to solve this mutually recursive equa-
+tion. Later, we propose a semi-supervised framework to fur-
+ther improve this approach by allowing some comments to
+be explicitly labeled.
+3.1 Bias deﬁnition
+
+As mentioned earlier, a user is considered to be biased if
+his/her ratings deviate considerably from the correct ratings.
+
+WWW 2012 – Session: Fraud and Bias in User RatingsApril 16–20, 2012, Lyon, France182Thus, intuitively, if r(j) is the unbiased rating of comment j,
+then the function |wij − r(j)| is a good choice for capturing
+the bias of user i on comment j.
+If the gap between the
+user rating and unbiased rating is more, then the function
+|wij − r(j)| will attain a high value reﬂecting a high level of
+bias. On the other hand, if the gap is small, then the bias
+will be low. Recall that a user gives either a thumbs-up or
+thumb-down rating. Therefore, wij ∈ {−1, 1}. In contrast,
+we allow the unbiased rating r(j) to take any value between
+−1 and 1; thus, r(j) ∈ [−1, 1].
+The function |wij − r(j)| can be equivalently written as
+(1 − wij · r(j)). We use this latter equivalent formulation
+throughout the paper. The bias of a user i on comment j
+after normalization is given as:
+
+biasj(i) =
+
+1 − wij · r(j)
+
+2
+
+(1)
+
+(cid:4)
+
+(cid:2)
+
+(cid:3)
+
+j:i→j
+
+Equation (1) computes bias only for one comment. In order
+to compute the bias of a user over all comments he/she has
+rated on a given topic, we simply take the mean. Therefore,
+bias can be viewed as the expected error a user is likely to
+make on a comment. Let do(i) denote the number of ratings
+given by a user i on a topic. Then, bias is deﬁned as:
+
+bias(i) =
+
+1
+
+2 · do(i)
+
+1 − wij · r(j)
+
+(2)
+
+Observe that if a user gives many irrational ratings (wij (cid:3)=
+r(j)), then he/she will have a high bias. Also, bias ∈ [0, 1],
+where 0 signiﬁes that a user is unbiased and 1 indicates that
+his/her opinion is highly biased. Our deﬁnition of bias has
+a remarkable similarity with the hubs vector of randomized
+HITS [27] (see Section 6.2).
+
+In our framework, bias is the expected error a user is likely
+to make while rating a comment. Related approaches [13,
+17] that address bias in user ratings, and their follow-up
+work, deﬁne bias as the propensity to give high or low rat-
+ings. Roughly, the bias of a user is viewed as the average
+inﬂation or deﬂation in ratings by the user. However, such a
+deﬁnition is not applicable in our comment rating environ-
+ment since a user can artiﬁcially keep his/her bias close to
+zero, while in reality, it is very high. For example, consider
+a user who always gives ratings opposite to the unbiased
+ratings. Using our method, such a user will have a high bias
+score, whereas with the schemes of [13, 17], it is possible for
+a user to keep his/her bias close to zero.
+
+There is another noteworthy diﬀerence which makes the
+above approaches unsuitable for computing the bias. Con-
+sider a user who likes a particular movie. Whenever a good
+comment about the movie appears, he/she is likely to give
+a thumbs-up rating, and if a negative comment appears,
+he/she is expected to give a negative rating. This intuition
+conforms with our deﬁnition of bias. However, with the
+other deﬁnitions, the user is expected to give either high
+ratings to both positive and negative comments about the
+movie, or low ratings to both.
+3.2 Unbiased rating deﬁnition
+
+We compute the unbiased rating of a comment by factor-
+ing user bias. If a comment receives a rating from a highly
+biased user, then we give a lower weight to that user. Intu-
+itively, we ignore a user’s opinion if it is frequently wrong.
+If a user i is biased, then the quantity (1 − bias(i)) is the
+conﬁdence with which he/she gives the correct rating. For
+
+instance, if (1 − bias(i)) = 0, then the user is very likely to
+give an incorrect rating. We modify the rating by factoring
+bias as:
+
+(cid:2)
+
+ij = wij(1 − bias(i))
+
+w
+
+(3)
+
+The above formulation ensures that if a user is unbiased,
+then his/her rating remains unchanged. However, if he/she
+is biased, say bias(i) = 0.9, then we reduce the rating to 0.1
+fraction. To compute the unbiased rating r, we simply take
+the mean of all the modiﬁed ratings as follows:
+
+(cid:2)
+
+r(j) =
+
+1
+
+di(j)
+
+i:i→j
+
+(cid:2)
+ij
+
+w
+
+(4)
+
+(cid:5)
+
+Here, di(j) denotes the number of incoming links (ratings)
+comment j receives. Note that r(j) ∈ [−1, 1]. Like bias, un-
+biased rating is similar to the authority vector of randomized
+HITS [27] (see Section 6.2).
+
+i(1 − bias(i)).
+
+Observe that in Equation (4), we divide by the number of
+inlinks. Instead of this simple mean, a weighted mean could
+be seen as a better option, i.e., dividing by
+However, this has a major drawback. For example, consider
+two heavily biased users with bias = 0.99. Let the users
+give ratings with a score 1 to the same comment. Then, the
+rating with weighted mean is still 1. However, with simple
+mean, we get a rating of 0.01 (close to neutral). Since the
+two users are heavily biased, their opinion cannot be trusted,
+and so giving something close to a neutral rating is the best
+option – the weighted mean does not provide this.
+3.3 Bias and unbiased rating computation
+
+We use ﬁxed-point iteration to solve the mutually-recursive
+equations of bias and rating. In Section 4.2, we show that
+this system converges to a unique ﬁxed point, i.e., converges
+to a unique solution irrespective of initial conditions. Let
+biast(i) and rt(j) denote the bias and rating, respectively,
+in iteration t. Then, rt+1(j) is computed as follows:
+
+wij(1 − bias
+(cid:2)
+(cid:3)
+
+1 − wij · r
+
+j:i→j
+
+t
+
+(i))
+
+(5)
+
+(cid:4)
+
+t+1
+
+(j)
+
+(6)
+
+t+1
+
+r
+
+(j) =
+
+1
+
+di(j)
+
+(cid:2)
+
+i:i→j
+
+Similarly, we compute biast+1(i) as:
+
+bias(i)
+
+t+1
+
+=
+
+1
+
+2 · do(i)
+
+3.4 Time complexity
+
+Computing the bias of users, given the unbiased ratings of
+all comments, requires O(m) time, where m is the number of
+ratings. Similarly, O(m) time is required to compute the un-
+biased ratings. Thus, if k is the number of iterations needed
+to reach ﬁxed point, then the complexity of the algorithm is
+O(km). Usually the number of ratings provided by users is
+considerably less than all the possible ratings. This makes
+the ﬁxed point computation very eﬃcient. Later on, in Sec-
+tion 4.2, we also give a bound on the number of iterations
+required to guarantee a certain level of accuracy.
+
+4. SEMI-SUPERVISED TECHNIQUE
+
+As discussed earlier, it is possible that a majority of the
+users who give ratings are biased on a topic. Then, the
+above formulation may not work, and worse, it is likely to
+make other opinions look biased. For example, let +1 be
+
+WWW 2012 – Session: Fraud and Bias in User RatingsApril 16–20, 2012, Lyon, France183the neutral (correct) view for a comment, and −1 the biased
+view. If a majority gives the comment −1, then users who
+gave +1 will be deemed as biased, even though they give
+correct ratings. In order to address this anomaly, we assume
+that we know the labels of a few comments apriori. By doing
+so, we can ensure that unbiased users are not punished even
+though they are in small numbers. Now, there will be many
+comments and users who are not a part of the labeled set.
+By including the available unlabeled set as well for training,
+we let our semi-supervised algorithm learn ratings from both
+labeled and unlabeled data.
+
+We use active learning (presented in Section 5) to identify
+the best comments to label. Unlike traditional graph-based
+semi-supervised learning [3, 28, 29], we do not make any
+smoothness assumptions, i.e., neighboring nodes share sim-
+ilar labels, as it is not applicable on a user-comment graph.
+4.1 Algorithm
+Let L and U L be the two sets of labeled and unlabeled
+comments, respectively. In general we assume that |L| (cid:4)
+|U L|. We now deﬁne notation that will be used later. Let
+L(j) represent the label of comment j, if j ∈ L. Further-
+more, let do
+L(i) denote the number of labeled ratings avail-
+able for user i and likewise, do
+U L(i) denote the number of
+unlabeled ratings. Therefore, do
+L(i) + do
+U L = do(i). We now
+modify the expressions for unbiased rating and bias. The
+expression for r is:
+
+(cid:5)
+
+L(j)
+
+if j ∈ L
+otherwise
+
+(cid:2)
+ij
+
+(7)
+
+r(j) =
+
+1
+
+di(j)
+
+i:i→j w
+
+(cid:6)
+
+Bias can also be divided into two types: one from the labeled
+set and the other from the unlabeled set. The new bias
+formulation is as follows:
+
+bias(i) =
+
+1
+
+L(i) + do
+
+2(α · do
+(cid:2)
+
++
+
+j:i→j,j∈U L
+
+α
+
+(cid:3)
+
+U L(i))
+1 − wij · r(j)
+
+(cid:7)
+
+(cid:3)
+
+(cid:2)
+(cid:4)(cid:8)
+
+j:i→j,j∈L
+
+1 − wij · L(j)
+
+(cid:4)
+
+(8)
+
+Here, the ﬁrst sum term computes the deviation for user i
+using labeled comments which he/she has rated. Whereas
+the second term uses the ratings obtained from the unlabeled
+set. Since |L| << |U L|, we give a higher disagreement cost
+to the labeled data, i.e., we give a higher weight to bias
+introduced due to the labeled data. The parameter α > 1
+helps to maintain the relative weight between labeled and
+unlabeled comments. If the number of labeled comments is
+really small, then we may choose to have a higher value for
+α. It is also helpful to choose a large α when a signiﬁcant
+fraction of users are biased on a certain topic.
+4.2 Algorithm properties
+
+In this section, we show that the diﬀerence between two
+iterations is bounded. Later, this is used to show conver-
+gence. We then prove the uniqueness of the system.
+
+4.2.1 Error bound
+
+Theorem 1. The diﬀerence in bias of a node between two
+consecutive iterations t and t + 1 is bounded by an inverse
+
+exponential function of t:
+
+|bias
+
+t+1
+
+(i) − bias
+
+t
+
+(i)| ≤
+
+Proof. See Appendix B.
+
+(cid:9)
+
+(cid:10)t
+
+.
+
+1
+2
+
+(9)
+
+We use this bound to show convergence. This bound also
+helps to determine the number of iterations required apriori.
+
+4.2.2 Convergence
+
+(cid:5)∞
+
+k
+
+1
+2
+
+k=x
+
+For some  > 0, let x be the smallest integer such that
+< . Here, due to Theorem 1,  represents the
+maximum diﬀerence in the bias values between the iteration
+x and any iteration after that. Therefore, for any iterations
+p, q > x, we have :
+
+|bias
+
+p
+
+(i) − bias
+
+q
+
+(i)| <
+
+∞(cid:2)
+
+k=x
+
+k
+
+1
+2
+
+< 
+
+The above sequence is a Cauchy sequence and thus con-
+verges. In practice, we iterate until the diﬀerence (L1 norm)
+between two consecutive iterations across all nodes becomes
+small, say δ.
+It can easily be shown that in order to get
+n
+within the δ range, we are required to do at most log2
+δ
+iterations. We omit the proof due to space constraints. In
+practice, we observed that the algorithm converges in fewer
+iterations (see Section 7.2.4).
+
+4.2.3 Uniqueness
+
+In this section, we provide a proof (by contradiction) for
+the uniqueness of the system. Let there be at least two
+values of bias which satisfy the bias equation. Let bias1(i)
+and bias2(i) be two converged values of node i. Further, let
+δ(i) = bias1(i) − bias2(i) and M = maxp |δ(p)|. Also, let i
+be the node for which we get M . Now, if we can show that
+M is zero, then uniqueness is proved.
+
+Theorem 2. There exists a unique solution to the bias
+
+equation.
+
+Proof.
+
+(cid:11)(cid:11)(cid:11)(cid:11)(cid:11)
+(cid:11)(cid:11)(cid:11)(cid:11)(cid:11)
+(cid:11)(cid:11)(cid:11)(cid:11)(cid:11)(cid:11)
+
+M =
+
+≤
+
+≤
+
+=
+
+(cid:7) (cid:2)
+(cid:7) (cid:2)
+
+j:i→j,j∈U L
+
+j:i→j,j∈U L
+
+2
+
+|bias
+(k) − bias
+⎛
+⎝ (cid:2)
+
+2(α · do
+
+L(i) + do
+
+U L(i))
+
+2(α · do
+
+L(i) + do
+
+U L(i))
+
+(cid:2)
+
+1
+
+di(j)
+
+k:k→j
+
+1
+
+1
+
+1
+
+2(α · do
+
+L(i) + do
+
+U L(i))
+
+M · do
+U L(i))
+L(i) + do
+
+2(α · do
+
+U L(i))
+
+j:i→j,j∈U L
+
+≤ M
+2
+
+(cid:8)(cid:11)(cid:11)(cid:11)(cid:11)(cid:11)
+
+2
+
+(j))
+
+1
+
+(j) − r
+
+wij(r
+
+(cid:3)
+(k)|(cid:4)⎞
+⎠
+⎛
+⎝ 1
+
+di(j)
+
+1
+
+(cid:11)(cid:11)(cid:11)(cid:11)(cid:11)(cid:11)
+
+(cid:2)
+
+M
+
+k:k→j
+
+⎞
+⎠
+
+⎞
+⎠
+
+(cid:11)(cid:11)(cid:11)(cid:11)(cid:11)(cid:11)
+
+By deﬁnition, M is a positive quantity. So the above in-
+equality only holds when M = 0.
+
+5. ACTIVE LEARNING
+
+In the semi-supervised approach, we supply labels to some
+of the comments. We use an active learning based strat-
+egy to pick the comments for labeling. Active learning has
+
+WWW 2012 – Session: Fraud and Bias in User RatingsApril 16–20, 2012, Lyon, France184been shown to give signiﬁcant improvements with few la-
+beled points when chosen interactively. See [21] for a de-
+tailed survey and references therein.
+5.1 Framework
+
+Algorithm 1 ComputeNewRatings
+
+Input: User-comment graph G, existing ratings r, La-
+beled comments L, comment j, new label l for j, neigh-
+borhood hops k;
+Output: New ratings r
+
+for comments in Nk(j);
+
+(cid:5)
+
+We develop a technique based on empirical risk minimiza-
+tion [20, 29]. In each successive step, we pick a comment to
+label such that it minimizes the expected risk on the whole
+data. We assume the true label L(j) for a comment j to be
+either +1 or −1. For a rating, r(j), computed using the ex-
+isting labeled and unlabeled data, we deﬁne a loss function
+as:
+
+loss(j) =
+
+(L(j) − r(j))/2
+(r(j) − L(j))/2
+
+if L(j) = 1
+if L(j) =−1
+
+(10)
+
+(cid:16)
+
+This is not the typical 0/1 loss function. Instead we capture
+the normalized absolute distance between the computed rat-
+ing r(j), and its true label L(j). Notice that our loss function
+has exactly the same formulation as bias (see Section 3.1).
+Now, the expected risk across all the comments 1, . . . , n is
+given by:
+
+n(cid:2)
+
+(cid:2)
+
+Risk =
+
+i=1
+
+l=−1,+1
+
+p(L(j) =l ) · loss(j)
+
+(11)
+
+Since the true label L(j) is unknown, we use r(j) to esti-
+mate the probability that L(j) has label l. We ensure that
+this probability lies in [0, 1] by shifting and scaling r(j).
+
+p(L(j) = +1) ≈ (1 + r(j))
+
+2
+
+(12)
+
+Therefore, the estimated expected risk,
+puted as follows:
+
+ˆRisk can be com-
+
+ˆRisk =
+
+(cid:9)
+
+n(cid:2)
+n(cid:2)
+
+j=1
+
+=
+
+j=1
+
+(1 + r(j))
+
+2
+1 − r2(j)
+
+2
+
+· (1 − r(j))
+
+2
+
++
+
+(1 − r(j))
+
+2
+
+· (1 + r(j))
+
+2
+
+(13)
+
+If we add a label to a comment, say j, then this will result
+in new values for bias and unbiased ratings for all nodes.
+Thus, the estimated risk will also change. Note that the
+estimated risk will be diﬀerent for diﬀerent labels (+1 or
+−1) for the comment j. Let
+denote the estimated
+risk after adding comment j and label l. Again, since we
+don’t know the true label l for j, we use r(j) to estimate
+the probability of L(j) = l and weigh the risk for each la-
+bel l by the probability estimates. Therefore, the estimated
+expected risk after adding comment j will be
+(1 − r(j))
+
+(1 + r(j))
+
++(j,−1)
+
+ˆRisk
+
++(j,1)
+
++(j,l)
+
++j
+
+ˆRisk
+
+=
+
+ˆRisk
+
++
+
+ˆRisk
+
+2
+
+2
+
+(14)
+
+We choose the comment k to label that minimizes the esti-
+mated expected risk as
+
+k = arg min
+
+j
+
+( ˆRisk
+
++j
+
+)
+
++j
+
+ˆRisk
+
+To pick a comment to label, we need to ﬁnd the expected
+for each comment j which involves computing
+risk
+unbiased rating and bias scores for all nodes in the graph
+using our semi-supervised algorithm. Moreover, we run the
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
+;
+
+in G
+
+in G are not all in G
+
+be the subgraph of G comprising nodes in Nk(j);
+such that neighbors
+of all comments in L ∪ X to their rating
+
+Let G
+Let X be the set of comments j
+of j
+Fix ratings r
+values in r;
+(cid:5)
+Fix rating r
+Run semi-supervised (iterative) algorithm on G
+ratings of comments in L ∪ X ∪ {j} ﬁxed;
+(cid:5)
+(cid:5)
+Let r
+be the new ratings for comments j
+return {r
+
+(cid:5) ∈ Nk(j)};
+
+(cid:5)
+
+keeping
+
+(j) to l;
+
+in G
+
+) :j
+
+(j
+
+;
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
++(j,l)
+
+ˆRisk
+
+algorithm twice to compute
+for each possible label
+l (−1 and +1). Thus, each iteration of the active learning
+procedure has time complexity O(mn), and it is very ex-
+pensive to ﬁnd a single comment to label. Even if we use a
+matrix based procedure to update the risks (as in [29]), it is
+still very expensive with time complexity O(n2). Also, the
+matrix based procedure requires the matrix to be inverted
+initially. This motivates us to design a fast and scalable
+technique to approximate expected risk. Here, we exploit
+the fact that the unbiased rating and bias score of a node
+depends primarily on the nodes in its close vicinity (see Sec-
+tion 6.2).
+
+(cid:10)
+
+5.2 Scalable learning algorithm
+
+(cid:5)
+
+(cid:5)
+
+At the core of our scalable active learning algorithm is an
+extremely fast procedure for computing new ratings r
+(from
+current ratings r) when a single comment j is assigned a la-
+bel l. Let Nk(j) denote the comments within k hops of com-
+ment j, and let G
+be the subgraph of G consisting of nodes
+in Nk(j). In Section 6.2, we make the following key observa-
+tion: a node’s inﬂuence decreases exponentially as the length
+of the path is increased. As a result, the label assignment
+to j mainly aﬀects the ratings of comments in the immedi-
+ate neighborhood of j. Thus, we only need to compute new
+ratings for comments in Nk(j) (for a small k) which can be
+accomplished very eﬃciently by running our semi-supervised
+iterative algorithm on the much smaller graph G
+instead of
+the entire graph G. And these new ratings for comments
+in Nk(j) can in turn be used to eﬃciently approximate the
+
+(cid:5)
+
++(j,l)
+
+ˆRisk
+
+. Note also that each time a com-
+expected risk
+ment j is labeled, only the ratings for comments in its neigh-
+borhood Nk(j) change, and so we only need to re-estimate
+
++(j(cid:2),l)
+
+ˆRisk
+
+(cid:5)
+
+for comments j
+
+the expected risk
+
+in its 2k-hop
+neighborhood N2k(j). This is because the
+val-
+(cid:5) ∈ N2k(j) could have changed since
+ues of only comments j
+these are the only comments whose k-hop neighborhoods
+have comments with new (changed) ratings.
+
++(j(cid:2),l)
+
+ˆRisk
+
+(cid:5)
+
+Algorithm 1 describes our procedure for computing the
+new ratings r
+of comments in the k-hop neighborhood of a
+comment j when its label is set to l. As mentioned earlier,
+this procedure is at the core of our active learning algorithm.
+Since G is bipartite, parameter k is set to an even value,
+
+WWW 2012 – Session: Fraud and Bias in User RatingsApril 16–20, 2012, Lyon, France185Algorithm 2 FastActiveLearning
+
+2
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
+;
+
+i=1
+
+1−r2(i)
+
+= ˆRisk +
+
+(cid:5)
+(cid:5)
+
+Input: User-comment graph G, number of labels N ,
+neighborhood hops k;
+Output: Set of labeled comments L with labels;
+L = ∅;
+(cid:5)n
+Run semi-supervised algorithm on G to compute ratings
+r;
+ˆRisk =
+S = {1, . . . , n};
+while |L| < N do
+for each j ∈ S do
+
+)} =ComputeNewRatings(G, r, L, j, +1, k);
+
++(j,1)
+)} =ComputeNewRatings(G, r, L, j,−1, k);
+(cid:5)
++(j,−1)
+
+{r
+(j
+ˆRisk
+{r
+(j
+ˆRisk
+ˆRisk
+end for
+Select comment j with highest expected estimated risk
+ˆRisk
+L = L ∪ {j};
+r(j) = L(j) =l ;
+{r
+ˆRisk = ˆRisk +
+(cid:5)
+Set ratings r(j
+S = {j
+end while
+return {L(j) :j ∈ L};
+
+)} =ComputeNewRatings(G, r, L, j, l, k);
+(cid:5) ∈ Nk(j);
+
+j(cid:2)∈Nk(j)
+(cid:5) ∈ N2k(j)} − L;
+
+= ˆRisk +
+ˆRisk
+
+2
+(1−r(j))
+ˆRisk
+
+and let l be the label for j;
+
+) for comments j
+
+r(j)2−r(cid:2)(j)2
+
+r(j)2−r(cid:2)(j)2
+
+r(j)2−r(cid:2)(j)2
+
+;
++(j,−1)
+
+j(cid:2)∈Nk(j)
+
+j(cid:2)∈Nk(j)
+
+(cid:5)
+
+) = r
+
+(1+r(j))
+
++(j,1)
+
+: j
+
+(j
+
+(j
+
+=
+
++
+
++j
+
++j
+
+;
+
+;
+
+;
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
+2
+
+2
+
+2
+
+2
+
+(cid:5)
+(cid:5)
+
+(cid:5)
+
+for e.g., 4. Now, in the subgraph G
+comprising nodes in
+Nk(j), there may be comment nodes j
+that are k hops from
+j such that edge i → j
+. Since all the
+neighbors of j
+, our semi-supervised
+algorithm may not compute its rating precisely, and so we
+ﬁx j
+’s ratings. We also ﬁx the ratings of labeled comments
+in L and comment j with label l.
+
+is in G and i (cid:3)∈ G
+
+are not contained in G
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
+(cid:5)
+
++j
+
++(j,l)
+
+ˆRisk
+
+Our fast neighborhood-based active learning procedure is
+described in Algorithm 2. The algorithm keeps track of
+ˆRisk. It com-
+the total expected risk for all comments in
+putes
+for a comment j using Equation (14) where
+(cid:5)
+is estimated from ˆRisk and the new ratings r
+ˆRisk
+for comments in Nk(j) returned by ComputeNewRating.
+Once the comment j with the highest
+value is la-
+beled, say with label l, the new ratings r
+for comments in
+j’s neighborhood are re-computed (by invoking Compute-
+ˆRisk is adjusted to reﬂect the new rat-
+NewRating) and
+(cid:5) ∈ N2k(j)
+ˆRisk
+ings r
+. Also, the
+whose neighborhoods overlap with j’s neighborhood are re-
+computed since ratings of comments in j’s neighborhood
+may have changed. The procedure terminates once N com-
+ments have been labeled.
+
+values for comments j
+
+ˆRisk
+
++j
+
++j
+
+(cid:5)
+
+(cid:5)
+
+Note that we can periodically re-run our semi-supervised
+algorithm on the entire graph G to ensure that our ratings
+and expected risk estimates for nodes remain fairly accurate.
+To optimize even further, after computing the risk for all the
+nodes, we can select a batch of the top m comments with
+the highest risk to label.
+
+6. ANALYTICAL SOLUTION AND CONNEC-
+
+TION WITH OTHER WORK
+
+In this section, we give the analytical solution to our unsu-
+pervised method. This can also be generalized to the semi-
+supervised method.
+6.1 Analytical solution
+i = diag{1/di(1), . . . ,1 /di(n)},
+−1
+
+Let A be the adjacency matrix of the graph. Also, let the
+
+inverse in-degree matrix be D
+−1
+and likewise, we have the inverse outdegree matrix D
+o . As-
+sume a zero entry in case d(i) is zero. Let (cid:5)b and (cid:5)r be the
+vectors for bias and unbiased rating. The analytical solution
+of unbiased rating using Equations (5) and (6) is given as
+follows:
+(cid:5)r = (I − 1
+2
+
+T − 1
+2
+
+−1
+o A)
+
+−1
+o ) (cid:5)1
+
+−1
+i A
+
+−1
+i A
+
+−1
+i A
+
+(D
+
+−1
+
+D
+
+D
+
+D
+
+D
+
+T
+
+T
+
+(15)
+
+2 D
+
+−1
+o A)
+
+−1
+i AT D
+
+For completeness, we give a short proof of the existence of
+(I − 1
+−1 in Appendix C. We can similarly
+give an analytical solution to the bias vector (cid:5)b as follows:
+−1
+o ) (cid:5)1
+(16)
+
+(I − 1
+2
+
+o − D
+−1
+
+−1
+o AD
+
+−1
+i A
+
+−1
+i A
+
+−1
+i A
+
+(D
+
+(cid:5)b =
+
+−1
+
+1
+2
+
+D
+
+D
+
+D
+
+)
+
+T
+
+T
+
+T
+
+6.2 Interpretation of the solution
+
+In this subsection, we examine the solution in depth and
+explore the connection with other works. The ﬁrst observa-
+−1
+(cid:5)
+tion we make is that matrices D
+o A are simply
+the row-normalized (L0 or L1) forms of AT and A. That
+j |aij|. From here on,
+is, for any aij, we divide it with
+(cid:5)T and A
+we refer to D
+Rewriting (cid:5)r, we get
+
+−1
+i AT and D
+
+−1
+i AT and D
+
+−1
+o A as A
+
+, respectively.
+
+(cid:5)(cid:5)
+
+(cid:5)r = (I − 1
+2
+
+(cid:5)T
+
+−1
+
+(cid:5)(cid:5)
+
+)
+
+A
+
+(cid:5)y
+
+A
+
+(17)
+
+−1
+i AT D
+
+i AT − 1
+−1
+2 D
+
+−1
+o ) (cid:5)1 . The matrix A
+
+(cid:5)T A
+
+(cid:5)(cid:5)
+
+Here, (cid:5)y = (D
+is
+a co-citation matrix with some normalization. It means that
+if two users have given a similar score (+1 or −1) to many
+comments, then their co-citation score would be high. How-
+ever, if their opinions diﬀer (they give diﬀerent scores), then
+the co-citation score would be negative. Note that when we
+typically refer to a co-citation matrix, we assume that ma-
+trix would have all non-negative entries. However, this is not
+the case with A
+. Entries of the principal eigenvectors
+of a non-negative co-citation matrix are also the motivation
+behind the famous HITS algorithm. Therefore, our algo-
+rithm also resembles HITS closely, especially Randomized
+HITS [27].
+By choosing (1 − )2 = 1/2 (see Section 5.1 in [27]), we
+can notice the close resemblance of Equation (15) with the
+authority vector (cid:5)a of Randomized HITS which is given by
+
+(cid:5)T A
+
+(cid:5)(cid:5)
+
+(cid:5)a = (I − 1
+2
+
+T
+rowAcol)
+
+A
+
+−1(cid:5)k
+
+(18)
+
+Here, vectors (cid:5)y (Equation (17)) and (cid:5)k (Equation (18)) set
+prior weights for diﬀerent nodes. The rating vector (cid:5)r is sim-
+ilar to the authority vector. A similar interpretation can be
+deduced for the bias vector, which relies on the co-reference
+matrix.
+(I − 1
+2 A
+
+To gain more insight, we now approximate the matrix
+−1 by a generalization of the geometric series
+
+(cid:5)T A
+
+(cid:5)(cid:5)
+
+)
+
+WWW 2012 – Session: Fraud and Bias in User RatingsApril 16–20, 2012, Lyon, France186(cid:5)(cid:5)
+
+(cid:5)T
+
+(cid:5)(cid:5)
+
+2
+
+)
+
+A
+
+A
+
+A
+
+1
+2
+(cid:5)T A
+
+known as the Neumann series (see Section 4.1 from matrix
+algorithms [23]), as:
+(I − 1
+2
+
++ . . . (19)
+
+= I + (
+
+)+(
+
+1
+2
+
+(cid:5)(cid:5)
+
+−1
+
+A
+
+)
+
+(cid:5)T
+
+(cid:5)T
+
+A
+
+A
+
+(cid:5)(cid:5)
+
+Notice that higher-order terms are higher-order co-citation
+)l]ij represents the co-citation
+matrices. An element [(A
+score between nodes i and j using network paths of length
+l. We can observe that if the length of a path is increased
+by 1, its contribution decreases by 1/2, indicating that bias
+and unbiased rating scores of nodes are heavily inﬂuenced
+by other nodes in their neighborhood. Here, the ﬁrst few
+terms provide a good approximation of the inverse matrix.
+
+Category
+
+# votes # comments # thumbs-up # users
+
+Business (bs)
+Science (sc)
+
+US (us)
+
+Politics (pl)
+World (wl)
+
+3.7M
+871K
+7.2M
+1.4M
+4M
+
+89.8K
+21.8K
+156.9K
+37.1K
+111K
+
+2.3M
+491K
+4.4M
+866K
+2.3M
+
+98K
+39K
+171K
+44K
+112K
+
+Table 1: Dataset description.
+
+7. EXPERIMENTS
+
+In this section, we give experimental evidence of the supe-
+riority of our techniques under diﬀerent settings. We then
+discuss the topicality of user bias, and ﬁnally, we show the
+convergence rate of the algorithm.
+7.1 Experimental Setup
+
+7.1.1 Dataset description
+
+The dataset consists of comments from Yahoo! News.
+
+Each comment belongs to a particular news article pre-categorized
+as politics (pl), business (bs), world (wl), science (sc), and
+US (us). We use the terms category and topic interchange-
+ably throughout this section. While creating the dataset,
+we considered the votes of only frequent users (minimum
+≈ 10 votes), and extracted comments with at least ≈ 10
+votes from frequent users. Therefore, it is possible to have
+users with less than 10 votes in the dataset. Table 1 con-
+tains a description of the dataset for diﬀerent categories –
+each category dataset comprises comments belonging to the
+category and users that rate these comments.
+
+7.1.2 Evaluation methodology
+
+We collected editorial reviews on 456 comments from three
+editors across all categories. Editors followed general edito-
+rial guidelines while rating a comment such as harms minors
+in any way, content that is unlawful, harmful, threatening,
+abusive, harassing, tortuous, defamatory, vulgar, etc. We
+consider the mean rating (between -1 and +1) provided by
+the three editors as the true label of a comment. We consider
+this editorial rating as the ground truth, and compare our
+techniques, namely unsupervised method, semi-supervised
+method with random labels, and semi-supervised method
+with active learning. We also give a detailed comparison
+with the simple mean of user ratings, which is currently
+used in most systems. We run the algorithms separately for
+each topic.
+
+As discussed in Section 3.1, other works [13, 17] have dif-
+ferent notions of bias which do not ﬁt well in the comment-
+rating environment. We present the results for a represen-
+tative approach in Section 7.2.5.
+
+7.1.3 Performance metric
+
+We refer to the rating returned by the unsupervised and
+semi-supervised techniques as the unbiased rating, and the
+rating based on the mean (avgi{wij}) as the mean rating.
+We compare these two ratings with the 456 available edito-
+rial ratings score (which we assume to be the ground truth),
+and compute the mean-square-error (MSE). We also present
+the relative improvement of our algorithms over mean rat-
+ing. The relative improvement is the percentage decrease in
+MSE over mean rating.
+
+7.2 Experimental Results
+
+7.2.1 Unsupervised Setting
+
+In this subsection, we compare the results of our unsuper-
+vised technique with the mean rating. We show the MSE of
+these two ratings in Table 2. The second column depicts the
+MSE between unbiased ratings and the editorial ratings for
+diﬀerent categories. We can observe that even an unsuper-
+vised approach signiﬁcantly reduces the error over the mean
+rating (in the third column).
+
+The percentage decrease (fourth column) shows the rela-
+tive improvement our algorithm has over the mean rating. In
+all the categories, we have signiﬁcantly outperformed mean
+rating with at least 35% improvement. Observe that our al-
+gorithm has much better performance in categories such as
+science and US. In later experiments, we only show the per-
+centage improvement rather than the actual MSE numbers
+as it helps in easy comparison across categories.
+
+Unbiased Rating Mean Rating
+
+%
+
+bs
+sc
+us
+pl
+wl
+
+Error
+0.21
+0.16
+0.18
+0.12
+0.22
+
+Error
+0.34
+0.29
+0.34
+0.2
+0.37
+
+decrease
+
+38
+44
+48
+36
+39
+
+Table 2: Results for our unsupervised algorithm.
+The unsupervised technique outperforms the base-
+line mean rating on all topics.
+
+7.2.2
+
+Semi-supervised Setting
+
+In the unsupervised setting, we ran the algorithm on nearly
+400K comments and tested the output on 456 labeled com-
+ments. In the semi-supervised algorithm, we supply some
+labels and then test the algorithm. However, even for semi-
+supervised learning, we require a meaningful number of la-
+beled comments. But 456 is too small for both training and
+testing. Therefore, we created a smaller dataset for our semi-
+supervised algorithm. We built a new dataset with these
+456 labeled comments representing 10% of the data. Com-
+ments which received the most ratings constitute the rest
+(≈ 90%). This ensures that the resulting graph is well con-
+nected. Note here that connectivity is important because
+running the algorithm on two disconnected components is
+the same as running on them separately.
+
+Semi-supervised with random labels: In this setting,
+we compare the unsupervised and semi-supervised (with ran-
+dom labels) algorithms. In the semi-supervised setting with
+random labels, we supply roughly 50% of the labels (rep-
+resenting ≈ 5% of the data) to the algorithm. We test on
+
+WWW 2012 – Session: Fraud and Bias in User RatingsApril 16–20, 2012, Lyon, France187We compiled a list of users who voted on comments across
+all the topics and thus, we have their bias scores (computed
+by our unsupervised algorithm). Therefore, we have ﬁve bias
+scores for each user. We compute the minimum and max-
+imum bias scores across ﬁve categories for each user. The
+diﬀerence between the minimum and maximum scores is a
+good indication of the topicality of bias. Table 5 shows the
+diﬀerence in bias for the top percentile of users. Observe
+that there is a signiﬁcant diﬀerence in bias scores even for
+the 40th percentile.
+
+Percentile
+
+Bias
+
+0.1% 1%
+0.34
+0.43
+
+5% 10% 20% 30% 40%
+0.15
+0.27
+
+0.23
+
+0.2
+
+0.17
+
+Table 5: Maximum bias diﬀerence of a user across
+diﬀerent categories.
+
+7.2.4 Analysis of rate of convergence
+
+We iterate until the L1 diﬀerence between two consecutive
+iterations across all the nodes becomes very small. We refer
+to this diﬀerence as error, calculate it as follows:
+
+(cid:2)
+
+error =
+
+i
+
+|f
+
+t+1
+
+(i) − f
+
+t
+
+(i)|
+
+(20)
+
+Here, function f t(i) represents the bias/unbiased rating of
+node i, and at iteration t. As we continue to iterate, we
+expect the error to decrease.
+
+Earlier, in Theorem 1, we proved that the error between
+two consecutive iterations decreases exponentially as we per-
+form more iterations. In Figure 2, we show the errors of un-
+biased rating and bias after each iteration. We can observe
+that the error has reduced signiﬁcantly after a few itera-
+tions. Theoretically, we expect the error to decrease from
+1000 (≈ 210) to 1 after at most 10 iterations. However, we
+can observe that in practice the decrease is much faster than
+anticipated (≈ 105 to 1 in 10 iterations).
+
+the remaining 50% of the labels. The relative improvement
+over the mean rating for diﬀerent values of α is displayed
+in Table 3. We can observe that with only 5% labeled com-
+ments, the performance of semi-supervised has improved sig-
+niﬁcantly over the unsupervised technique. We obtained the
+best performance for α = 10. For a category such as politics,
+we indeed see a dramatic improvement.
+
+Another interesting comparison is between the unsuper-
+vised algorithm on the larger dataset (Table 2) and the
+smaller subset (Table 3). Running the algorithm on the
+bigger dataset generally gave superior performance (except
+in category business). The implication here is that the al-
+gorithm improves with more data.
+
+Semi-supervised (random labels)
+α = 1 α = 3
+
+α = 10
+
+Unsupervised
+
+bs
+sc
+us
+pl
+wl
+
+36
+26
+46
+59
+35
+
+37
+26
+47
+62
+36
+
+40
+27
+49
+64
+38
+
+34
+26
+46
+30
+33
+
+Table 3: Comparison between the unsupervised and
+semi-supervised algorithm. Semi-supervised shows
+improvement, especially in category politics.
+
+Semi-supervised with active learning: The goal of the
+active learning technique is to maximize performance with
+few labels. Therefore, we let the algorithm pick 10% of the
+labeled data (that constitutes only 1% of all the comments).
+Recall that the labeled data comprises 456 comments. We
+compare our active learning scheme with the earlier semi-
+supervised algorithm with random labels (50% of the la-
+beled data). The results are shown in Table 4. With just
+1% labeled comments (chosen actively), the active learn-
+ing algorithm outperforms random that uses 5% in most
+of the categories (except for politics). Here, note that we
+restrict our active learning method to pick comments only
+from the available set of editorial ratings, and this may be
+sub-optimal. In an ideal scenario, however, our algorithm
+can select any comment to label. Therefore, we expect ac-
+tive learning to perform even better in practice.
+
+Semi-supervised
+
+Active Learning Random labels
+labeled = 5%
+
+labeled = 1%
+
+bs
+sc
+us
+pl
+wl
+
+37.8
+39.0
+48.9
+29.7
+35.7
+
+36.4
+26.7
+46.6
+59.9
+35.1
+
+Table 4: Comparison between random labels and
+labels identiﬁed with active learning.
+In general,
+active learning gives better performance with fewer
+labels.
+
+7.2.3 Topicality of bias
+
+We examine the user’s bias across ﬁve categories. We
+mentioned earlier that a user could be biased on certain
+topics. This phenomenon of topicality is discussed in this
+subsection, as well as in some earlier work [8].
+
+Figure 2: Error decreases exponentially with itera-
+tions.
+
+7.2.5 Comparison with Other Schemes
+
+Related approaches, e.g., [17] consider bias to be the propen-
+
+sity of a user to consistently give higher or lower ratings than
+others. In this subsection, we consider one such representa-
+tive approach [17] that uses an iterative algorithm to capture
+the above notion of bias. Figure 3 shows the rating scores
+obtained by running the algorithm of [17] on the science cat-
+egory after 10 iterations. Unfortunately, the algorithm did
+not converge (for any topic), returned ratings that are out of
+
+WWW 2012 – Session: Fraud and Bias in User RatingsApril 16–20, 2012, Lyon, France188techniques on graphs [3, 28, 29] usually make the smooth-
+ness assumption, i.e., neighboring nodes share similar labels.
+However, this assumption is not valid in our case.
+
+A comprehensive survey of active learning schemes for se-
+lecting data to label can be found in [21]. There has been
+a limited amount of work on active learning in graphs [5, 9,
+29]. To the best of our knowledge, no prior work has con-
+sidered the bipartite graph similar to our model. Existing
+results also assume smoothness on graphs. Few heuristics
+such as [2, 18] also exist, which rely on ﬁnding communi-
+ties and picking a representative. Our technique is based on
+empirical risk minimization [20, 29], and includes optimiza-
+tions to incrementally compute risk for neighboring nodes
+each time a comment is labeled. Thus, our active learning
+method can scale to large user-comment graphs.
+
+9. CONCLUSIONS
+
+In this paper, we proposed a semi-supervised learning
+technique for correcting the bias in user ratings. We showed
+that our algorithm has a number of desirable properties such
+as convergence, uniqueness, and low computational cost.
+Furthermore, we presented a scalable active learning algo-
+rithm that greedily chooses comments to label such that
+the overall expected risk is minimized. Empirical results on
+real-life comments from Yahoo! News show that our semi-
+supervised method, even without any labeled data, reduces
+error by as much as 48% over baseline measures. With only
+5% random labels, the error reductions increase further to
+as much as 64%. Furthermore, with active learning we are
+able to achieve superior performance in most of the cate-
+gories with only 1% labeled data. An interesting direction
+for future work is to exploit the textual content of comments
+along with the structural information used by our algorithms
+to further improve the accuracy of computed ratings.
+
+10. ACKNOWLEDGMENTS
+
+The authors are grateful to the reviewers for their helpful
+comments. We thank Deepak Agarwal and Bee-Chung Chen
+for sharing the dataset, and Vineet Chaoji for the useful
+feedback.
+
+11. REFERENCES
+[1] D. Agarwal, B.-C. Chen, and B. Pang. Personalized
+
+recommendation of user comments via factor models. In
+EMNLP, 2011.
+
+[2] M. Bilgic, L. Mihalkova, and L. Getoor. Active learning for
+
+networked data. In ICML, 2010.
+
+[3] A. Blum and S. Chawla. Learning from labeled and
+
+unlabeled data using graph mincuts. In ICML, 2001.
+
+[4] S. Brin and L. Page. The anatomy of a large-scale
+
+hypertextual web search engine. Computer Networks,
+30(1-7):107–117, 1998.
+
+[5] N. Cesa-Bianchi, C. Gentile, F. Vitale, and G. Zappella.
+
+Active learning on trees and graphs. In COLT, 2010.
+
+[6] B.-C. Chen, J. Guo, B. Tseng, and J. Yang. User reputation
+
+in a comment rating environment. In KDD, 2011.
+
+[7] N. Diakopoulos and M. Naaman. Topicality, time and
+
+sentiment in online news comments. In CHI EA ’11, 2011.
+[8] N. Diakopoulos and M. Naaman. Towards quality discourse
+
+in online news comments. In CSCW, 2011.
+
+[9] A. Guillory and J. Bilmes. Label Selection on Graphs. In
+
+NIPS. 2009.
+
+[10] C.-F. Hsu, E. Khabiri, and J. Caverlee. Ranking comments
+
+on the social web. In ICCSE, 2009.
+
+Figure 3: Ratings histogram obtained for the algo-
+rithm of [17].
+
+scale (0 to 500), and was very sensitive to the initial choice
+of seed values. This does not allow us to make a meaning-
+ful comparison with our algorithm and the baseline mean
+rating.
+
+8. RELATED WORK
+
+Comment quality in social media has been studied in great
+detail (see [8] and references therein). There are diﬀerent as-
+pects of quality [11, 24] such as relevance, validity, ﬂaming,
+etc. It is important to hide or delete low quality content.
+Since the volume of comments on the internet is huge, utiliz-
+ing the knowledge of crowds appears to be a viable option.
+Techniques to analyze and improve the quality of content
+through moderation have been studied in [14, 15].
+
+Going beyond moderation, there have been several re-
+search eﬀorts aimed at ranking comments.
+[10] proposes
+to rank comments in the absence of explicit positive and
+negative ratings. It uses a machine learning based approach
+to train a regression model with features based on content,
+message visibility, and user reputation.
+[22] investigates
+comment usefulness, another related quality measure, on
+YouTube. It employs bag-of-word features to train classiﬁ-
+cation models for deciding the usefulness of new comments.
+User votes are not used as features, instead they are used
+for deﬁning training data, i.e., comments that receive many
+positive votes are assumed to be useful. Note that this prob-
+lem is complementary to ours. Because of bias, comments
+with many positive votes may still be abusive – our bias cor-
+rection schemes help to address this. In [1], generalizations
+of matrix factorization that leverage both features and past
+ratings are used to recommend comments to users.
+
+Author reputation in a comment rating environment is
+studied in [6]. User bias is deﬁned as the propensity to
+give excessive thumbs-ups/thumbs-downs, and is factored
+in while computing reputation. As mentioned earlier in Sec-
+tion 3.1, this deﬁnition of bias diﬀers from ours. Similar
+deﬁnitions of bias as the average deviation from the unbi-
+ased rating have been considered in [13, 16, 17]. Thus, if a
+user gives adversarial ratings such as high ratings to poor
+comments and low ratings to good comments, then it is pos-
+sible to keep his/her bias artiﬁcially close to zero. However,
+this is not possible with our formulation. Our work is also
+related to the work on modeling trustworthiness of data [25,
+26].
+
+In our work, we require labels for a few comments. Our
+algorithm combines these labeled and unlabeled comments
+together to compute user bias and unbiased ratings for unla-
+beled comments. Such an approach falls under semi-supervised
+learning where both labeled and unlabeled data are utilized
+together to come up with better models. Semi-supervised
+
+WWW 2012 – Session: Fraud and Bias in User RatingsApril 16–20, 2012, Lyon, France189[11] S. Kiesler, J. Siegel, and W. McGuire, Timothy.
+
+Computer-supported cooperative work: a book of readings.
+chapter Social psychological aspects of computer-mediated
+communication (Reprint), pages 657–682. Morgan
+Kaufmann Publishers Inc., 1988.
+
+[12] J. M. Kleinberg. Authoritative sources in a hyperlinked
+
+environment. J. ACM, 46(5):604–632, 1999.
+
+[13] Y. Koren. Factorization meets the neighborhood: a
+
+multifaceted collaborative ﬁltering model. In KDD, 2008.
+
+[14] C. Lampe and P. Resnick. Slash(dot) and burn: distributed
+
+moderation in a large online conversation space. In CHI,
+2004.
+
+[15] C. A. Lampe, E. Johnston, and P. Resnick. Follow the
+reader: ﬁltering comments on slashdot. In CHI, 2007.
+
+[16] H. W. Lauw, E.-P. Lim, and K. Wang. Bias and
+
+controversy: beyond the statistical deviation. In KDD,
+2006.
+
+[17] H. W. Lauw, E.-P. Lim, and K. Wang. Summarizing review
+
+scores of ”unequal” reviewers. In SDM, 2007.
+
+[18] S. A. Macskassy. Using graph-based metrics with empirical
+risk minimization to speed up active learning on networked
+data. In KDD, 2009.
+
+[19] K. Purcell, L. Purcell, A. Mitchell, T. Rosenstiel, and
+
+K. Olmstead. Understanding the participatory news
+consumer. Pew Internet and American Life Project, 2010.
+[20] N. Roy and A. McCallum. Toward optimal active learning
+through sampling estimation of error reduction. In ICML,
+2001.
+
+[21] B. Settles. Active learning literature survey. Computer
+
+Sciences Technical Report 1648, University of
+Wisconsin–Madison, 2009.
+
+[22] S. Siersdorfer, S. Chelaru, W. Nejdl, and J. S. Pedro. How
+
+useful are your comments?: analyzing and predicting
+youtube comments and comment ratings. In WWW, 2010.
+
+[23] G. W. Stewart. Matrix Algorithms: Volume 1, Basic
+
+Decompositions. Society for Industrial Mathematics, 1998.
+[24] D. M. Strong, Y. W. Lee, and R. Y. Wang. Data quality in
+
+context. Commun. ACM, 40:103–110, May 1997.
+
+[25] V. G. V. Vydiswaran, C. Zhai, and D. Roth. Content-driven
+
+trust propagation framework. In KDD, 2011.
+
+[26] X. Yin, J. Han, and P. S. Yu. Truth discovery with multiple
+
+conﬂicting information providers on the web. IEEE Trans.
+Knowl. Data Eng., 20(6):796–808, 2008.
+
+[27] A. X. Zheng, A. Y. Ng, and M. I. Jordan. Stable algorithms
+
+for link analysis. In SIGIR, 2001.
+
+[28] X. Zhu, Z. Ghahramani, and J. D. Laﬀerty.
+
+Semi-supervised learning using gaussian ﬁelds and
+harmonic functions. In ICML, 2003.
+
+[29] X. Zhu, J. Laﬀerty, and Z. Ghahramani. Combining active
+learning and semi-supervised learning using gaussian ﬁelds
+and harmonic functions. In ICML 2003 workshop on The
+Continuum from Labeled to Unlabeled Data in Machine
+Learning and Data Mining, pages 58–65, 2003.
+
+APPENDIX
+A.
+
+PROOF OF LEMMA 1
+
+Lemma 1. The diﬀerence of ratings in two ratings, p and q is
+
+at most 1.
+
+|rp(i) − rq(i)| ≤ 1
+
+Proof. If i ∈ L, then |rp(i)− rq(i)| = 0. We now prove where
+
+comment i is not labeled.
+
+wij (biasq−1(i) − biasp−1(i))
+
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2) 1
+
+di(j)
+
+(cid:3)
+i:i→j
+
+|rp(i) − rq(i)| =
+(cid:3)
+i:i→j
+
+≤ 1
+di(j)
+
+|biasq−1(i) − biasp−1(i)| ≤ 1
+di(j)
+
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)
+
+(cid:3)
+i:i→j
+
+1 = 1
+
+Last inequality comes from the fact that bias∗
+fore |bias∗
+
+(i) − bias∗
+
+(i)| ≤1.
+
+(i) ∈ [0, 1], there-
+
+B. PROOF OF THEOREM 1
+
+We show the bound of Theorem 1 of Section 4.2.1. We prove
+
+this using mathematical induction to prove the error bound.
+
+Proof. Basis: We ﬁrst prove for t = 1.
+|bias2(i) − bias1(i)|
+
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)
+
+=
+
+≤
+
+≤
+
+=
+
+⎛
+⎝ (cid:3)
+⎛
+⎝ (cid:3)
+⎛
+⎝ (cid:3)
+
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)
+
+⎞
+⎠
+wij (r1(j) − r0(j))
+⎞
+⎠
+
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2) [using Lemma 1]
+
+|r1(j) − r0(j)|
+⎞
+⎠
+
+1
+
+1
+
+1
+
+1
+
+2 · (α · do
+
+L(i) +d o
+
+U L(i))
+
+j:i→j,j∈U L
+
+2 · (α · do
+
+L(i) +d o
+
+U L(i))
+
+j:i→j,j∈U L
+
+U L(i))
+
+2 · (α · do
+L(i) +d o
+do
+U L(i))
+2 · (α · do
+L(i) + do
+
+U L(i))
+
+j:i→j,j∈U L
+
+≤ 1
+2
+
+2 · (α · do
+
+L(i) + do
+
+This conﬁrms the basis.
+Induction step: We assume the bound to be true for bt(i), i.e.,
+for the tth iteration. In the (t + 1)th iteration,
+|biast+2(i) − bt+1(i)| =
+
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)
+
+1
+
+1
+
+U L(i))
+
+j:i→j,j∈U L
+
+⎛
+⎝ (cid:3)
+⎛
+⎝ (cid:3)
+
+⎞
+⎠
+wij (rt+1(j) − rt(j))
+(cid:8)
+|wkj||biast+1(k) − biast(k)|(cid:9)⎞
+⎠
+⎛
+⎝ 1
+di(j)
+
+j:i→j,j∈U L
+
+(cid:3)
+k:k→j
+
+U L(i))
+
+⎞
+⎠
+
+(cid:11)t
+
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)
+
+(cid:10)
+
+1
+2
+
+⎞
+⎠
+
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)
+
+2 · (α · do
+L(i) + do
+(cid:3)
+k:k→j
+
+di(j)
+
+1
+
+1
+
+2 · (α · do
+
+L(i) + do
+
+⎛
+⎝ (cid:3)
+(cid:11)t+1 ≤
+
+j:i→j,j∈U L
+(cid:10)
+
+1
+2
+
+U L(i))
+(cid:10)
+
+[Induction Assumption]
+
+(cid:11)t+1
+
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)
+
+(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)(cid:2)
+
+=
+
+≤
+
+≤
+
+=
+
+do
+U L(i))
+(α · do
+L(i) +d o
+
+U L(i))
+
+·
+
+1
+2
+
+2
+
+D−1
+i AT D−1
+
+o A) (see Section 6).
+
+C. PROOF OF EXISTENCE OF THE INVERSE
+inverse of matrix (I − 1
+
+In this section, we present a small proof of existence of the
+For a matrix A, if ρ(A) < 1, then (I−A)
+−1 exists (see Theorem
+4.20 from matrix algorithms [23]), where ρ(A) denotes the spec-
+tral radius of A. Let ||.||∞ denote the inﬁnity norm; it satisﬁes
+||A||∞ ≥ ρ(A) and is submultiplicative, i.e., ||AB|| ≤ ||A|| ||B||.
+o A|| < 1, then it will prove
+If we can show that || 1
+i AT D−1
+D−1
+ρ( 1
+o A) < 1 and subsequently, the existence of the
+2
+inverse.
+||D−1
+i AT D−1
+o A||∞. Ob-
+Now, 1
+2
+serve that the maximum absolute sum of each row of D−1
+i AT
+and D−1
+o A is 1, which shows that ||.||∞ of these two matrices is
+at most 1. Therefore, ρ( 1
+2
+
+i AT ||∞||D−1
+
+D−1
+i AT D−1
+
+i AT D−1
+D−1
+
+o A||∞ ≤ 1
+
+o A) ≤ 1
+
+||D−1
+
+2
+
+.
+
+2
+
+2
+
+WWW 2012 – Session: Fraud and Bias in User RatingsApril 16–20, 2012, Lyon, France190

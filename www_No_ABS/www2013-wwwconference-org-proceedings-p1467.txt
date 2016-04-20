@@ -1,0 +1,671 @@
+Trust is essential to reduce uncertainty and boost collaborations in many real-world applications including social networks [39], e-commerce [11], peer-to-peer networks [12], semantic Web [25], etc.
+In these applications, trust inference is widely used as the mechanism to build trust among unknown users.
+Typically, trust Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+IW3C2 reserves the right to provide a hyperlink to the author s site if the Material is used in electronic media.
+inference takes as its input the existing trust ratings that are locally-generated through direct interactions, and outputs an estimated trustworthiness score from a trustor to an unknown trustee.
+This estimated trustworthiness score indicates to what extent the trustor could expect the trustee to perform a given action.
+The basic assumption behind most of the existing trust inference methods is the transitivity property of trust [19], which is rooted in the social structural balance theory [4].
+This property essentially means that if Alice trusts Bob and Bob trusts Carol, Alice might also trust Carol to some extent.
+These methods (see Section 6 for a review), referred to as trust propagation models as a whole, have been widely studied and successfully applied in many real-world settings [8, 39, 19, 15, 9, 22].
+In addition to transitivity, a few trust inference models explore another equally important property, that is, the multi-aspect of trust [6,
+ trust is the composition of multiple factors, and different users may have different preferences for these factors.
+For example, in e-commerce, some users might care more about the factor of delivering time, whereas others give a higher weight to the factor of product price.
+However, the existing multi-aspect trust inference methods [26, 36, 31, 28] require as its input some side information (e.g., the delivering time as well as user s preference for it, etc) in addition to the locally-generated trust ratings, and therefore become infeasible in many trust networks where such side information may not be available.
+Another limitation in existing trust inference models is that they tend to ignore some important prior knowledge (e.g., trust bias) during the inference procedure.
+It was discovered in sociology a long time ago that trust bias is an integral part in the  nal trust decision [30].
+Nonetheless, it was not until the very recent years did the computer science community begin to incorporate the trust bias into the inference process.
+For example, a recent work [23] models trustor bias as the propensity of a trustor to trust others.
+In this paper, we aim to integrate all these important properties, including transitivity, multi-aspect and prior knowledge, to maximally boost the inference accuracy.
+We start by proposing a multi-aspect trust inference model.
+The heart of our method is to view the problem as a recommendation problem, and hence opens the door to the rich methodologies in the  eld of collaborative  ltering.
+The proposed multi-aspect model directly characterizes multiple latent factors for each trustor and trustee from the locally-generated trust relationships.
+Based on that, we propose to incorporate the prior knowledge as speci ed aspects and automatically learn the relative weights between latent and speci ed factors.
+Finally, we extend 1467this model to incorporate trust propagation to further improve in ference accuracy.
+To summarize, the main contributions of this paper are as follows: (1) Trust Models.
+To the best of our knowledge, this is the  rst work to (a) integrate transitivity, multi-aspect and prior knowledge into one single trust inference model; and (b) directly characterize the multi-aspect trustworthiness relationship solely based on locally-generated trust ratings.
+It can admit the rich methodologies from collaborative  ltering.
+It is  exible to model the prior knowledge as speci ed factors and further learn their relative weights.
+(2) Performance Improvements.
+We conducted extensive experimental evaluations on two widely used benchmark data sets, and empirically observed signi cant performance improvements in both effectiveness and ef ciency.
+In terms of prediction accuracy, our MATRI outperforms the best known existing methods by 26.7% - 40.7%.
+By pre-computation, our MATRI is much faster in terms of online response, achieving up to 7 orders of magnitude speedup.
+Finally, the pre-computation stage itself of the proposed MATRI scales linearly wrt the size of the input data set, indicating that it is suitable for large data sets.
+The rest of the paper is organized as follows.
+Section 2 presents the de nition of the trust inference problem.
+Section 3 describes our optimization formulation for the problem de ned in the previous section and shows how to incorporate prior knowledge and trust propagation.
+Section 4 presents the inference algorithm to solve the formulation.
+Section 5 presents experimental results.
+Section 6 reviews related work.
+Section 7 concludes the paper.
+In this section, we formally de ne our trust inference problem.
+Table 1 lists the main symbols we use throughout the paper.
+Table 1: Symbols.
+Symbol De nition and Description
+
+
+ T(cid:2) T(i, j) T(i, :)
+   x y x(i) zi j the partially observed trust matrix the characterized trustor and trustee matrices the sub-matrix of F and G the transpose of matrix T the element at the ith row and jth column of T the ith row of matrix T the set of observed trustor-trustee pairs in T the global bias the vector of trustor bias the vector of trustee bias the ith element of vector x the vector of propagation elements for trustor-trustee pair (i, j) the number of users the number of bias and latent factors total number of factors, s = p + r the maximum propagation step the weights/coef cients for bias factors the weights/coef cients for propagation elements the trustor and the trustee the maximum iteration number the threshold to terminate the iteration n p, r s t  i   j u, v m   Following conventions, we use bold capital letters for matrices, and bold lower case letters for vectors.
+For example, we use a partially observed matrix T to model the locally-generated trust relationships, where the existing/observed trust relationships are represented as nonzero trust ratings and non-existing/unobserved relationships are represented as  ? .
+As for the observed trust rating, we represent it as a real number between 0 and 1 (a higher rating means more trustworthiness).
+We use calligraphic font K to denote the set of observed trustor-trustee indices in T. Similar to Matlab, we also denote the ith row of matrix T as T(i, :), and the transpose of a matrix with a prime.
+In addition, we denote the number of users as n and the number of characterized factors as s. Without loss of generality, we assume that the goal of our trust model is to infer the unseen trust relationship from the user u to another user v, where u is the trustor and v is the unknown trustee to u.
+Based on these notations, we  rst de ne the basic trust inference problem as follows: PROBLEM 1.
+The Basic Trust Inference Problem Given: an n   n partially observed trust matrix T, a trustor u, and a trustee v, where 1 (cid:2) u, v (cid:2) n (u (cid:2) v) and T(u, v) =  ? ; Find: the estimated trustworthiness score  T(u, v).
+In the above problem de nition, given a trustor-trustee pair, the only information we need as input is the locally-generated trust ratings (i.e., the partially observed matrix T).
+The goal of trust inference is to infer the new trust ratings (i.e., unseen/unobserved trustworthiness scores in the partially observed matrix T) by collecting the knowledge from existing trust relationships.
+In this paper, we assume that we can access such existing trust relationships.
+For instance, these relationships could be collected by central servers in a centralized environment like eBay, or by individuals in a distributed environment like EigenTrust [12].
+How to collect these trust relationships is out of the scope of this work.
+As mentioned before, one of our goals is to capture the multi-aspect property of trust.
+In this paper, we propose a multi-aspect model for such trust inference in Problem 1.
+That is, we want to infer an n  s trustor matrix F whose element indicates to what extent the corresponding person trusts others wrt a speci c aspect/factor.
+Similarly, we want to infer another n  s trustee matrix G whose element indicates to what extent the corresponding person is trusted by others wrt a speci c aspect/factor.
+Such trustor and trustee matrices are in turn used to infer the unseen trustworthiness scores.
+Based on the basic trust inference problem, we de ne the multi-aspect trust inference problem as follows: PROBLEM 2.
+The Multi-Aspect Trust Inference Problem Given: an n   n partially observed trust matrix T, the number of factors s, a trustor u, and a trustee v, where 1 (cid:2) u, v (cid:2) n (u (cid:2) v) and T(u, v) =  ? ; Find: (1) an n   s trustor matrix F and an n   s trustee matrix G; (2) the estimated trustworthiness score  T(u, v).
+To further illustrate our multi-aspect trust inference problem (Problem 2), we give an intuitive example as shown in Fig. 1.
+In this example, we observe several locally-generated pairwise trust relationships between  ve users (e.g.,  Alice ,  Bob ,  Carol ,  David , and  Elva ) as shown in Fig. 1(a).
+Each observation contains a trustor, a trustee, and a numerical trust rating from the trustor to the trustee.
+We then model these observations as a 5  5 partially observed matrix T (see Fig. 1(b)) where T(i, j) is the trust rating
+ Trustee Rating Alice Alice Alice Alice Bob Bob Carol David Elva Elva Bob Carol David Elva Alice Carol Bob Alice Alice David (a) The generated relationships observed pair-wise
+
+
+
+
+
+
+
+
+
+ locally-trust
+ / ?1/5.0 ?
+?
+?5.0 / ?5.0
+ (cid:186) (cid:187) ?
+(cid:187) ?
+/1 (cid:187) (cid:187) ?
+?
+(cid:187) (cid:187) /1?
+(cid:188) (cid:170) (cid:171) (cid:171) (cid:171) (cid:171) (cid:171) (cid:171) (cid:172) trustees Alice Bob Carol trustors
+ David Elva Alice Bob Carol trustors
+ David Elva
+ (cid:186) (cid:170) (cid:187) (cid:171)
+ (cid:187) (cid:171)
+ (cid:187) (cid:171) (cid:187) (cid:171)
+ (cid:187) (cid:171) (cid:187) (cid:171)
+ (cid:188) (cid:172) factors
+
+
+
+
+
+
+
+
+ (cid:186) (cid:187) (cid:187) (cid:187) (cid:187) (cid:187) (cid:187) (cid:188) (cid:170) (cid:171) (cid:171) (cid:171) (cid:171) (cid:171) (cid:171) (cid:172) factors Alice Bob Carol David Elva trustees (b) The partially observed trust matrix T (c) The inferred trustor matrix F and trustee matrix G Figure 1: An illustrative example for multi-aspect trust inference problem.
+from the ith user to the jth user if the rating is observed and T(i, j) =  ?  otherwise.
+Notice that we do not consider self-ratings and thus represent the diagonal elements of T as  / .
+By setting the number of factors s = 2, our goal is to infer two 5   2 matrices F and G (see Fig. 1(c)) from the input matrix T. Each row of the two matrices is for the corresponding user, and each column of the matrices represents a certain aspect/factor in trust inference (e.g.,  delivering time ,  product price , etc).
+For example, we can see that Alice trusts others strongly wrt both  delivering time  and  product price  (based on F), and she is in turn moderately trusted by others wrt these two factors (based on G).
+On the other hand, both Bob and Carol put more emphasis on the delivering time, while David and Elva care more about the product price.
+Once F and G are inferred, we can use these two matrices to estimate the unseen trustworthiness scores (i.e., the  ?  elements in T).
+For instance, the trustworthiness from Carol to Alice can be estimated as  T(3, 1) = F(3, :)G(1, :)(cid:2) = 0.5.
+This estimation is reasonable because Carol has the same preference as Bob and the trustworthiness score from Bob to Alice is also 0.5.
+In the next two sections, we will mainly focus on (1) how to infer F and G; and (2) how to incorporate prior knowledge (i.e., trust bias) and trust transitivity (i.e., trust propagation) based on the partially observed input matrix T.
+In this section, we present our optimization formulation to integrate all the three important properties in trust inference, including multi-aspect, prior knowledge (i.e., trust bias) and trust transitivity (i.e., trust propagation).
+We start with the basic form to capture the multi-aspect of trust; and then show how to incorporate trust bias and four groups of trust propagation.
+Finally, we discuss some generalizations of our formulation.
+In this work, we adopt optimization method to solve the trust inference problem de ned in the previous section.
+Formally, Problem 2 can be formulated as the following optimization problem: (cid:2) (i, j) K f ro +  ||G||2 (T(i, j)   F(i, :)G( j, :) (cid:2) )2 +  ||F||2 min
+ (1) where   is a regularization parameter; ||F|| f ro and ||G|| f ro are the Frobenius norm of the trustor and trustee matrices, respectively.
+By this formulation, it aims to minimize the squared error on the set of observed trust ratings.
+Notice that in Eq.
+(1), we have two f ro additional regularization terms (||F||2 f ro) to improve the solution stability.
+The parameter     0 controls the amount of such regularization.
+Based on the resulting F and G of the above equation, the unseen trustworthiness score  T(u, v) can then be estimated by F(u, :) and G(v, :) as: f ro and ||G||2 (cid:2)  T(u, v) = F(u, :)G(v, :) (2) A Collaborative Filtering Metaphor.
+As mentioned in introduction, we view the trust inference problem as a recommendation problem.
+To be speci c, in the trust matrix T, if we treat its rows (i.e., trustors) as  users ; its columns (i.e., trustees) as  items ; and its entries (i.e., trustworthiness scores) as  ratings , the optimization problem in Eq.
+(1) resembles the same form as that of so-called factorization-based collaborative  ltering [13].
+This viewpoint opens the door to the rich methodologies in collaborative  l-tering to capture the multi-aspect of trust.
+The formulation in Eq.
+(1) can naturally incorporate some prior knowledge such as trust bias into the inference procedure.
+In this paper, we explicitly consider the following three types of trust bias (i.e., p = 3 where p is the number of bias factors): global bias, trustor bias, and trustee bias, although other types of bias can be incorporated in a similar way.
+Global bias: The global bias represents the average level of trust in the community.
+The intuition behind this is that users tend to rate optimistically in some reciprocal environments (e.g., e-commerce) while they are more conservative in others (e.g., security-related applications).
+As a result, it might be useful to take such global bias into account and we model it as a scalar  .
+Trustor bias: The trustor bias is based on the observation that some trustors tend to generously give higher trust ratings than others.
+This bias re ects the propensity of a given trustor to trust others, and it may vary a lot among different trustors.
+Accordingly, we can model the trustor bias as vector x with x(i) indicating the trust propensity of the ith trustor.
+Trustee bias: The third type of bias aims to characterize the fact that some trustees might have relatively higher capability in terms of being trusted than others.
+Similar to the second type of bias, we model this type of bias as vector y, where y( j) indicates the overall capability of the jth trustee compared to the average.
+Each of these three types of bias can be represented as a speci ed factor for our model, respectively.
+By incorporating such bias into 1469(cid:2) (i, j) K Subject to: min
+ Eq.
+(1), we have the following formulation: f ro +  ||G||2 (T(i, j)   F(i, :)G( j, :) (cid:2) )2 +  ||F||2   F(:, 1) =  1, G(:, 1) =  11/   n (global bias) F(:, 2) = x, G(:, 2) =  21/ n (trustor bias) F(:, 3) =  31/   f ro n, G(:, 3) = y (trustee bias)(3) where  1,  2, and  3 are the weights of bias that we need to estimate based on the existing trust ratings.
+In addition to these three speci ed factors, we refer to the remaining factors in the trustor and trustee matrices as latent factors.
+Let us de ne two n r sub-matrices of F and G for the latent factors.
+That is, we de ne F0 = F(:, 4 : s) and G0 = G(:, 4 : s), where each column of F0 and G0 corresponds to one latent factor and r is the number of latent factors.
+With this notation, we have the following equivalent form of Eq.
+(3): (cid:2) (i, j) K min F0,G0,  (T(i, j)   ( (cid:2) + (cid:6)F0(cid:6)2 f ro [ , x(i), y( j)] +  (cid:6)G0(cid:6)2 f ro +  (cid:6) (cid:6)2 (cid:2) + F0(i, :)G0( j, :) (cid:2) ))2 (4) where   = [ 1,  2,  3](cid:2).
+Recall that in this paper, we aim to perform trust inference only using the partially observed trust matrix T. Therefore, we estimate the parameters ( , x and y) of the trust bias as follows:   (cid:2) T(i, j)/|K| (cid:2) (i, j) K (cid:2) j,(i, j) K i,(i, j) K T(i, j)/|rowi|     T(i, j)/|col j|       = x(i) = y( j) = where |rowi| is the number of the observed elements in the ith row of T, and |col j| is the number of the observed elements in the jth column of T.
+We next describe how to incorporate trust propagation into the model.
+We consider the following four groups of trust propagation operators de ned in [8]: direct propagation, transpose trust, co-citation, and trust coupling.
+Direct propagation: Direct propagation is probably the most intuitive way to propagate trust as shown in Fig. 2(a).
+The basic operator in the  gure presents the two-step propagation and it can be generalized to multiple steps.
+We de ne the  rst group of (t  1) propagation elements in the matrix form as T2, T3, ..., Tt, where t is the largest propagation step.
+Transpose trust: The second operator is the transpose trust as shown in Fig. 2(b).
+This operator indicates that user v s trust on user u can cause some level of trust in the opposite direction.
+This group of t propagation elements can be represented in the matrix form as T(cid:2) )3, ..., (T(cid:2) )2, (T(cid:2) Co-citation: Co-citation is found to be very powerful to predict trust and distrust in the Epinions website.
+As shown in Fig. 2(c), co-citation means that if two users u and v are both trusted by another user w, then u might also trust v to some extent.
+Based on the transitive closure computation, we can represent this group of propagation elements as: (T(cid:2)T), (T(cid:2)T)2, (T(cid:2)T)3, ..., (T(cid:2)T)t.
+Trust coupling: Fig. 2(d) shows the trust coupling operator, which means that if two users both trust another user, they might also trust each other.
+Similar to co-citation, we represent the fourth group of propagation elements as (TT(cid:2) )t.
+)3, ..., (TT(cid:2) )2, (TT(cid:2) ), (TT(cid:2) , (T(cid:2) )t.
+(5) min F0,G0, ,  (cid:2) (i, j) K u w v (a) Direct propagation u (b) Transpose trust v u u w w v (c) Co-citation v (d) Trust coupling Figure 2: The four propagation operators.
+The solid lines indicate existing trust relationships, and the dotted lines indicate propagated trust.
+Altogether, we have generated (4t 1) trust propagation matrices, with each corresponding entry measuring one speci c trust propagation between the two corresponding users, respectively.
+For example, Tt(i, j) measures direct propagation from user i to user j after t steps, and (TT(cid:2) )(i, j) quanti es the one-step trust coupling effect between user i and user j, etc.
+If we further stack all these (4t   1) entries into a propagation vector zi j for the given user pair (i, j), we have the following form when we incorporate both trust bias and trust propagation into Eq.
+(1): (T(i, j)   ( (cid:2) [ , x(i), y( j)] (cid:2) +  (cid:2)zi j f ro +  (cid:6)G0(cid:6)2 f ro ))2 +  (cid:6)F0(cid:6)2 (cid:2) +F0(i, :)G0( j, :) + (cid:6) (cid:6)2 +  (cid:6) (cid:6)2 (6) where zi j is the vector of propagation elements for the trustor-trustee pair (i, j),   = [ 1,  2,  3](cid:2) is the weight vector for bias, and   = [ 1,  2, ...,  4t 1](cid:2) is the weight vector for trust propagation.
+Notice that there is no coef cient before F0(i, :)G0( j, :)(cid:2) as it will be automatically absorbed into F0 and G0 in our iterative algorithm.
+Once we have inferred all the parameters (i.e., F0, G0,  , and  ) of Eq.
+(6), the unseen trustworthiness score  T(u, v) can be immediately estimated as:  T(u, v) = F0(u, :)G0(v, :) (cid:2) +  (cid:2) [ , x(u), y(v)] (cid:2) +  (cid:2)zuv (7)
+ We further present some discussions and generalizations of our optimization formulation.
+First, it is worth pointing out that our formulation in Eq.
+(1) differs from the standard matrix factorization (e.g., SVD) as in the objective function, we try to minimize the square loss only on those observed trust pairs.
+This is because the majority of trust pairs are missing from the input trust matrix T. As mentioned before, our basic problem setting in Eq.
+(1) is conceptually similar to the standard collaborative  ltering, as in both cases, we aim to  ll in missing values in a partially observed matrix (trustor-trustee matrix vs. user-item matrix).
+Indeed, if we  x the coef cients  1 =  2 =  3 = 1 and  1 =  2 = ... =  4t 1 = 0 in Eq.
+(6), it is reduced to the collaborative  ltering algorithm in [14].
+Our formulation in Eq.
+(6) goes beyond the standard collaborative  ltering by (1) incorporating two other important properties in trust inference (i.e., bias and transitivity); and (2) learning their relative weights (  and  ).
+Our experimental evaluations show that such subtle treatments are cru-1470cial and they lead to further performance improvement over these existing techniques.
+Second, although our model is a subjective trust inference metric where different trustors may form different opinions on the same trustee [22], as a side product, the proposed model can also be used to infer an objective, unique trustworthiness score for each trustee.
+For example, this objective trustworthiness score can be computed based on the trustee matrix G. We will compare this feature of the proposed model with a well studied objective trust inference metric EigenTrust [12] in the experimental evaluation section.
+Finally, we would like to point out that our formulation is  exible and can be generalized to other settings.
+For instance, our current formulation adopts the square loss function in the objective function.
+In other words, we implicitly assume that the residuals of the pairwise trustworthiness scores follow a Gaussian distribution, and in our experimental evaluations, we found it works well.
+Nonetheless, our upcoming proposed algorithm can be generalized to any Bregman divergence in the objective function.
+Also, we can naturally incorporate some additional constraints (e.g., non-negativity, sparseness, etc) in the trustor and trustee matrices.
+After we infer all the parameters (e.g., the coef cients for the bias and propagation, and the trustor and trustee matrices, etc), we use a linear combination to compute the trustworthiness score  T(u, v).
+We can also generalize this linear form to other nonlinear combinations, such as the logistic function.
+For the sake of clarity, we skip the details of such generalizations in the paper.
+In this section, we present the proposed algorithm (MATRI) to solve the trust inference problem in Eq.
+(6), followed by some effectiveness and ef ciency analysis.
+Unfortunately, the optimization problem in Eq.
+(6) is not jointly convex wrt the coef cients (  and  ) and the trustor/trustee matrices (F0 and G0) due to the coupling between them.
+Therefore, instead of seeking for a global optimal solution, we try to  nd a local minima by alternatively updating the coef cients and the trustor/trustee matrices while  xing the other.
+trices First, let us consider how to update the trustor/trustee matrices (F0 and G0) when we  x the coef cients (  and  ).
+For clarity, we de ne an n   n matrix P as follows: T(i, j)   ( (cid:2)[ , x(i), y( j)](cid:2) +  (cid:2)zi j)  ?  if (i, j)   K otherwise (8) (cid:7) P(i, j) = where   and   are some  xed constants, and  ?  means the rating is unknown.
+Based on the above de nition, Eq.
+(6) can be simpli ed (by ignoring some constant terms) as: (P(i, j)   F0(i, :)G0( j, :) (cid:2) )2 +  ||F0||2 f ro +  ||G0||2 f ro (9) (cid:2) (i, j) K min
+ Therefore, updating the trustor/trustee matrices when we  x the coef cients unchanged becomes a standard matrix factorization problem for missing values.
+Many existing algorithms (e.g., [14, 21, 2]) can be plugged in to solve Eq.
+(9).
+In our experiment, we found the so-called alternating strategy, where we recursively update one of the two trustee/trustor matrices while keeping the other matrix  xed, works best and thus recommend it in practice.
+A brief skele-Algorithm 1 updateMatrix(P, r).
+Input: The n   n matrix P, and the latent factor size r Output: The n   r trustor matrix F0, and the n   r trustee matrix
+
+
+ maximum propagation step t Algorithm 2 computePropagation(T, l, t).
+Input: The n   n matrix trust T, the latent factor size l, and the Output: The propagation vector zi j for all (i, j)   K
+
+
+ 4: end for 5: return [zi j] compute zi j by Eq.
+(10); (i, j)   K; ton of the algorithm is shown in Alg.
+1, and the detailed algorithm are presented in our technical report [38].
+Directly computing the propagation vector zi j(i, j)   K is computationally inef cient as it involves the multiplications of matrices of n   n. To address this issue, we propose the following procedure (Alg.
+2) to compute the trust propagation vectors.
+In Alg.
+2, we  rst factorize the input trust matrix into two low rank matrices L, R (step 1); and use them as the base to compute the trust propagation vectors.
+By doing so, we only need to compute the matrix power or multiplications of l   l, where l (cid:7) n.
+Notice that in step 1, instead of the standard SVD, we call Alg.
+1 to get the two low rank matrices.
+In this way, we implicitly  ll in the missing values in the partially observed matrix T before performing the propagation.
+This has the additional advantage to mitigate the sparsity or coverage problem in trust inference [20] where some trustor and trustee might not be connected with each other.
+  = L(i, :)(R(cid:2)L)t 1R( j, :) )t(i, j) = R(i, :)(L(cid:2)R)t 1L( j, :) Tt(i, j) (T(cid:2) (T(cid:2)T)t(i, j) = R(i, :)((L(cid:2)L)(R(cid:2)R))t 1(L(cid:2)L)R( j, :) (TT(cid:2) )t(i, j) = L(i, :)((R(cid:2)R)(L(cid:2)L))t 1(R(cid:2)R)L( j, :) (cid:2) (cid:2) (10) (cid:2) (cid:2)
+ Here, we consider how to update the coef cients (  and  ) when we  x the trustor/trustee matrices.
+If we  x the trustor and trustee matrices (F0 and G0) and let: T(i, j)   F0(i, :)G0( j, :)(cid:2)  ?  if (i, j)   K otherwise (11) (cid:7) Eq.
+(6) can then be simpli ed (by dropping constant terms) as: (P(i, j)   ( (cid:2) [ , x(i), y( j)] (cid:2) +  (cid:2)zi j))2 +  (cid:6) (cid:6)2 +  (cid:6) (cid:6)2 (12) P(i, j) = (cid:2) (i, j) K min  ,  To simplify the description, let us introduce another scalar k to index each pair (i, j) in the observed trustor-trustee pairs K, that is, (i, j)   K  k = {1, 2, ...,|K|}.
+Let b denote a vector of length |K| with b(k) = P(i, j).
+We also de ne a |K|   (4t + 2) matrix A as: A(k, 1) =  , A(k, 2) = x(i), A(k, 3) = y( j), A(k, 4 : 4t + 2) = z(cid:2) i j, (k = 1, 2, ...,|K|).
+Input: The n   n partially observed trust matrix T, the set of observed trustor-trustee pairs K, the latent factor size r, the low rank l for trust propagation, the maximum propagation step t, trustor u, and trustee v Output: The estimated trustworthiness score  T(u, v) Pre-computation stage:
+
+ (i, j)   K; 3: initialize  1 =  2 =  3 = 1,  1 =  2 = ... =  4t 1 = 0; 4: while not convergent do for each (i, j)   K do
+ P(i, j) = T(i, j)   ( (cid:2)[ , x(i), y( j)](cid:2) +  (cid:2)zi j);
+ end for
+ [F0, G0] = updateMatrix(P, r);
+ for each (i, j)   K do
+ P(i, j) = T(i, j)   F0(i, :)G0( j :, )(cid:2);
+ end for
+ [ ,  ] = updateCoefficient(P,  , x, y, zi j) by
+ Eq.
+(13); 13: end while Online query response stage:
+ Then, the coef cients (  and  ) can be updated by solving the following ridge regression problem, which is equivalent to Eq.
+(12): (13)   = [ ;  ] = argmin ||b   A ||2 +  (cid:6) (cid:6)2
+ Putting everything together, we propose Alg.
+3 for the trust inference problem in Eq.
+(6).
+The algorithm  rst computes trust bias (step 1) and trust propagation (step 2).
+Next, after an initialization step (step 3), the algorithm begins the alternating procedure (Step 4-13).
+At each iteration, it  rst  xes the coef cients (  and  ), and updates the trustor matrix F0 and trustee matrix G0 (step 5-
+in Eq.
+(13) to update the coef cients   and   (step 9-12).
+We use the following criteria to terminate the alternating procedure: either the L2 norm between successive estimates of both F0 and G0 is below our threshold   or the maximum iteration step m is reached.
+Finally, the algorithm outputs the estimated trustworthiness score from the given trustor u to the trustee v using Eq.
+(7).
+It is worth pointing out that Step 1-13 in the algorithm can be pre-computed and their results (including F0, G0,  ,  ,  , x, y, L,R,L(cid:2)R,R(cid:2)L,L(cid:2)L and R(cid:2)R) can be stored in the pre-computational or offline stage.
+When an online trust inference request arrives, the proposed MATRI only needs to apply Step 14 to return the inference result, which only requires a constant time.
+Here, we brie y analyze the effectiveness and ef ciency of our algorithm.
+The effectiveness of the proposed MATRI algorithm can be summarized in Lemma 1, which says that overall, it  nds a local min-ima solution.
+Given that the original optimization problem in Eq.
+(6) is not jointly convex wrt the coef cients ( ,  ) and the trustor/trustee matrices (F0 and G0), such a local minima is acceptable in practice.
+vector zi j, Alg.
+3  nds a local minima for the optimization problem in Eq.
+(6).
+(cid:3) PROOF.
+Omitted for brevity.
+The time complexity of the proposed MATRI is summarized in Lemma 2, which says that MATRI (1) requires constant time for online query response (step 14) and (2) scales linearly wrt the number of users and the number of the observed trustor-trustee pairs in the pre-computational stage (step 1-13).
+LEMMA 2.
+Time Complexity of MATRI.
+Fixing r, l and t as constants, (P1) Alg.
+3 requires O(nm+|K|m) time for pre-computation, where m is the maximum iteration number in Alg.
+3; and (P2) Alg.
+3 requires O(1) for online query response.
+(cid:3) PROOF.
+Omitted for brevity.
+The space complexity of MATRI is summarized in Lemma 3, which says that MATRI requires linear space wrt the number of users and the number of the observed trustor-trustee pairs.
+LEMMA 3.
+Space Complexity of MATRI.
+Fixing r, l and t as constants, Alg.
+3 requires O(|K| + n) space.
+PROOF.
+Omitted for brevity.
+(cid:3)
+
+ In this section, we present experimental evaluations, after we introduce the data sets.
+All the experiments are designed to answer the following questions:   Effectiveness: How accurate is the proposed MATRI for trust inference?
+  Ef ciency: How fast is the proposed MATRI?
+How does it scale?
+Many existing trust inference models design speci c simulation studies to verify the underlying assumptions of the corresponding inference models.
+Here, we focus on two widely used real, benchmark data sets in order to compare the performance of different trust inference models.
+The  rst data set is advogato1.
+It is a trust-based social network for open source developers.
+To allow users to certify each other, the network provides 4 levels of trust assertions, i.e.,  Observer ,  Apprentice ,  Journeyer , and  Master .
+These assertions can be mapped into real numbers which represent the degree of trust.
+To be speci c, we map  Observer ,  Apprentice ,  Journeyer , and  Master  to 0.1, 0.4, 0.7, and 0.9, respectively (a higher value means more trustworthiness).
+The second data set is PGP (short for Pretty Good Privacy) [9].
+PGP adopts the concept of  web of trust  to establish a decentralized model for data encryption and decryption.
+Similar to ad-vogato, the web of trust in PGP data set contains 4 levels of trust as well.
+In our experiments, we also map them to 0.1, 0.4, 0.7, and 0.9, respectively.
+Table 2 summarizes the basic statistics of the two resulting partially observed trust matrices T. Notice that for the advogato data set, it contains six different snapshots, i.e., advogato-1, advogato-
+in the following unless otherwise stated.
+Fig. 3 summarizes the distributions of trustor bias and trustee bias.
+As we can see, many users in adovogato perform averagely LEMMA 1.
+Effectiveness of MATRI.
+Fixing the propagation
+
+ Avg.
+degree Avg.
+clustering [34] Avg.
+diameter [17] Data set advogato-1 advogato-2 advogato-3 advogato-4 advogato-5 advogato-6
+ Nodes
+
+
+
+
+
+
+ Edges
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Date
+
+
+
+
+
+
+
+
+
+
+
+
+ s e i t i l i b a b o r
+
+
+
+
+
+
+ s e i t i l i b a b o r
+
+  0.8  0.6  0.4  0.2
+
+
+
+
+ Trustor bias
+  0.8  0.6  0.4  0.2
+
+ Trustee bias
+
+
+
+
+
+
+
+
+
+
+ (a) Trustor bias distribution on advogato (b) Trustee bias distribution on advogato
+
+ MaTrI CertProp MoleTrust Wang&Singh Guha (a) advogato data set
+
+
+
+
+
+
+
+
+
+ MaTrI CertProp MoleTrust Wang&Singh Guha (b) PGP data set
+
+
+
+
+
+ s e i t i l i b a b o r
+
+
+
+
+
+
+ Figure 4: Comparisons with subjective trust inference models.
+Lower is better.
+The proposed MATRI signi cantly outperforms all the other existing models wrt both RMSE and MAE on both data sets.
+s e i t i l i b a b o r
+
+  0.8  0.6  0.4  0.2
+
+
+
+
+ Trustor bias
+  0.8  0.6  0.4  0.2
+
+
+
+
+ Trustee bias (c) Trustor bias distribution on
+ (d) Trustee bias distribution on
+ Figure 3: The distributions of trustor bias and trustee bias.
+on trusting others and being trusted by others.
+On the other hand, a considerable part of PGP users are cautiously trusted by others, and even more users tend to rate others conservatively.
+The global bias for advogato (0.668) is much higher than that for PGP (0.384).
+This also suggests that the security-related PGP network is a more conservative environment than the developer-based advogato network.
+We use both advogato (i.e., advogato-6) and PGP for effectiveness evaluations.
+For both data sets, we hide a randomly selected sample of 500 observed trustor-trustee pairs as the test set, and apply the proposed MATRI as well as other existing methods on the remaining data set to infer the trustworthiness scores for those hidden pairs.
+To evaluate and compare the accuracy, we report both the root mean squared error (RMSE) and the mean absolute error (MAE) between the estimated and the true trustworthiness scores.
+Both RMSE and MAE are measured on the 500 hidden pairs in the test set.
+We set r = l = 10, m = 10, and   = 10 6 in our experiments unless otherwise stated.
+For the maximum propagation step t, we  x it to 6 due to the  six-degree separation .
+(A) Comparisons with Existing Subjective Trust Inference Methods.
+We  rst compare the effectiveness of MATRI with several benchmark trust propagation models, including CertProp [9], Mo-leTrust [22], Wang&Singh [32, 33], and Guha [8].
+For all these subjective methods, the goal is to infer a pairwise trustworthiness score (i.e., to what extent the user u trusts another user v).
+The result is shown in Fig. 4.
+We can see that the proposed MATRI signi cantly outperforms all the other trust inference mod-Table 3: Performance gain analysis of MATRI.
+Smaller is better.
+Both trust propagation and trust bias further improve trust inference accuracy.
+advogato
+ Best known competitor Basic form Basic form + propagation Basic form + bias
+
+
+
+
+
+
+
+
+
+
+ els wrt both RMSE and MAE on both data sets.
+For example, on advogato data set, our MATRI improves the best existing method (CertProp) by 40.7% in RMSE and by 26.7% in MAE.
+As for PGP data set, the proposed MATRI improves the best existing method (Wang&Singh) by 29.6% in RMSE and by 37.8% in MAE.
+Overall, the proposed MATRI leads to 26.7% - 40.7% improvement over these best known competitors in prediction accuracy.
+The results suggest that multi-aspect of trust indeed plays a very important role in the inference process.
+(B) Performance Gain Analysis of MATRI.
+Let us take a close look at where the performance gain of the proposed MATRI comes from.
+Recall that in the proposed MATRI, we aim to integrate the three important properties of trust, that is, multi-aspect, trust bias and trust propagation.
+We next analyze how each of these properties improves the trust inference accuracy.
+The result is shown in Table 3.
+In Table 3,  Basic form  only considers multi-aspect of trust by setting the coef cients for trust bias as well as those for trust propagation as 0;  Basic form + propagation  ignores the trust bias;  Basic form + bias  ignores the trust propagation; and MATRI is the proposed method that integrates all three properties.
+We also show the result of the best known competitors, i.e., CertProp for advogato and Wang&Singh for PGP, in the table for comparison.
+As we can see from Table 3, the performance of  Basic form  which only considers the multi-aspect property is already close to the best known competitors.
+When trust propagation and trust bias
+ Smaller is better.
+MATRI performs best.
+advogato
+ Table 5: Comparisons with EigenTrust.
+Smaller is better.
+MA-TRI is better than EigenTrust wrt both RMSE and MAE on both data sets.
+EigenTrust
+ advogato
+
+
+
+
+ ) s m ( e m i t k c o c   l l l a w g o
+
+
+
+
+
+
+ MaTrI CertProp MoleTrust Wang&Singh Guha MaTrI CertProp MoleTrust Wang&Singh Guha (a) Wall-clock time on ad-vogato data set (b) Wall-clock time on PGP data set Figure 6: Speed comparison.
+MATRI is much faster than all the other methods.
+ness score for each trustee.
+To this end, we set r = 1 in MATRI algorithm, ignore the trust propagation vectors zi j, and aggregate the resulting trustee matrix/vector G0 with the bias (the global bias   and the trustee bias y).
+We compare the result with a widely-cited objective trust inference model EigenTrust [12] in Table 5.
+As we can see, MATRI outperforms EigenTrust in terms of both RMSE and MAE on both data sets.
+For example, on advogato data set, MATRI is 58.6% and 68.9% better than EigenTrust wrt RMSE and MAE, respectively.
+For ef ciency experiments, we report the average wall-clock time.
+All the experiments were run on a machine with two 2.4GHz Intel Cores and 4GB memory.
+(A) Speed Comparison.
+We  rst compare the online response of MATRI with CertProp, MoleTrust, Wang&Singh, and Guha.
+Again, we use the advogato-6 snapshot and PGP in this experiment, and the result is shown in Fig. 6.
+Notice that the y-axis is in the logarithmic scale.
+We can see from the  gure that the proposed MATRI is much faster than all the alternative methods on both data sets.
+For example, MATRI is up to 32,000,000x faster than CertProp.
+This is because once we have inferred the trustor/truestee matrices as well as the coef cients for the bias and propagation, it only takes constant time for MATRI to output the trustworthiness score.
+Among all the alternative methods, Guha is the most ef cient.
+This is because its main workload can also be completed in advance.
+However, the pre-computation of Guha needs additional O(n2) space as the model  lls nearly all the missing elements in the trust matrix, making it unsuitable for large data sets.
+In contrast, our MATRI only requires O(|K| + n) space.
+(B) Scalability.
+Finally, we present the scalability result of MA-TRI by reporting the wall-clock time of the pre-computational stage (i.e., Step 1-13 in Alg.
+3).
+For advogato data set, we directly report the results on all the six snapshots (i.e., advogato-1, ..., advogato-
+shown in Fig. 7, which is consistent with the complexity analysis in Section 4.2.
+As we can see from the  gure, MATRI scales linearly wrt to both n and |K|, indicating that it is suitable for large-scale applications.
+RMSE on advogato MAE on advogato RMSE on PGP MAE on PGP
+
+
+
+
+ RMSE on advogato MAE on advogato RMSE on PGP MAE on PGP ) s m ( e m i t k c o c   l l l a w g o
+
+
+
+
+
+
+
+
+ The latent factor size r
+
+
+
+
+
+
+ Regularization parameter  
+
+
+
+
+
+
+
+
+
+
+
+ (a) RMSE and MAE of MA-TRI wrt r. We  x r = 10 for both advogato and PGP.
+(b) RMSE and MAE of MA-TRI wrt  .
+We  x   = 0.1 for advogato and   = 1.0 for PGP.
+Figure 5: The sensitivity evaluations.
+MATRI is robust wrt both parameters.
+are incorporated, both of them signi cantly improve trust inference accuracy.
+For example, on advogato data set, trust propagation helps to obtain 32.0% and 36.1% improvements in RMSE and MAE, respectively.
+Further, trust bias improves RMSE and MAE by 8.6% and 8.9%, respectively.
+This result con rms our hypothesis that in addition to multi-aspect, both trust propagation and trust bias also play important roles in trust inference.
+(C) Comparisons with Existing Matrix Factorization Methods.
+We also compare MATRI with some existing matrix factorization methods: SVD, the low rank approximation algorithm [10] for link sign prediction (referred to as HCD), and the collaborative  ltering algorithm [14] for recommender systems (referred to as KBV).
+The result is shown in Table 4.
+As we can see from the table, MATRI again performs best on both data sets.
+SVD performs poorly as it treats all the unobserved trustor-trustee pairs as zero elements in the trust matrix T. MATRI outperforms HCD as HCD was essentially tailored to predict the binary trust/distrust relationship and it ignored the other two important properties (i.e., trust bias and trust propagation).
+MATRI also outperforms KBV.
+For example, MATRI improves KBV by 11.5% in RMSE and by 16.5% in MAE on PGP data set.
+As mentioned before, KBV can be viewed as a special case of the proposed MATRI if we (1)  x all the bias coef cients as 1s and (2) ignore the trust propagation.
+This result indicates that by (1) incorporating the trust propagation and (2) simultaneously learning the relative weights of propagation and trust bias, MATRI leads to further performance improvement.
+(D) Sensitivity Evaluations.
+We also conduct a parametric study for MATRI.
+The  rst parameter is the latent factor size r. We can observe from Fig. 5(a) that, in general, both RMSE and MAE stay stable wrt r. The second parameter in MATRI is the regularization coef cient  .
+As we can see from Fig. 5(b), both RMSE and MAE stay stable on advogato, while they decrease when   increases up to 1.0 and stay stable after   > 1.0 on PGP.
+Based on these results, we conclude that MATRI is robust wrt its parameters.
+For all the other results we report in the paper, we simply  x r = 10,   = 0.1 for advogato, and   = 1.0 for PGP.
+(E) Comparisons with Existing Objective Trust Inference Methods.
+Although our MATRI is a subjective trust inference metric, as a side product, it can also be used to infer an objective trustworthi-
+
+
+
+) d n o c e s ( e m i t k c o c   l l l a
+
+
+
+
+
+ The number of users
+
+
+ (a) Wall-clock time vs. n on advogato
+
+
+
+ ) d n o c e s ( e m i t k c o c   l l l a
+
+
+
+
+ The number of users
+
+ (c) Wall-clock time vs. n on
+
+
+
+
+ ) d n o c e s ( e m i t k c o c   l l l a
+
+
+
+ The number of observed trustor trustee pairs (b) Wall-clock time vs. |K| on advogato
+
+
+
+
+ ) d n o c e s ( e m i t k c o c   l l l a
+
+
+ The number of observed trustor trustee pairs (d) Wall-clock time vs. |K| on
+ Figure 7: Scalability of the proposed MATRI.
+MATRI scales linearly wrt the data size (n and |K|).
+In this section, we brie y review related work, including trust propagation models, multi-aspect trust inference models, etc.
+Trust Propagation Models.
+To date, a large body of trust inference models are based on trust propagation where trust is propagated along connected users in the trust network, i.e., the web of locally-generated trust ratings.
+Based on the interpretation of trust propagation, we further categorize these models into two classes: path interpretation and component interpretation.
+In the  rst category of path interpretation, trust is propagated along a path from the trustor to the trustee, and the propagated trust from multiple paths can be combined to form a  nal trustworthiness score.
+For example, Wang et al. [32, 33] as well as Hang et al. [9] propose operators to concatenate trust along a path and aggregate trust from multiple paths.
+Liu et al. [18] argue that not only trust values but social relationships and recommendation role are important for trust inference.
+In contrast, there is no explicit concept of paths in the second category of component interpretation.
+Instead, trust is treated as random walks on a graph or on a Markov chain [25].
+Examples of this category include [8, 22, 39, 15].
+The proposed MATRI integrates the trust propagation with two other important properties, i.e., the multi-aspect of trust and trust bias.
+In addition, our multi-aspect model offers a natural way to speed up online query response; as well as to mitigate the sparsity or coverage problem in trust inference where some trustor and trustee might not be connected with each other - both are known limitations with the current trust propagation models [37, 20].
+Multi-Aspect Trust Inference Models.
+Social scientists have explored the multi-aspect property of trust for several years [27].
+In computer science, there also exist a few trust inference models that explicitly explore the multi-aspect property of trust.
+For example, Xiong and Liu [36] model the value of the transaction in trust inference; Wang and Wu [31] take competence and honesty into consideration; Tang et al. [28] model aspect as a set of products that are similar to each other under product review sites; Sabater and Sierra [26] divide trust in e-commerce environment into three aspects: price, delivering time, and quality.
+However, all these existing multi-aspect trust inference methods require some additional side information other than the locally-generated trust ratings, such as the value of transaction, user s preference, product categories, etc.
+These methods become infeasible when such side information is not available.
+In contrast, MATRI directly characterizes the multi-aspect of trust solely based on the locally-generated trust ratings; and therefore it has a broader applicability.
+Prior Knowledge in Trust Inference.
+In sociology, it was discovered a long time ago that certain prior knowledge, e.g., trust bias, is an integral part in the  nal trust decision [30].
+Nonetheless, this important aspect has been largely ignored in most of the existing trust inference models.
+One exception is the work by Nguyen et al. [24], which learns the importance of several trust bias related features derived from a social trust framework.
+Recently, Mishra et al. [23] propose an iterative algorithm to compute trust bias.
+Different from these existing works, our focus is to incorporate various types of trust bias as speci ed factors/aspects to increase the accuracy of trust inference.
+Collaborative Filtering vs. Trust Inference.
+Multi-aspect or low rank approximation methods have been extensively studied in collaborative  ltering [1, 14, 21].
+These work provides rich methodologies to capture the multi-aspect of trust by viewing the trust inference as a collaborative  ltering problem.
+The proposed MATRI takes one step further by (1) incorporating trust bias and trust propagation; and (2) learning their relative weights.
+On the application side, the goal of collaborative  ltering is to predict users   avors of items.
+It is interesting to point out that (1) on one hand, trust between users could help to predict the  avors as we may give a higher weight to the recommendations provided by trusted users; (2) on the other hand, trust itself might be affected by the similarity of  avors since users usually trust others with a similar taste [7].
+Although out of the scope of this paper, using recommendation to further improve trust inference accuracy might be an interesting topic for future work.
+Other Related Work.
+The concept of stereotype for trust inference is studied by Liu et al. [20] and Burnett et al. [3].
+These methods learn the stereotypes from the user pro les of the trustees that the trustor has interacted with, and then use these stereotypes to re ect the trustor s  rst impression about unknown trustees.
+Several other work focuses on trust dynamics [29] and the relationship between trust and similarity [7, 35].
+There are also some recent work on using link prediction approaches to predict the binary trust/distrust relationship [16, 5, 10].
+In this paper, we have proposed an effective trust inference model (MATRI).
+The basic idea is to leverage the multi-aspect property of trust by characterizing several aspects/factors for each trustor and trustee based on the existing trust relationships.
+The proposed MA-TRI incorporates the trust propagation and prior knowledge (i.e., trust bias); and further learns their relative weights.
+By integrating all these important properties, our experimental evaluations on real benchmark data sets show that it leads to signi cant improvement in prediction accuracy.
+The proposed MATRI is also nimble - it is up to 7 orders of magnitude faster than the existing methods in the online query response, and in the meanwhile it enjoys the linear scalability for the pre-computational stage in both time and space.
+Future work includes investigating the capability of MATRI to address the distrust as well as the trust dynamics.
+We would like to thank the valuable suggestions from Jiliang Tang as well as the anonymous reviewers.
+This work is supported by the National Natural Science Foundation of China (No.
+61021062,
+
+
+ oratory under Cooperative Agreement Number W911NF-09-2-0053, the U.S. Defense Advanced Research Projects Agency (DARPA) under Agreement Number W911NF-12-C-0028, and the National Science Foundation under Grant No.
+IIS-1017415.

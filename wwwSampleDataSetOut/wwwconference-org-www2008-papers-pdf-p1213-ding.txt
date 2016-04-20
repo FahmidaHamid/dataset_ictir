@@ -1,0 +1,297 @@
+Using Graphics Processors for High-Performance
+
+IR Query Processing
+
+Shuai Ding, Jinru He, Hao Yan, and Torsten Suel
+
+sding@cis.poly.edu, jhe@cis.poly.edu, hyan@cis.poly.edu, suel@poly.edu
+
+CIS Department, Polytechnic University
+
+Brooklyn, NY, 11201, USA
+
+ABSTRACT
+Web search engines are facing formidable performance chal-
+lenges as they need to process thousands of queries per second
+over billions of documents. To deal with this heavy workload,
+current engines use massively parallel architectures of thou-
+sands of machines that require large hardware investments.
+
+We investigate new ways to build such high-performance IR
+systems based on Graphical Processing Units (GPUs). GPUs
+were originally designed to accelerate computer graphics ap-
+plications through massive on-chip parallelism. Recently a
+number of researchers have studied how to use GPUs for other
+problem domains including databases and scientiﬁc comput-
+ing [2, 3, 5], but we are not aware of previous attempts to
+use GPUs for large-scale web search. Our contribution here
+is to design a basic system architecture for GPU-based high-
+performance IR, and to describe how to perform highly eﬃ-
+cient query processing within such an architecture. Prelimi-
+nary experimental results based on a prototype implementa-
+tion suggest that signiﬁcant gains in query processing perfor-
+mance might be obtainable with such an approach.
+
+Categories and Subject Descriptors: H.3 [INFORMA-
+TION STORAGE AND RETRIEVAL]
+General Terms: Performance.
+Keywords: Web search, query processing, GPU.
+1. TECHNICAL PRELIMINARIES
+
+For a good overview of IR query processing, see [7]. We
+assume that each document (e.g., each page covered by the
+engine) is identiﬁed by a unique document ID (docID). Our
+approach is based on an inverted index structure, used in es-
+sentially all current web search engines, which allows eﬃcient
+retrieval of documents containing a particular set of words
+(or terms). An inverted index consists of many inverted lists,
+where each inverted list Iw contains the docIDs of all doc-
+uments in the collection that contain the word w, sorted by
+document ID or some other measure, plus possibly the number
+of occurrences in the document and their positions. Inverted
+indexes are usually stored in highly compressed form on disk,
+or sometimes in main memory if space is available.
+
+Given an inverted index, the basic structure of query pro-
+cessing is as follows: The inverted lists of the query terms are
+ﬁrst fetched from disk or main memory and decompressed,
+and then an intersection or other Boolean ﬁlter between the
+lists is applied to determine those docIDs that contain all or
+most of the query terms. For these docIDs, the additional
+information associated with the docID in the index (such as
+number of occurrences and their positions) is used to compute
+a score for the document, and the k top-scoring documents
+are returned. These operations are usually pipelined so that
+the score of a document is computed immediately after the
+Boolean ﬁlter (usually intersection) is applied to it, which is it-
+self done right after decompressing the relevant index entries,
+
+Copyright is held by the author/owner(s).
+WWW 2008, April 21–25, 2008, Beijing, China.
+ACM 978-1-60558-085-2/08/04.
+
+with no need to temporarily write the decompressed data to
+main memory. Thus, the main operations required are index
+decompression, intersection, and score computation. Query
+processing is responsible for a large fraction of the total hard-
+ware cost of a large state-of-the-art engine.
+
+Index Compression: Compression of inverted indexes
+greatly reduces disk space use as well as disk and main mem-
+ory accesses, resulting in faster query evaluation. There are
+many index compression methods [7]; the basic idea in most
+of them is to ﬁrst compute the diﬀerences (gaps) between the
+sorted docIDs in an inverted list, and then apply a suitable
+integer compression scheme to the gaps. During decompres-
+sion, the gaps are decoded and then summed up again in a
+preﬁx sum operation. In our prototype, we focus on two meth-
+ods that we believe are particularly suitable for GPUs: Rice
+coding, and a recent method in [8] called PForDelta.
+
+To compress a sequence of gaps with Rice coding, we ﬁrst
+choose a b such that 2b is close to the average of the gaps
+to be coded. Then each gap n is encoded in two parts: a
+quotient q = (cid:2)n/(2b)(cid:3) stored in unary code, and a remainder
+r = n mod 2b stored in binary using b bits. While Rice cod-
+ing is considered somewhat slow in decompression speed, we
+consider here a new implementation proposed in [6] that is
+much faster than the standard one. The second compression
+method we consider is the PForDelta method proposed in [8],
+which was shown to decompress up to a billion integers per
+second on current CPUs. This method ﬁrst determines a b
+such that most of the values in the list (say, 90%) are less
+than 2b and thus ﬁt into a ﬁxed bit ﬁeld of b bits each. The
+remaining integers, called exceptions, are coded separately.
+Both methods were recently evaluated for CPUs in [6].
+
+Graphical Processing Units (GPUs): The current gen-
+erations of GPUs arose due to the increasing demand for pro-
+cessing power by graphics-oriented applications such as com-
+puter games. Because of this, GPUs are highly optimized
+towards the types of operations needed in graphics, but re-
+searchers have recently studied how to exploit the computing
+power of these processors for other types of applications [2,
+3, 5]. Modern GPUs oﬀer multiple computing cores that can
+perform many operations in parallel, plus a very high memory
+bandwidth that allows processing of large amounts of data.
+However, to be eﬃcient, computations need to the carefully
+structured to conform to the programming model oﬀered by
+the GPU, which is a data-parallel model reminiscent of the
+massively parallel SIMD models studied in the 1980s.
+
+Recently, GPU vendors have started to oﬀer better sup-
+port for general-purpose computation on GPUs, thus remov-
+ing some of the hassle of programming them. However, the
+requirements of the basic data-parallel programming model
+remain;
+in particular, it is important to structure compu-
+tation in a very regular (oblivious) manner, such that each
+concurrently executed thread performs essentially the same
+sequence of basic steps. This is especially challenging for op-
+erations such as decompression and intersection that tend to
+be more adaptive in nature. One major vendor of GPUs,
+
+1213WWW 2008 / Poster PaperApril 21-25, 2008 · Beijing, ChinaFigure 1: Architecture of a GPU-Based System.
+
+NVIDIA, recently presented the Compute Uniﬁed Device Ar-
+chitecture (CUDA), a new hardware and software architec-
+ture that simpliﬁes GPU programming [1]. Our prototype is
+based on CUDA, and was developed and tested on an NVIDIA
+GeForce 8800 GTS graphics card. However, other cards sup-
+porting CUDA could also be used, and our general approach
+can be ported to other GPU programming environments.
+
+2. A GPU-BASED IR QUERY PROCESSOR
+We now ﬁrst outline the basic structure of our GPU-based
+IR query processor, based on Figure 1. The compressed in-
+verted index is either completely in main memory, or stored
+on disk but partially cached in main memory for better per-
+formance. The GPU itself can access main memory via the
+CPU, but also has its own global memory (640 MB in our
+case) plus several other specialized caches, including shared
+memory that can be shared by many threads. Data transfer
+between CPU and GPU and thus between main memory and
+GPU is reasonably fast (at least 3 GB in our tests), while
+memory bandwidth between the GPU and its own global
+memory is in the tens of GB and thus much higher than typ-
+ical system memory bandwidths. (But accesses need to be
+scheduled carefully to achieve this performance.)
+
+A query is processed as follows: First, the CPU receives and
+preprocesses the query. The corresponding inverted lists are
+retrieved from disk if not already cached in main memory. The
+data is then transferred to the GPU Global Memory, which
+also maintains its own cache of index data in order to decrease
+the time for main memory-to-GPU data transfers. The GPU
+then decompresses and intersects the lists and returns the top
+results to the CPU. For best performance, the CPU may also
+process some of the queries itself such that both processors
+share the overall load. Thus, the CPU controls the overall
+process, while the GPU serves as an auxiliary compute device.
+Algorithms for GPU Query Processing: We now give
+more details on our implementation; due to space constraints,
+we can only give a sketch of our techniques.
+
+We ﬁrst describe how to decompress an inverted list, for the
+case of Rice coding. As in [6], the unary and binary parts of
+the Rice code are kept separately. We can then decompress
+the code by running two separate preﬁx sums, one on the
+binary data and one on the unary data. The binary preﬁx
+sum operates on b-bit elements, while the unary one sums
+up the total number of ‘1’ values in the unary data. Then
+each document ID can be retrieved by summing up its binary
+preﬁx sum and 2b times the corresponding unary preﬁx sum.
+Multi-level tree-based algorithms for preﬁx sums on GPUs
+were discussed in [4] based on earlier SIMD algorithms; we
+adapted and ﬁne-tuned these for unary and b-bit binary data.
+The other challenge is the intersection of the diﬀerent in-
+verted lists. To do so, we again adopt older techniques from
+the parallel computing literature, for the related problem of
+merging lists of integers. In particular, we use multi-level algo-
+rithms that ﬁrst select a small subset of splitter elements that
+are inserted into the other list, thus partitioning this other
+list into segments each of which only has to be compared to a
+small subset of elements in the ﬁrst list; this process can then
+be applied recursively and in the other direction.
+
+CPU-based algorithms typically pipeline the various oper-
+ations in query processing. This is diﬃcult in GPUs, but
+also less necessary due to the high global memory bandwidth.
+CPU-based algorithms also typically skip over some parts of
+an inverted list without decompressing it, if the list is much
+longer than the one it has to be intersected with. This is
+achieved by partitioning each list into blocks of some size, say
+128 docIDs, and storing the ﬁrst docID in each block in un-
+compressed form such that decompression can be resumed at
+any block boundary. This can also be implemented in a GPU,
+though slightly diﬀerently, by performing a merge-type oper-
+ation between the uncompressed elements of a longer list and
+the elements of an already decompressed shorter list (similar
+to the intersection above); this determines the list of blocks
+in the longer list that need to be decompressed. Keeping
+one element in each block uncompressed also limits the pre-
+ﬁx computation to within each block, resulting in a faster
+single-level computation than the multi-level approach in [4].
+Finally, computation of rank scores is fairly straightforward.
+3. EXPERIMENTS AND DISCUSSION
+
+We now present preliminary experimental results that show
+the potential of the new architecture. Note that we have not
+yet implemented all of the features in the proposed query
+processor. All our runs use Rice coding, and we do not yet
+support blocked access to the inverted lists. For the exper-
+iments, we used the TREC GOV2 data set of 25.6 million
+web pages, and selected 1000 random queries from the sup-
+plied query logs. On average, there were about 3.74 million
+postings in the inverted lists associated with a query. Our
+CPU implementation is based on the optimized code in [6].
+
+Decompression
+
+CPU Times
+GPU Times
+
+Speedup
+
+25.89
+11.39
+2.27
+
+Intersection Total
+31.62
+13.35
+2.37
+
+5.73
+1.95
+2.93
+
+Table 1: Times in ms per query for CPU and GPU.
+From Table 1, we see that we get a speedup of more than
+2 even for our very preliminary implementation. There are
+various caveats, of course. Again, we have not implemented
+skipping and block-wise access. Also, results may be diﬀerent
+for PForDelta compression, which runs very fast on modern
+CPUs. Finally, all results assume that the data is already in
+memory, or at least that disk is not the main bottleneck of
+the system. (Of course, if CPU is not the bottleneck, then a
+GPU cannot help either.) We are working on overcoming the
+current limitations and on completing a full prototype.
+4. REFERENCES
+[1] Nvidia CUDA Computer Uniﬁed Device Architecture –
+
+Programming Guide, June 2007.
+http://www.nvidia.com/object/cuda develop.html.
+
+[2] N. Govindaraju, J. Gray, R. Kumar, and D. Manocha.
+
+GPUTeraSort: high performance graphics co-processor sorting for
+large database management. In Proc. of the 26th SIGMOD, 2006.
+
+[3] N. Govindaraju, B. Lloyd, W. Wang, M. Lin, and D. Manocha.
+
+Fast computation of database operations using graphics
+processors. In Proc. of the 24th SIGMOD, 2004.
+
+[4] M. Harris. Parallel preﬁx sum (scan) with CUDA, 2007.
+
+http://developer.download.nvidia.com/compute/cuda/sdk/website
+/projects/scan/doc/scan.pdf.
+
+[5] J. Owens, D. Luebke, and etc. A survey of general-purpose
+computation on graphics hardware. In Eurographics, 2005.
+
+[6] J. Zhang, X. Long, and T. Suel. Performance of compressed
+
+inverted list caching in search engines. In Proc. of the 17th Int.
+World Wide Web Conference, April 2008.
+
+[7] J. Zobel and A. Moﬀat. Inverted ﬁles for text search engines.
+
+ACM Computing Surveys, 38(2), 2006.
+
+[8] M. Zukowski, S. Heman, N. Nes, and P. Boncz. Super-scalar
+
+RAM-CPU cache compression. In Proc. of the 22nd ICDE, 2006.
+
+1214WWW 2008 / Poster PaperApril 21-25, 2008 · Beijing, China

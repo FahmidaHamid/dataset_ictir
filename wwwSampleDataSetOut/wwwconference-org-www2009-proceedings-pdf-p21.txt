@@ -1,0 +1,1302 @@
+Spatio-Temporal Models for Estimating Click-through Rate
+
+Deepak Agarwal
+
+Yahoo! Labs
+701 First Ave
+
+Sunnyvale, CA 94089.
+
+dagarwal@yahoo-inc.com
+
+Bee-Chung Chen
+
+Yahoo! Labs
+701 First Ave
+
+Sunnyvale, CA 94089.
+
+beechun@yahoo-inc.com
+
+Pradheep Elango
+
+Yahoo! Labs
+701 First Ave
+
+Sunnyvale, CA 94089.
+elango@yahoo-inc.com
+
+ABSTRACT
+We propose novel spatio-temporal models to estimate click-
+through rates in the context of content recommendation. We
+track article CTR at a ﬁxed location over time through a dy-
+namic Gamma-Poisson model and combine information from
+correlated locations through dynamic linear regressions, sig-
+niﬁcantly improving on per-location model. Our models ad-
+just for user fatigue through an exponential tilt to the ﬁrst-
+view CTR (probability of click on ﬁrst article exposure) that
+is based only on user-speciﬁc repeat-exposure features. We
+illustrate our approach on data obtained from a module (To-
+day Module) published regularly on Yahoo! Front Page and
+demonstrate signiﬁcant improvement over commonly used
+baseline methods. Large scale simulation experiments to
+study the performance of our models under diﬀerent sce-
+narios provide encouraging results. Throughout, all model-
+ing assumptions are validated via rigorous exploratory data
+analysis.
+
+Categories and Subject Descriptors
+H.3.5 [Information Storage and Retrieval]: Online In-
+formation Services; G.3 [Probability and Statistics]
+
+General Terms
+Algorithms, Design, Experimentation, Measurement
+
+1.
+
+INTRODUCTION
+
+The web has become an important medium to distribute
+information from various sources. Web sites like Blogo-
+sphere, YouTube, Digg, Yahoo!, Google News, MSN; news
+feeds like Associated Press and Washington Post provide
+users with a wide range of choices to keep up with diverse
+content in a timely fashion. However, explosion of content
+may make it diﬃcult for users to select the right content to
+look at – a phenomenon that is also refereed to as informa-
+tion overload.
+In fact, content publishers and aggregators
+select the best and most relevant content to attract and re-
+tain users to their site on an ongoing basis.
+
+In general, a publisher page is composed of several sec-
+tions; some serve personalized content, some are links to ap-
+plications (e.g. e-mail), some allow users to add new content
+of their choices and so on. In fact, several sites also publish
+a module with most popular content; Digg, Yahoo! Buzz,
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2009, April 20–24, 2009, Madrid, Spain.
+ACM 978-1-60558-487-4/09/04.
+
+Top Stories on Google News, Top Picks on MSN are some
+examples. Often, human editors select a set of articles from
+a diverse content pool. While editorial selection prunes low
+quality content and ensures various constraints that charac-
+terize a site (e.g. in terms of topicality) are met, the quality
+of a site may improve further if it adapts quickly to show the
+best articles. One way is to constantly monitor the content
+quality (deﬁned through user feedback: clicks, votes, etc)
+of articles over time.
+In this paper, we develop and illus-
+trate novel statistical methods to track article quality for a
+prominent module, called the Today Module, published on
+the Yahoo! Front Page.
+
+Today Module Overview: Figure 1 shows the loca-
+tion of the Today Module on the Yahoo! Front Page, that
+consists of four tabs: Featured, Entertainment, Sports and
+Video. Each of the four tabs on the panel publish articles
+at four positions. Unlike the other three tabs, the Featured
+Tab is not tied to a particular topic and selects articles from
+a diverse content mix. We label the four positions on the
+Featured Tab as F1, F2, F3, F4. Only one of the four footers
+on a tab is “active” as a story (see Fig 1). The F1 story is dis-
+played by default but a user can switch to another story (at
+F2, F3, F4) by clicking on the corresponding footer. Since
+the F1 position has maximum exposure, it is the prime spot
+on the Today Module. At any given time, the system picks
+the top four articles from an active set; these are displayed
+at F1, F2, F3, F4. New articles created by editors are pe-
+riodically pushed to replace some old ones; the procedure
+helps keep up with novel and important stories (e.g., break-
+ing news) and eliminate the irrelevant and fading ones.
+
+Several measures based on user feedback are generally
+used to measure article quality scores; those that rely on user
+clicks have strong signal and are readily available. When
+normalized by amount of exposure that is typically measured
+by the number of times an article is shown at a location (e.g,
+at a certain position), we get a measure called click-through
+rate (CTR), i.e., number of clicks per display; throughout
+we use CTR to select the best articles in our application.
+Other measures like votes, time spent reading the article,
+etc can also be used; the choice depends on the application.
+
+Contributions: We provide a modeling approach to esti-
+mate CTR after incorporating spatio-temporal correlations
+and adjusting for user fatigue. In particular, we propose dy-
+namic models to: (a) Track article CTR at a single location
+through a dynamic Gamma-Poisson model.
+(b) Combine
+information from correlated locations (e.g., other positions)
+through dynamic linear regressions to improve tracking per-
+
+WWW 2009 MADRID!Track: Data Mining / Session: Click Models21data (clicks and views) obtained from Today Module enable
+us to accurately measure article CTR at fairly ﬁne temporal
+resolutions. In this paper, we estimate CTR aggregated at
+5-minute time intervals.
+
+Serving-biased versus completely randomized data:
+We analyze data obtained from two buckets. A bucket repre-
+sents a disjoint set of randomly selected users who are served
+content according to some scheme (referred to as a serving
+scheme hereafter). Since our goal in this study is to serve the
+most popular, we consider a bucket (estimated most popular,
+EMP hereafter) that continues to show the best stories at the
+F1-F4 positions unless article popularity scores change with
+recent data. In addition, we create another bucket (random
+bucket, RND hereafter) that serves a randomly selected set
+of four distinct articles to each user visit. Previous studies
+of content optimization systems [15, 16] only report ﬁndings
+based on data obtained from EMP bucket. In fact, the com-
+pletely randomized nature of data obtained from RND helps
+us study subtle user-content interaction patterns in an un-
+biased way; conducting such analysis from EMP data alone
+requires adjusting for confounding factors (e.g. repeat expo-
+sure, selection bias in displayed articles), which is diﬃcult
+to carry out in practice.
+2.1 Temporal Characteristics
+
+Almost every article CTR shows signiﬁcant temporal vari-
+ation and diﬀerent behavior in the two buckets. Figure 2
+illustrates this for a randomly selected article. We observe
+a sharp F1 CTR decay in the EMP bucket (discontinuities
+indicate periods when the article was taken out of F1) but a
+strong time-of-day, day-of-week pattern (TOD hereafter) in
+RND with almost no CTR decay; the diurnal article CTR
+is several times higher than the nocturnal one (relative to
+PST). In fact, TOD in RND and decay in EMP are observed
+for almost all articles.
+
+Next, we explain TOD variations and decay through a
+comprehensive data analysis. For simplicity, we only analyze
+article CTR at the F1 position; we discuss multiple positions
+later in this section.
+
+Regression analysis: To parsimoniously estimate TOD
+variations in article CTR, we perform a regression analysis
+separately for each bucket. Let pitr denote the CTR of ar-
+ticle i in time interval t with repeat exposure r, where r is
+the fraction of users in t who have previously seen article i
+at F1. Through extensive oﬄine analysis, we converged on
+the following CTR model that provides a good explanation
+of CTR dynamics.
+
+log pitr = θi + f (t) + g(r)
+
+(1)
+
+where θi’s are main eﬀects that represent the adjusted pop-
+ularity of article i; f (t) is a periodic (period of one week)
+adaptive regression spline function with the knots selected
+through the AIC criteria [9], and g(r) is a quadratic function
+that models article CTR decay. In fact, we plug-in the esti-
+mate of f (t) from RND (black curve in Figure 3) to obtain
+f (t) for EMP.1 The goal of this one-time oﬄine regression
+analysis is not to build an online model that tracks article
+CTR but to illustrate and estimate the TOD pattern, and
+provide an explanation of CTR decay as a function of repeat
+
+1This provides a better ﬁt. Model is ﬁtted through a Pois-
+son regression with CTR given by Equation (1). It has 707
+parameters and provides an excellent ﬁt (deviance ∼ 0) with
+few parameters.
+
+Figure 1: The Today Module on Yahoo! Front Page
+
+formance. (c) Adjust for user fatigue in the recommendation
+process by modeling CTR drop through repeat-exposure fea-
+tures. Our modeling assumptions are validated via exten-
+sive exploratory data analysis. In fact, our analysis on com-
+pletely randomized data provide new insights on various as-
+pects of user-content interaction.
+In particular, we show
+article CTR decay is explained better through amount of
+repeat exposure, instead of article lifetime as suggested by
+[15]; article CTR at diﬀerent positions are correlated but
+the correlation is article-speciﬁc and evolves over time – the
+conventional approach of using article-independent factors
+to translate CTR among positions can lead to inferior sys-
+tem performance (which will be shown in Section 4); there
+is strong time-of-day and day-of-week eﬀect in article CTR
+that can be largely attributed to the location of the user
+(US versus International). To the best of our knowledge, a
+large scale study similar to ours on randomized data have
+not been reported for a web application before.
+
+We note that although we present our models as enhanced
+methods of selecting popular stories, it is easy to extend
+our methods to perform personalization for user segments.
+In particular, article CTR from our models can be used as
+informative features in regression models; one can also track
+article CTR separately in diﬀerent user segments in order to
+provide segment-speciﬁc popular stories. A detailed analysis
+and illustration of such extensions is beyond the scope of this
+paper; we provide further discussion of this issue in section 5.
+Our roadmap is as follows: In Section 2, we report on
+an extensive exploratory data analysis that motivate our
+modeling in later sections.
+In Section 3, we describe our
+spatio-temporal modeling approach. Section 4 report on ex-
+tensive experiments (real and synthetic data) to show the
+eﬀectiveness of our methods. We end with a discussion and
+scope for future work in Section 5.
+
+2. EXPLORATORY ANALYSIS OF CTR
+
+We mention two key aspects of our data below.
+Large volume of click-through data: The Yahoo!
+homepage gets hundreds of millions of daily user visits; it is
+the most visited content page on the web. The Today Mod-
+ule is an important component of the homepage that helps
+in improving user engagement, often reﬂected through clicks
+on articles displayed on the Featured Tab. Large amount of
+
+WWW 2009 MADRID!Track: Data Mining / Session: Click Models22(a) CTR in the EMP Bucket
+
+(b) CTR in the Random Bucket
+
+Figure 2: Empirical F1 CTR of a random article in EMP and RD
+
+Figure 3: TOD pattern for overall traﬃc (black solid
+curve) vs. US-only traﬃc (red dashed curve)
+
+Figure 5: View volumes: US traﬃc (red solid curve)
+vs. international traﬃc (blue dotted curve)
+
+TOD. Figure 5 shows the scaled number of page views per
+hour over a week (relative to PST) for US and international
+users separately. Not surprisingly, the Yahoo! Front Page
+is mostly visited by US users during the day and interna-
+tional users during the night. We note that the CTR of
+each article for US users is several times higher than that
+of international users (articles are programmed mainly for
+US audience), hence the nocturnal CTR are substantially
+lower. Re-estimating f (t) via model in Equation (1) for US
+only visits (red dashed curve in Figure 3) still shows a TOD
+pattern but with signiﬁcantly smaller variations. The regres-
+sion model does not provide a good ﬁt to international visit
+data due to data sparseness (low click and visit volumes).
+
+Further analysis with user and article features failed to
+explain the TOD pattern in US traﬃc. In general, it is dif-
+ﬁcult to construct temporal features related to population
+changes that can explain away the temporal variations in ar-
+ticle CTR; capturing such latent population changes directly
+through a dynamic model that tracks article CTR (instead
+of population changes) is the approach we follow in this pa-
+per. However, sharp temporal changes in CTR require the
+dynamic models to adapt more, forcing it to use a small
+amount of recent data which may increase variance and de-
+teriorate tracking performance. Hence, it is always useful to
+look for features that explain large temporal ﬂuctuations in
+CTR. In fact, all our analysis in subsequent sections will be
+based on US only user visits (we track international visits
+separately).
+
+Explaining CTR decay through per-user features:
+
+Figure 4: Decay as a function of repeat exposure
+
+exposure. The excellent ﬁt of model in Equation (1) also
+supports a common TOD pattern and decay curve across
+articles.
+
+Explaining decay pattern: Estimated decay (i.e., g(r))
+in Figure 4 is largely due to the amount of repeat exposure
+and not the article lifetime as some earlier studies had in-
+dicated [15]. In fact, Figure 2(a) shows an example where
+article CTR increases with lifetime when the article is put
+back at F1 after being taken out of EMP for a while. Indeed,
+the fraction of repeat exposure decreases when the article re-
+appears and hence it gets a higher CTR, relative to when it
+was shown previously.
+
+Explaining the TOD pattern: To explain estimated
+TOD pattern (i.g., f (t)) in Figure 3, we performed an ex-
+tensive slice and dice analysis of the data that revealed
+traﬃc split by US versus international visits best explain
+
+0.00.40.8Scaled CTR16:3017:0017:3018:0018:3019:0019:3020:0020:3021:000.00.40.8Scaled CTR16:0017:0018:0019:0020:0021:0022:0023:0000:0001:0002:0003:0004:0005:0006:0007:0008:0009:0010:0011:0012:0013:0014:0015:00−0.4−0.20.00.2Offset in log CTR012345670.00.10.20.30.40.50.6−3−2−10Fraction of repeated usersOffset in log CTR00.20.40.60.81.0Hourly Number of Views07/1507/1607/1707/1807/1907/2007/21WWW 2009 MADRID!Track: Data Mining / Session: Click Models23(a) Previous clicks
+
+(b) Views since last click
+
+Figure 7: F1 to F2 CTR ratio during a day
+
+Bucket
+EMP
+
+Random
+
+Table 1: Percentage of clickers
+
+F1 only F2-F4 only Both F1 & F2-F4
+
+58%
+54%
+
+13%
+17%
+
+29%
+29%
+
+However, feedback received from footers provide additional
+source of information that is potentially useful in improving
+CTR estimates.
+In fact, it is ideal to have a joint model
+that learns from all positions to improve individual posi-
+tional estimates. Prior work (see [13, 12]) assume a model
+that translates article CTR among positions through a com-
+mon article-independent but position-dependent ratio, i.e.,
+CT R(position x) = τx,yCT R(position y), where τ ’s are un-
+known constants independent of articles.
+In this section,
+we study correlation among positional CTR for articles over
+time by using the RND data. We recall that for RND, each
+article is served at all positions, uniformly at random, in
+each time interval.
+
+To study the correlation between F1 and Fx article CTR
+over time (x = 2, 3, 4), we ﬁrst note that footer CTR are
+similar (but signiﬁcantly lower than the F1 CTR); hence
+we only look at the relationship between F1 and F2.
+In
+Figure 7, each curve is the F1-to-F2 CTR ratio of an article
+during its lifetime. As evident, articles have diﬀerent ratios
+that change over time, clearly violating the assumption of an
+article-independent ratio used in prior work. Next, Figure
+8(a) shows the F1 and F2 CTRs of a few randomly selected
+articles over time. Although there is a strong positive linear
+relationship for each article, there are substantial variations
+in the straight lines ﬁtted to each individual articles (both
+in slope and intercept). Figure 8(b) shows the distribution
+of slope as function of average F1 CTR across articles. As
+evident, variation in slopes is not explained by F1 article
+CTR. (Intercepts also show a similar behavior.)
+In fact,
+none of the features we analyzed (e.g., article lifetime, time
+of day, article categories) were able to explain the article
+speciﬁc F1 to F2 relationship.
+
+We also note that there is a diﬀerence in users who click on
+F1 and footers. Deﬁning a clicker to be a user who clicked
+the Today Module at least k times in a month, Table 1 shows
+the percentage of clickers who clicked on F1 only, clickers
+who clicked one of the footers only, clickers who clicked both,
+for k = 1. (Other values of k provided similar results.) As
+seen, overlap in F1 and footer clickers is not large.
+2.3 Discussion of Exploratory Analysis
+
+Our exploratory analysis clearly shows that article CTR
+is dynamic. Although we believe the root cause of dynamic
+
+(c) Previous F1 Views
+
+(d) Time since 1st view
+
+Figure 6: Relative CTR as functions of diﬀerent
+user-activity features. (relative to ﬁrst-view CTR)
+
+Although aggregate repeat exposure explains CTR decay ad-
+equately, adjusting for user fatigue in the recommendation
+process requires a model that explains CTR decay through
+user level repeat-exposure features. Prior exposure to arti-
+cles may occur in several ways and with varying degrees of
+strength. We consider features that are based on number
+of previous article views at the story position, at the footer
+position, number of previous story clicks, number of views
+since last click and time since ﬁrst view.
+
+One expects previous clicks to be a strong exposure that
+should substantially reduce the user’s propensity to click on
+the article again. However, this is not true since each article
+is composed of multiple links in our application; users who
+interact with an article generally engage more by exploring
+multiple links. Figure 6(a) shows variation in CTR with
+number of previous clicks, relative to the ﬁrst-view CTR
+(probability of a click on ﬁrst exposure to the article); it
+shows an increased propensity of repeat click. Number of
+views since a user’s last click, shown in Figure 6(b), provides
+a better explanation for decay, but is noisy.
+
+Out of all the features we looked at, number of previous
+F1 article views, shown in Figure 6(c), is the best predictor
+of decay; the ones based on time elapsed since ﬁrst exposure
+of diﬀerent types, e.g., Figure 6(d), were noisy and weakly
+predictive after the ﬁrst ﬁve minutes.
+
+2.2 Positional Characteristics
+
+Presentation bias aﬀects article CTR, i.e., the same arti-
+cle displayed at diﬀerent positions under identical conditions
+will have diﬀerent click rates. In our scenario, the F1 posi-
+tion is prominent and receives more attention than footers.
+
+135790246810Number of previous clicksRelative CTR135790.00.20.40.60.8Number of views since last clickRelative CTR135790.00.20.40.60.8Number of previous F1 viewsRelative CTR135790.00.20.40.60.8Number of previous F1 viewsRelative CTR0153045600.00.51.01.5Minutes since 1st F1 ViewRelative CTR468101214F1 CTR / F2 CTR05:0007:0009:0011:0013:0015:0017:0019:0021:0023:00WWW 2009 MADRID!Track: Data Mining / Session: Click Models24exposure to article) and g(Ru) is a function that depends on
+the repeat-view features Ru of user u. We note that θ0i(cid:96)t is
+independent of the user u; we adjust for user fatigue by an
+“exponential tilt” to the ﬁrst-view CTR through a function
+that only depends on the repeat-exposure features. Thus,
+our modeling approach consists of: (a) Dynamic model to
+estimate θ0i(cid:96)t for a ﬁxed location over time. (b) Regression
+model to enhance the estimate of θ0i(cid:96)t at the target location
+(cid:96) by combining information from correlated locations. (c)
+Estimating the function g(Ru) to adjust for repeat exposure
+to article per user. We note that although we use the scoring
+function in Equation 2 to select the top-k articles in a con-
+tent recommendation system in this paper, the estimation
+technique is general and has wider applicability.
+
+We now describe our approach to select the top-k articles
+to be shown in the EMP bucket in the context of our ap-
+plication. We note that locations in our application are the
+positions at which articles are shown. Since one of the posi-
+tion (F1 in our case) is more important than others, we rank
+articles based on their predicted F1 CTR (or some monotone
+transform) in the next time interval. This is a reasonable
+strategy if F1 article CTR is independent of CTR of other
+articles that are shown at footer positions. This is indeed
+the case in our application as shown empirically in the Ap-
+pendix. The presence of RND bucket ensures we obtain data
+on all live articles at all times; thus we can always predict
+CTR of a live article in the next time interval. As discussed
+earlier, we build models to track ﬁrst-view article CTR and
+adjust for user fatigue through repeat-exposure features to
+provide each user with user-speciﬁc most popular articles.
+
+In the rest of the paper, we describe candidate models for
+each component of our uniﬁed spatial-temporal modeling
+approach that are motivated by our content optimization
+problem. More speciﬁcally, we address the following.
+
+• Eﬀective tracking of article CTR at a single position:
+As shown in Section 2, temporal dynamics of article
+CTR is diﬃcult to model through known features –
+models that quickly adapt to temporal changes are at-
+tractive. We note that articles that are in the explore
+mode (either in RND or some other small bucket) may
+receive lower views (and clicks) compared to those that
+are promising. This may imbalance the article view
+distribution over time; our tracking model must be ro-
+bust to such imbalance in sample size. We provide a
+Bayesian time series model based on a Gamma-Poisson
+assumption (validated through empirical analysis) that
+is both accurate and robust.
+
+• Improved tracking by combining information across po-
+sitions: With small sample size, estimated article CTR
+at target position may improve substantially by com-
+bining information from other positions. However, vari-
+ation of position correlations across articles and time
+makes this a challenging modeling task which, to the
+best of our knowledge, has not been addressed before.
+We provide a dynamic regression model to address this
+issue in Section 3.2.
+
+• Adjusting for user fatigue: As shown in Section 2, arti-
+cle CTR decay with repeat exposure. Developing user-
+speciﬁc repeat-exposure features that can appropri-
+ately down-weigh article CTR per user is of paramount
+importance for good performance. In Section 3.3, we
+
+(a) F1 vs. F2 over time
+
+(b) Regression slope
+
+Figure 8: Relationship between F1 and F2 CTR. In
+plot (a), each curve starts with (F2,F1) CTR at time
+0 at one of the end points and shows the temporal
+relationship for the article over time. In plot (b),
+slopes of linear regression ﬁts for around 300 article
+curves are plotted against mean F1 article CTR.
+
+CTR is user-population change over time, it is often hard
+to identify features that capture such population changes
+in practice. Thus, the ability of tracking CTR over time at
+each position (enhanced by combining estimates from diﬀer-
+ent positions) is useful for content optimization systems. We
+also point out the importance of using completely random-
+ized data for understanding the dynamics of such systems in
+an unbiased way. Analysis based solely on non-randomized
+serving data (e.g., data from the EMP bucket) may be mis-
+leading. For example, Wu and Huberman [15] analyzed the
+serving data obtained from digg.com where they empirically
+show that popularity of an article decays quickly over time
+and modeled this decay subsequently using article lifetime
+(time elapsed since ﬁrst appearance). As in our applica-
+tion, we conjecture that the true reason for decay in their
+application is not lifetime, but the amount of repeat expo-
+sure. Also, since most articles in their context have short
+lifetime and they were not able to put an article at a prime
+position for long periods of time, they did not observe the
+TOD pattern we see in RND. Furthermore, they conducted
+a follow-up analysis [16] comparing diﬀerent serving schemes
+based on their previous model but using a global positional
+translation factor for each position (i.e., all stories have the
+same factor). Here again, a global translation factor may
+not be correct as we observe in our application. Finally, we
+note that some interesting temporal patterns were reported
+in the context of search in [10].
+
+3. SPATIO-TEMPORAL CTR MODELING
+We describe our spatio-temporal approach to modeling
+CTR of a single article. We shall refer to the spatial co-
+ordinates as locations, each location represents an indepen-
+dent source of information that is correlated with the CTR
+at the target location. For instance, the target location may
+be the F1 position and the footers (F2-F4) may consist of
+other correlated locations. We assume the CTR of article
+i when shown at location (cid:96) to user u at time t is given by
+θu,i(cid:96)t. To account for user fatigue, we assume the following
+
+θu,i(cid:96)t = θ0i(cid:96)t exp{g(Ru)}
+
+(2)
+
+where θ0i(cid:96)t is the ﬁrst-view CTR (probability of click on ﬁrst
+
+0.050.150.250.20.40.60.8Scaled F2 CTRScaled F1 CTR0.20.6−50510Mean item F1 CTRSlopeWWW 2009 MADRID!Track: Data Mining / Session: Click Models25present a novel method that provides recommendation
+after adjusting for fatigue in a model based way.
+
+Before we proceed further, a word about our notations.
+Since decay is modeled using features, we drop the user in-
+dex. Throughout, θixt, cixt and vixt denotes the true article
+CTR, the number of clicks and the number of views (respec-
+tively) obtained by showing article i at location x in time in-
+terval t, for users who see the article for the ﬁrst time. Some
+or all subscripts are dropped when not needed. Unless oth-
+erwise mentioned, CTR would always mean ﬁrst-view CTR
+in the rest of this section.
+
+3.1 Dynamic Models for a Single Location
+
+We begin with CTR tracking for a single article at a ﬁxed
+location, and drop the article and location indices. At any
+given time interval t, we have a prior probability distribution
+for the CTR θt that is based on data until time interval t−1;
+this is combined with the observed clicks and views (ct and
+vt respectively) at time t, to obtain the posterior probability
+distribution of CTR θt at time t.
+
+Gamma-Poisson and Beta-Binomial: For occurrence
+(or count) data, Beta-Binomial and Gamma-Poisson are at-
+tractive choices [4]. For a Beta-Binomial model, the condi-
+tional distribution of clicks c given views v and CTR θ is
+a binomial with mean vθ, and the prior for θ is Beta(α,γ)
+that has mean α/γ and variance α(γ−α)
+γ2(1+γ) . The posterior of
+θ is Beta(α + c, γ + v). For the Gamma-Poisson model,
+the prior of θ is Gamma(α, γ) with mean α/γ and variance
+α/γ2, while the observation distribution of c given v and θ
+is Poisson with mean vθ; the posterior of θ in this case is
+Gamma(α + c, γ + v). We work with the Gamma-Poisson
+model throughout the paper. In fact, we validate the mod-
+eling assumption on our data in the Appendix.
+
+Dynamic Gamma-Poisson (DGP) model: We now
+describe our dynamic Bayesian model that is based on a
+Gamma-Poisson assumption and ﬁtted through the “dis-
+counting” concept pioneered by [11]. More speciﬁcally, con-
+sider obtaining CTR posterior θt at time t. Assume the
+posterior of θt−1 (CTR at time t− 1) is Gamma(αt−1, γt−1)
+with mean µt−1 and variance σ2
+t−1. Note that this posterior
+captures all information relevant to CTR based on observed
+data until time t − 1. The conditional distribution of ct
+for known θt is Poisson(mean=vtθt). Now, to compute the
+posterior of θt, we need to decide on a prior for θt; it is
+natural to use the posterior of θt−1 as the prior. However,
+such an approach gives equal weight to all previous data
+points and adapts slowly to CTR changes over time. The
+discounting concept solves this problem by using a dilated
+version of θt−1 as a prior (dilation increases variance; mean is
+unchanged.), i.e., prior for θt is now Gamma(δαt−1, δγt−1)
+t−1/δ, 0 < δ ≤ 1. The posterior of θt is
+with variance σ2
+given by Gamma(αt = δαt−1 + ct, γt = δγt−1 + vt), where
+δ determines the rate of adaptation of the tracker; it is es-
+timated using a tuning dataset. Note that small values of δ
+adapt faster and may lead to high variance; large values of
+δ adapt slowly and may lead to high bias in predictions. In
+our application, since the TOD pattern for US traﬃc is not
+too sharp, values of δ in the range of [.95, 1) worked well.
+
+This model is simple to implement. Starting with α0 and
+γ0 as our initial prior parameters (which can be estimated
+based on historical data analysis), for each interval t, the
+
+update formula for (αt, γt) is given by
+
+αt = δαt−1 + ct
+γt = δγt−1 + vt
+
+(3)
+
+where vt = ct = 0 if the article is not shown in some interval
+t. The predicted CTR for the next interval has mean αt/γt
+and variance αt/γ2
+In fact, the posterior mean αt/γt is
+t .
+the predicted CTR for next interval t + 1. A closer look
+k=0 ct−kδk + δtα0 and
+at Equation 3 shows that αt =
+k=0 vt−kδk + δtβ0; thus the posterior mean is a ratio
+βt =
+of exponentially weighted sums (clicks and views).
+
+(cid:80)t−1
+
+(cid:80)t−1
+
+Alternative models: Our DGP model is diﬀerent from
+a commonly used model that tracks CTR through a ex-
+ponentially weighted sum of per-interval click-to-view ratio
+(ct/vt); DGP smooths the clicks and views separately in-
+stead and provides a more robust model, especially for im-
+balanced data. We note that the above update rule can also
+be applied to the Beta-Binomial model, but the variance di-
+lation would be approximate, not exact. In prior work [1],
+we applied the Gaussian Kalman ﬁlter with logit transfor-
+mation to dynamic CTR tracking. This model is sensitive
+to noisy or sparse data. Kalman ﬁlters can also be deﬁned
+based on more appropriate distributions, e.g., Poisson obser-
+vations with Gamma states. However, the update formula
+is not closed-form and our update rule can be thought of as
+an approximation to that.
+3.2 Spatial Model
+
+Our exploratory analysis in Section 2 clearly shows strong
+article speciﬁc spatial (more speciﬁcally, positional in this
+case) correlation that evolves through time. With small
+sample size, estimated article CTR at target location may
+improve substantially by combining information from other
+correlated locations. We propose a dynamic linear regression
+model (DLR) to accomplish this.
+
+Dynamic Linear Regression (DLR): Let θxt denote
+the CTR of an article at location x in time interval t, for x
+= 1, ..., K. Without loss of generality, assume our goal is to
+estimate the CTR θ1t at the target location by using data
+from all correlated locations θxt. Let Dxt denote aggregated
+clicks (cx1, ..., cx,t−1) and views (vx1, ..., vx,t−1) for the
+article at x observed before time t. Our goal is to estimate
+the posterior distribution of θ1t combining information from
+D1t, ..., DKt,
+
+The basic idea of dynamic linear regression (DLR) model
+is to use a base model (e.g., the Gamma-Poisson model) to
+separately track the article CTR θxt for each location x and
+obtain additional information for the target from location x
+through a dynamic linear regression (ﬁtted using a Kalman
+ﬁlter) of the target θ1t on the location θxt. Finally, infor-
+mation from all locations are combined to obtain a more
+informed posterior for the target.
+
+Motivated by our exploratory analysis shown in Figure 8(a),
+
+we model the relationship between θ1t and θxt by a linear re-
+gression. Speciﬁcally, we assume the following linear model:
+
+θ1t = αxt + βxt θxt + xt,
+
+xt ∼ N (0, s2
+x),
+
+(4)
+
+where αxt and βxt are time-varying parameters of the linear
+model, and xt is the error term with variance s2
+x.
+To obtain information on θ1t from location x, we ﬁrst use
+a base model to track the distribution of (θxt | Dxt) for each
+location x separately. Each base model outputs the CTR
+mean ˆθxt and variance s2
+xt. Then, for a location x, we apply
+
+WWW 2009 MADRID!Track: Data Mining / Session: Click Models26the above linear model to predict θ1t using θxt, this gives the
+distribution of (θ1t | Dxt). It can be shown that (θ1t | Dxt)
+has the following mean and variance:
+
+µxt = E[θ1t | Dxt] = ˆαxt + ˆβxt ˆθxt
+xt = V[θ1t | Dxt] =
+σ2
+
+V[αxt] + V[βxt]s2
+2C[αxt, βxt]ˆθxt + s2
+
+x
+
+xt + ˆβ2
+
+xts2
+
+xt + ˆθ2
+
+xtV[βxt]+
+
+Finally, we combine each individual (θ1t | Dxt) through the
+following standard proposition[6].
+
+Proposition 1. Assume θ1t has an uninformative prior.
+xt), for x = 1, ..., K, and D1, ...,
+
+If (θ1t | Dxt) ∼ N (µxt, σ2
+DK are mutually independent given θ1t, then
+(θ1t | D1t, ..., DKt) is normally distributed with
+
+E[θ1t | D1t, ..., DKt] =
+V[θ1t | D1t, ..., DKt] =
+
+(cid:80)
+(cid:80)
+1(cid:80)
+
+x(1/σ2
+
+xt)µxt
+
+x(1/σ2
+
+xt)
+
+x(1/σ2
+
+xt)
+
+The revised mean and variance formulae are used to get an
+updated CTR posterior for the base model through method
+of moments. We now discuss estimation of time-varying
+regression parameters in Equation 4 through a Kalman ﬁlter
+that uses output of the base model. Speciﬁcally, for each
+position x, we use the following state-space model:
+
+(cid:183)
+
+(cid:184)
+
+(cid:183)
+
+ˆθ1t = αxt + ˆθxtβxt + xt,
+
+αxt
+βxt
+
+=
+
+αx,t−1
+βx,t−1
+
++ ,
+
+(cid:184)
+
+xt ∼ N (0, s2
+ ∼ N (0, Σ)
+
+xs2
+
+1t + β2
+
+xts2
+
+xt)
+
+1t and s2
+
+x is the model error variance; s2
+
+where s2
+xt are the
+variances of (θ1t|D1t) and (θxt|Dxt) that are outputs from
+the base models. In fact, the variance formula for xt above
+can be derived using the formula of iterated variance calcu-
+lation: V ar(ˆθ1t) = Eθ2t (V ar(ˆθ1t|θ2t)) + V arθ2t (E(ˆθ1t|θ2t)).
+Note that we assume V ar(ˆθ1t|θ2t) = s2
+1t; this incorporates
+the uncertainty involved in θ1t. αx,t−1 and βx,t−1 are the
+regression parameters from the previous interval; and Σ is
+the variance-covariance matrix controlling how the regres-
+sion relationship evolves over time. Note that s2
+x and Σ
+are article independent constants that are estimated using
+historical data in an oﬄine manner.
+
+xs2
+
+We apply the standard Kalman ﬁlter update rule [11] to
+track αxt and βxt over time. The Kalman ﬁlter outputs ˆαxt,
+ˆβxt, V[αxt], V[βxt] and C[αxt, βxt] are used in computing µxt
+and σ2
+
+xt in Proposition 1.
+
+Alternate Models: Our spatial modeling approach is
+simple, scalable and is motivated by methods used in meta-
+analysis[7] that improve estimate of a quantity by combin-
+ing information available from diﬀerent independent sources.
+An alternate approach would be to use a multivariate Kalman
+ﬁlter that assumes CTR from diﬀerent locations are corre-
+lated and evolves over time. One such model would be as-
+suming that clicks are generated according to Poisson and
+the state (a vector of the true CTR’s of L locations) evolve
+over time based on a L × L covariance matrix, which is dif-
+ﬁcult to estimate when L is large.
+3.3 User Fatigue Model
+
+As shown in Section 2, article CTR decays with repeat
+exposure. Developing user-speciﬁc repeat-exposure features
+that can appropriately down-weight article CTR per user
+is of paramount importance for good performance. In fact,
+Figure 6(c) clearly shows an exponential drop-oﬀ in overall
+
+CTR with increase in amount of repeat exposure. To model
+user fatigue, it is important to incorporate exposure features
+per user while estimating overall CTR; especially in EMP.
+We present a novel dynamic model to incorporate fatigue
+that provides good performance in our application.
+
+Let θRt denote article CTR at time t corresponding to
+repeat-exposure feature vector R. We assume the following
+factorization: θRt = θ0t exp{R(cid:48)bt}, where θ0t is the ﬁrst
+view CTR at time t (probability of click on ﬁrst article ex-
+posure). Comparing this with Equation (2), we see this is a
+special case of our general spatial-temporal approach with
+g(Ru) = R
+If cRt and vRt denote clicks and views at
+time t corresponding to feature vector R, then the distribu-
+tion of our observations conditional on the state at time t is
+given by
+
+bt.
+
+(cid:48)
+
+cRt | θ0t, bt ∼ Poisson(vRt θ0t exp{R
+
+(cid:48)
+
+bt})
+
+(5)
+
+Indeed, Equation (5) provides the likelihood of the state vec-
+tor (θ0t, bt) at time t. We assume θ0t is known and equals
+the posterior mean obtained as ouput of our spatial model
+or Dynamic Gamma Poisson model at a single position. We
+now focus on updating the posterior of bt. The prior for bt
+is assumed to be Gaussian with mean equal to the poste-
+rior mean ˆbt−1 of bt−1, and variance obtained by dilating
+the posterior variance At−1 of bt−1 to At−1/δ. Combining
+the likelihood in Equation (5) with the prior provides the
+posterior of bt by Bayes theorem. Since the posterior is not
+available in closed form, we apply Laplace approximation
+to obtain a Gaussian posterior. In fact, the posterior is ap-
+proximately Gaussian with mean given by the mode ˆbt of
+log-posterior and variance At given by inverse of negative
+hessian computed at mode of log-posterior.
+4. EXPERIMENTAL RESULTS
+
+In this section, we present results on experiments with
+both real and simulated data. First, we show that the dy-
+namic Gamma-Poisson model that tracks article CTR at a
+single position signiﬁcantly outperforms several alternative
+models. We then show that our spatial DLR model sig-
+niﬁcantly improves CTR tracking when the target position
+suﬀers from data sparsity. In fact, we ﬁnd methods that use
+article-independent translation ratios to estimate positional
+eﬀects may hurt performance in our application. Finally, we
+report analysis of our fatigue model.
+4.1 Replay Experiments
+
+We ﬁrst report experimental results on “replay” experi-
+ments that are based on log data collected from the Today
+Module. In fact, we use US traﬃc data from RND bucket
+aggregated at ﬁve-minute intervals collected over a month,
+which contains about 180 million user visits. Parameters of
+all models are estimated using training set (ﬁrst 15 days)
+and results are reported on the test set (last 15 days). We
+subsampled our test set to simulate performance for diﬀerent
+traﬃc volumes.
+
+Replay methodology: To evaluate the performance of
+an online model, we “replay” articles retrospectively using
+the model-predicted F1 CTR at the next time interval, and
+aggregate the total number of clicks that is received by the
+highest ranked articles over a 15 day test period. We only
+report the F1 position performance since it accounts for the
+majority of click traﬃc and hence a good approximation
+to the system performance (results for other positions were
+
+WWW 2009 MADRID!Track: Data Mining / Session: Click Models27cles. In fact, we see that using data from all positions may
+be worse than using data from a single position if the model
+does not track non-stationary correlations properly.
+
+Why DGP-F1 is good? In the RND data used by our
+replay experiments, each article receives roughly the same
+volume of traﬃc at each position. Since footers receive much
+fewer clicks than F1, the noise in data from footers is higher
+than that from F1. It turns out that after having the less
+noisy F1 traﬃc for every article at all times, it is diﬃcult to
+squeeze additional information from the weaker F2-F4 signal
+even if the model that predicts F1 CTR using correlation
+from F2-F4 is accurate. In fact, when the traﬃc volume of
+the target position is suﬃciently large at all time, there is
+no need to use correlation among multiple positions.
+
+However, in many scenarios, it is not feasible to have a
+constant stream of completely randomized data for each ar-
+ticle at all times. When the pool of live articles is large, we
+may only be able to explore a small fraction of articles at a
+time. For some web sites, human editors may want to have
+full control over some important positions for some periods
+of time. Also, to fully optimize the CTR of a system, com-
+plete randomization is not an optimal exploration scheme.
+Thus, we conduct a series of simulation experiments to un-
+derstand how multi-positional models would perform with
+diﬀerent traﬃc patterns.
+
+4.2 Simulation Study
+
+In this section, we investigate the behavior of DLR with
+diﬀerent traﬃc patterns. We apply the loess method de-
+scribed in the Appendix to smooth the CTR time-series of
+each article at each position using the RND data, and treat
+each smoothed CTR curve as the true CTR θixt of article i
+at position x in interval t. A simulation run is similar to a
+replay run. However, in each interval, instead of using the
+observed clicks and views, we control the number of views
+vixt to be generated and simulate the number of clicks ac-
+cording to P oisson(θixt vixt). Since we know the true CTRs,
+we can measure the predictive error exactly. Also, because
+only DLR is competitive to the single-positional DGP-F1,
+we only report results for these two models.
+
+Constant F1 traﬃc: We ﬁrst simulate a scenario in
+which the F2-F4 traﬃc is constant (with 100 views per arti-
+cle, per position, per interval), and the F1 traﬃc is also con-
+stant but may be relatively small. We vary the ratio between
+the F1 traﬃc volume and F2-F4 traﬃc volume, and show the
+mean absolute errors of DLR and DGP-F1 in Figure 10(a).
+As seen from the ﬁgure, DLR outperforms DGP-F1 when
+the F1 traﬃc is less than 10% of F2-F4 traﬃc. Larger than
+that, there is almost no diﬀerence in performance.
+
+Periodic F1 traﬃc: Next, we simulate scenarios in which
+the F2-F4 traﬃc is still constant (with the same volume
+as before), but the F1 traﬃc is observed only periodically.
+We vary the fraction of time intervals in which F1 data is
+observed, and show the mean absolute errors of DLR and
+DGP-F1 in Figure 10(b). As seen from the ﬁgure, DLR
+outperforms DGP-F1 when the F1-observed fraction is less
+than 30%.
+
+Simulation with the UCB1 serving scheme: Finally,
+we try to understand the performance of DLR in a system
+that seeks to maximize CTR by allocating diﬀerent amounts
+of exploration traﬃc to articles (instead of using a small
+ﬁxed-size random bucket with uniform randomization). We
+implemented the UCB1 scheme [2] and use it to control the
+
+(a) Replay
+
+(b) UCB1 simulation
+
+Figure 9: Model performance in the replay experi-
+ment and simulation based on UCB1 serving scheme
+
+qualitatively similar). The target position here is the F1
+position.
+
+Models: We report results for a range of models. DLR
+is the dynamic linear regression model described in Sec-
+tion 3.2 that tracks F1 CTR using data from all positions.
+Several variations of the dynamic Gamma-Poission models
+(DGP) are tested: DGP-F1 uses data only from F1; DGP-
+Naive assumes all positions are exchangeable and aggre-
+gates clicks and views from all positions; DGP-Ratio ag-
+gregates across positions but downweighs footer views by a
+constant ratio (overall F1 to footer CTR ratio). We also
+ﬁtted two Gaussian Kalman ﬁlter (GKF) models to the em-
+pirical CTR and a logistic transformation of the empirical
+CTR. GKF-F1 is a univariate Gaussian model that only
+uses the F1 data, while GKF-Multi is a standard multi-
+variate Gaussian Kalman ﬁlter model. We also consider two
+other baseline models: EWMA-F1 (exponential-weighted
+moving average) that tracks the F1 CTR θ1t for an article
+by using exponentially-weighted moving average of empiri-
+cal CTR ratios: θ1t = wθ1,t−1 + (1 − w)(ct/vt) where, ct
+and vt are the observed F1 clicks and views at t, and w is
+tuned using the training data. Cumu-F1 (cumulative F1
+CTR) simply divides the total number of F1 clicks by F1
+views observed up to a given time point. In fact, this is a
+special case of DGP obtained by setting discounting factor
+to unity.
+
+Experimental Results: Figure 9(a) shows the results.
+For CTR tracking using data from a single positon, DGP-F1
+signiﬁcantly outperforms alternatives GKF-F1 and EWMA-
+F1, that use instant CTR (ct/vt) in model updates. For
+CTR tracking using multi-positional data, DLR performs
+signiﬁcantly better than the alternatives: GKF-Multivar,
+DGP-Ratio and DGP-Naive. To our surprise, the single-
+positional DGP-F1 is hard to beat, only DLR can provide
+a slight improvement over it. The other models that are
+based on a ﬁxed positional correlation assumption have in-
+ferior performance compared to DGP-F1 since the positional
+correlations are not constant and vary across time and arti-
+
+80859095100Avg Views Per IntervalPercentage Lift in F1 CTR2505001000150025005000   DLRDGP−F1GKF−MultiCumu−F1DGP−RatioDGP−NaiveGKF−F1EWMA5060708090Avg Views Per Interval2505001000150025005000   DLRDGP−F1WWW 2009 MADRID!Track: Data Mining / Session: Click Models28(a) Constant F1 traﬃc
+
+(b) Periodic F1 traﬃc
+
+Figure 10: Behavior of DLR with diﬀerent traﬃc
+patterns (x-axis is log-scaled)
+
+amount of F1 exploration traﬃc to be given to each article,
+while still keeping F2-F4 traﬃc the same as the RND data.
+Figure 9(b) shows the CTR lifts of DLR and DGP-F1 over a
+model that predicts article CTR randomly for diﬀerent traf-
+ﬁc volumes. As seen, DLR provides better lifts especially
+when the traﬃc volume is small. This result is encourag-
+ing, but future work is needed to understand the interaction
+between DLR and an exploration scheme.
+4.3 User Fatigue Analysis
+
+In this section, we provide results to show the eﬀectiveness
+of our user fatigue model discussed in Section 3.3. In partic-
+ular, we show the predictive accuracy measured in terms of
+mean absolution error (MAE) and predictive log-likelihood
+for models with and without previous user exposure features.
+After conducting preliminary exploratory analysis, we con-
+verged on the following repeat exposure feature vector R =
+(R1, R2) where, R1 is number of previous F1 article views
+and R2 is number of previous story views through footer
+clicks on Featured tab or other tab click or other tab click
+followed by a footer click. Other features (number of pre-
+vious footer exposures, time since ﬁrst exposures of various
+types) were noisy and did not look promising. We tested
+the following models: m0: Null model which assumes no
+repeat exposure features. m1: which assumes R = R1,
+m2: which assumes R = (R1, R2) and m3: which assumes
+R = (R1, R2, R1R2). m3 does not converge on a number
+of articles for which it provided poor performance, hence
+we only report results for m0, m1 and m2. Deﬁne M1 =
+M AE(m1)/M AE(m0) and M2 = M AE(m2)/M AE(m0).
+Figure 11 shows the plot of MAE ratio of M2/M1 (represent-
+ing error reduction of m2 over m1) versus M1 (representing
+error reduction of m1 over m0). First, both m1 and m2 are
+signiﬁcantly better than the null model m0 on all articles,
+m2 is marginally better than m1 for a large number of ar-
+ticles. Results for predictive log-likelihood showed similar
+patterns.
+
+5. DISCUSSION
+
+We have discussed dynamic models for estimating CTR
+of articles that incorporate information from correlated lo-
+cations and decay caused by repeated exposure. Although
+we demonstrated the utility of the models using a content
+recommendation application based on overall popularity, the
+models can also be used to perform personalized recommen-
+
+Figure 11: Mean Absolute Error (MAE) of user fa-
+tigue models.
+
+dation. One approach to personalization is to create user
+segments based on analysis on a large amount of histori-
+cal data (using clustering or other techniques), track article
+CTR for each segment separately and serve the segment-
+speciﬁc most popular articles. This is a reasonable solution
+as our experiments in Section 4 showed, spatial modeling
+performs well even with extremely sparse data. Another ap-
+proach is to build personalization models (e.g., regression
+models) that are based on both user features and dynamic
+article CTR estimates obtained from our models to combine
+relevance and popularity.
+In our preliminary study, those
+dynamic CTR features are the most important features in
+such models.
+
+Our models are motivated by rigorous exploratory analy-
+sis. All the modeling assumptions have been veriﬁed. Exper-
+imental results conﬁrmed good performance of our models.
+
+6. REFERENCES
+[1] D. Agarwal, B.-C. Chen, P. Elango, and et al. Online
+
+models for content optimization. In NIPS, 2008.
+
+[2] P. Auer, N. Cesa-Bianchi, and P. Fischer. Finite-time
+analysis of the multiarmed bandit problem. Machine
+Learning, 2002.
+
+[3] Y. Benjamini and Y. Hochberg. Controlling the false
+discovery rate: a practical and powerful approach to
+multiple testing. Journal of the Royal Statistical
+Society B, 1995.
+
+[4] C.A.Colin and P.K.Trivedi. Regression Analysis of
+
+Count Data. Cambridge University Press, 1998.
+
+[5] J. M. Chambers. Software for Data Analysis:
+
+Programming with R. Springer, 2008.
+
+[6] C.R.Rao. Linear Statistical Inference and Its
+
+Applications. Wiley, 2002.
+
+[7] D.K.Stangl and D.A.Berry. Meta-analysis in Medicine
+
+and Health Policy. CRC Press, 2000.
+
+[8] D.Lambert and C.Liu. Adaptive thresholds:
+
+Monitoring streams of network counts. Journal of the
+American Statistical Association, 2006.
+
+[9] C. Kaufman, V. Ventura, and R. Kass. Spline-based
+non-parametric regression for periodic functions and
+its application to directional tuning of neurons.
+Statistics in Medicine, 2005.
+
+[10] Q. Mei and K. W. Church. Entropy of search logs:
+
+how hard is search? with personalization? with
+backoﬀ? In WSDM, 2008.
+
+0.010.050.100.501.005.0010.000.0020.0060.0100.014F1−to−others traffic ratioMean absolute errorDGP−F1DLR0.020.050.100.200.500.0030.0050.007Fraction of time with F1 dataMean absolute errorDGP−F1DLR0.20.40.60.81.00.900.940.98M1M2/M1WWW 2009 MADRID!Track: Data Mining / Session: Click Models29[11] M.West and J.Harrison. Bayesian Forecasting and
+
+Dynamic Models. Springer-Verlag, 1997.
+
+[12] F. Radlinski and T. Joachims. Active exploration for
+
+learning rankings from clickthrough data. In KDD,
+2007.
+
+[13] M. Richardson, E. Dominowska, and R. Ragno.
+
+Predicting clicks: estimating the click-through rate for
+new ads. In WWW, 2007.
+
+[14] S.P.Ellner and Y.Seifu. Using spatial statistics to
+
+select model complexity. Journal of Computational
+and Graphical Statistics, 2002.
+
+[15] F. Wu and B. A. Huberman. Novelty and collective
+
+attention. In Proceedings of National Academy of
+Sciences, 2007.
+
+[16] F. Wu and B. A. Huberman. Popularity, novelty and
+
+attention. In EC. ACM, 2008.
+
+APPENDIX
+Eﬀect of Concurrent articles: Ranking of articles at
+diﬀerent slots depends on correlation in article CTR that
+are shown concurrently to users.
+If CTR of an article is
+inﬂuenced by other concurrent articles in the content pool,
+it is important to adjust for such eﬀects in ranking articles.
+In general, it is hard to conduct such correlation studies from
+serving bucket data; the availability of random bucket data
+in our scenario makes this study feasible.
+
+To measure such correlations, we compare the observed
+number of clicks cij for article i displayed at F1 when shown
+concurrently with article j shown at Fx (x= 2, 3, 4) with
+baseline Eij, expected number of clicks under the null hy-
+pothesis of no correlation. Large deviations of cij’s from the
+corresponding Eij’s would be indicative of correlation.
+
+If
+
+h Nij,h
+
+(cid:80)
+
+Computing baseline frequency Eij: To avoid data spar-
+sity, we only considered pairs that were shown together at
+least 1000 times during their lifetimes. To adjust for tem-
+poral variations, we partitioned the data into several 2 hour
+ˆCT Ri,h denote the empirical CTR of article
+windows.
+i in time window h and Nij,h is the number of joint oc-
+curences of article i at F1 with article j at Fx in time win-
+ˆCT Ri,h. We then compute p-values
+dow h, Eij =
+(Pij,low,Pij,high) that measures extremeness of cij under a
+Poisson model with mean Eij.
+In particular, Pij,low =
+P r(X ≤ cij); Pij,high = P r(X > cij), where X follows
+P oisson(Eij). Low values of Pij,low(Pij,high) are indicative
+of strong negative(positive) correlations. Figure 5 shows
+the quantile-quantile plot of normal scores of the p-values
+against a standard normal distribution. The close agree-
+ment indicates no signiﬁcant correlations in our data. We
+also conducted formal hypothesis testing by adjusting the
+p-values for multiple testing using the FDR procedure([3]).
+The test ﬂagged only 3 pairs as signiﬁcant (out of a total of
+about 26K) at 5% error rate. This further shows there is no
+need to incorporate the eﬀect of other articles while select-
+ing the set of top 4, perhaps the editors are already ensuring
+a diverse pool of articles through their programming.
+
+Validating Gamma-Poisson Assumption To validate
+the Gamma-Poisson assumption empirically, we consider click
+and view time series of all articles appearing in a month
+in RND. Our method is motivated by techniques proposed
+in [8]. Recall the Gamma-Poisson model:
+if the CTR or
+state θt at each time interval is known, then clicks ct ∼
+P oisson(vtθt) and ct’s are independent of each other. Of
+
+Figure 12: Q-Q plot of normal scores for Pij,high.
+Similar patterns observed for normal scores of Pij,low
+
+(a) Poisson Q-Q
+
+(b) Gamma Q-Q
+
+Figure 13: Validating Gamma-Poisson assumption
+
+course the states are unknown and estimated from data,
+which introduces uncertainty modeled through a Gamma
+distribution. We ﬁrst ﬁt a non-parametric curve to the time
+series using loess (local polynomial regression) available in
+software R [5]; the neighborhood size (span) is selected such
+that the autocorrelations in the residuals is close to zero as
+suggested in [8]. In fact, this ensures the assumption of in-
+dependence of clicks in diﬀerent intervals is approximately
+true. The autocorrelation measure we use is based on Moran
+I statistic as recommended in [14].
+
+Assuming the estimated loess curve ˜θt for an article in
+time t is the truth, we draw observations from P oisson(˜θtvt).
+Figure 13(a) shows a quantile-quantile plot of observed clicks
+versus simulated clicks from ﬁtted Poisson distribution. The
+close agreement among the quantiles clearly shows the Pois-
+son assumption is reasonable.
+
+To validate the Gamma assumption, we assume CTR of
+an article in a given hour changes very slowly and can be
+assumed to be almost a constant. We ﬁt a Gamma distri-
+bution to each of the 12 loess ﬁtted article CTR in a given
+hour by matching moments and draw 12 samples from the
+ﬁtted Gamma distribution. The quantile-quantile plot of
+estimated loess CTR’s and Gamma samples shown in ﬁg-
+ure 13(b) shows the Gamma assumption is reasonable for
+our data. (Similar patterns observed over large number of
+simulations.) This one-time oﬄine analysis clearly shows
+the Gamma-Poisson assumption is appropriate for tracking
+article CTR in our data. A similar analysis showed Beta-
+Binomial is also reasonable but slightly worse than Gamma-
+Poisson.
+
+−4−2024−6−2024Standard normalnormal scores0408012004080120Obs ClicksExpected clicks0.050.150.050.15True CTRExpected CTRWWW 2009 MADRID!Track: Data Mining / Session: Click Models30

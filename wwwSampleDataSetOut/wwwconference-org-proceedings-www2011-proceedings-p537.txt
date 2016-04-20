@@ -1,0 +1,2025 @@
+Like like alike — Joint Friendship and Interest
+
+Propagation in Social Networks
+
+Shuang Hong Yang
+
+Georgia Tech
+
+shy@gatech.edu
+
+Narayanan Sadagopan
+
+Yahoo! Labs
+
+narayans@yahoo-inc.com
+
+Bo Long
+Yahoo! Labs
+
+bolong@yahoo-inc.com
+
+Zhaohui Zheng
+Yahoo! Labs China
+
+zhaohui@yahoo-inc.com
+
+Alex Smola
+
+Yahoo! Research
+
+smola@yahoo-inc.com
+
+Hongyuan Zha
+
+Georgia Tech
+
+zha@cc.gatech.edu
+
+ABSTRACT
+Targeting interest to match a user with services (e.g. news,
+products, games, advertisements) and predicting friendship
+to build connections among users are two fundamental tasks
+for social network systems. In this paper, we show that the
+information contained in interest networks (i.e. user-service
+interactions) and friendship networks (i.e. user-user connec-
+tions) is highly correlated and mutually helpful. We propose
+a framework that exploits homophily to establish an inte-
+grated network linking a user to interested services and con-
+necting diﬀerent users with common interests, upon which
+both friendship and interests could be eﬃciently propagated.
+The proposed friendship-interest propagation (FIP) frame-
+work devises a factor-based random walk model to explain
+friendship connections, and simultaneously it uses a coupled
+latent factor model to uncover interest interactions. We dis-
+cuss the ﬂexibility of the framework in the choices of loss ob-
+jectives and regularization penalties and benchmark diﬀer-
+ent variants on the Yahoo! Pulse social networking system.
+Experiments demonstrate that by coupling friendship with
+interest, FIP achieves much higher performance on both in-
+terest targeting and friendship prediction than systems using
+only one source of information.
+
+Categories and Subject Descriptors
+H.5.3 [Information systems]: Web-based Interaction; H.3.3
+[Information search and retrieval]: Information ﬁltering
+
+General Terms
+Algorithms, Performance, Experimentation
+
+Keywords
+Social network, link prediction, interest targeting
+
+1.
+
+INTRODUCTION
+
+Online social networking services have brought to the pub-
+lic a new style of social lives parallel to our day-to-day oﬄine
+activities. Popular social network sites, such as Facebook,
+Linkedin and Twitter have already gathered billions of ex-
+tensively acting users and are still attracting thousands of
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2011, March 28–April 1, 2011, Hyderabad, India.
+ACM 978-1-4503-0632-4/11/03.
+
+enthusiastic newbies each day. Doubtlessly, social networks
+have become one of today’s major platforms for building
+friendship and sharing interests.
+
+service item
+user
+friendship
+interest
+
+Figure 1: A social network graph. The connections
+consist of both (unipartite) edges within the user-
+user friendship network and bipartite user-item in-
+teractions in the interest network.
+
+Fundamental to all social network services is the goal to
+eﬀectively model the interests of a user and the friendship
+between users [21]. On the one hand, by capturing a user’s
+interests and accordingly exploiting the opportunity to serve
+her/him with potentially interesting service items (e.g. news,
+games, advertisements, products), one can improve the sat-
+isfaction of a user’s participation and boost the revenue of a
+social network site as well (e.g. via product purchases, vir-
+tual transactions, advertisement clicks). On the other hand,
+connecting people with common interests is not only impor-
+tant for improving existing users’ loyalty, but also helps to
+attract new costumers to boost the site’s traﬃc.
+In fact,
+friendship prediction (a.k.a.
+link prediction) and interest
+targeting (a.k.a. service recommendation) are two important
+tools available in almost all the major social network sites.
+Both activities which occur routinely in a social network
+have accrued a tremendous wealth of interaction traces, both
+among users (i.e. friendship network) and between users and
+service items (i.e. interest network). Figure 1 depicts a typi-
+cal topology of a heterogeneous graph in the context of social
+networks.
+1.1 Interests and Friendship
+
+Modeling user interests and friendship in social networks
+raises unique challenges to both research and engineering
+communities. The information about a user’s behaviors is
+often scattered in both friendship and interest networks, in-
+volving other users that are closely connected to the user
+
+WWW 2011 – Session: Temporal DynamicsMarch 28–April 1, 2011, Hyderabad, India537and diﬀerent activities that the user has engaged in. A fun-
+damental mechanism that drives the dynamics of networks
+is the underlying social phenomenon of homophily [18]: peo-
+ple with similar interest tend to connect to each other and
+people of similar interest are more likely to be friends.
+
+Traditional user proﬁling approaches often do not take
+full advantage of this fact. Instead they either employ fea-
+ture engineering to generate hand-crafted meta-descriptors
+as ﬁngerprint for a user [26, 5] or they extract a set of latent
+features by factorizing a user’s registered proﬁle data; for
+example, by means of sparse coding [12] or latent Dirichlet
+allocation [2]. These approaches could be inaccurate be-
+cause neither user friendship nor user behavior information
+is taken into account.
+
+Recent approaches resort to collaborative ﬁltering (CF)
+techniques [3, 23, 1, 10] to proﬁle user interests by collabo-
+ratively uncovering user behaviors, where users are assumed
+to be unrelated to each other. While CF performs well in
+recommendation systems where decisions are mainly made
+individually and independently, it could fail in the context
+of social networks where user interactions substantially in-
+ﬂuence decision making [7, 18].
+
+Modeling friendship is equally challenging. A typical so-
+cial network is a graph both large and sparse, involving hun-
+dreds of millions of users with each being connected to only
+a tiny proportion of the whole virtual world. This property
+rules out traditional spectral algorithms for graph mining
+[19, 20] and calls for algorithms that are both eﬃcient to
+handle large scale connections and capable of reliably learn-
+ing from rare, noisy and largely missing observations. Un-
+fortunately, progress on this topic to date is limited [13].
+1.2 Friendship Interest Propagation
+
+This paper exploits the important role homophily plays
+in social networks. We show that friendship and interest in-
+formation is highly correlated (i.e. closely-connected friends
+tend to have similar interests) and mutually helpful (i.e.
+much higher performance for both friendship prediction and
+interest targeting could be achieved if coupling the two pro-
+cesses to exploit both sources of evidence simultaneously).
+We present a friendship-interest propagation (FIP) model
+that integrates the learning for interest targeting and friend-
+ship prediction into one single process.
+
+The key idea in FIP is to associate latent factors with both
+users and items, and to deﬁne coupled models to encode both
+interest and friendship information. In particular, FIP de-
+ﬁnes a shared latent factor to assure dynamical interaction
+between friendship network and interest network during the
+learning process. In doing so, FIP integrates both interest
+and friendship networks to connect a user to both items of
+potential interest and other users with similar interests. FIP
+hereby provides a single uniﬁed framework to address both
+link prediction and interest targeting while enjoying the re-
+sources of both sources of evidence. Experiments on Yahoo!
+Pulse demonstrate that, by coupling friendship with inter-
+est, FIP achieves much higher performance on both tasks.
+
+The contributions of this work are three-fold:
+
+1. We present the friendship-interest propagation model
+that propagates two diﬀerent types of evidence through
+heterogeneous connections.
+
+2. We formulate the FIP model in a computational frame-
+work, discuss the ﬂexibility in the choices of loss objec-
+tives (e.g. (cid:2)2, logistic regression, Huber’s loss) and reg-
+
+ularization penalties (e.g. sparse coding, (cid:2)2 penalties)
+and we benchmark diﬀerent variants in a real-world
+social networking system;
+
+3. For the implementation of FIP, we present a built-in
+scheme for bias correction based on pseudo-negative
+sampling to avoid overﬁtting, and we also deliver an
+optimization package that allows distributed optimiza-
+tion on streaming data.
+
+Outline: §2 describes the background. §3 presents the de-
+tailed FIP model and our distributed implementation. §4
+reports experiments and results. §5 reviews related work
+and §6 summarizes the results.
+
+2. PROBLEM DEFINITION
+We begin by brieﬂy reviewing the state-of-the-art. This
+will come in handy as we will link them to our model in §3.
+Modeling dyadic interactions is the heart of many web ap-
+plications, including link prediction and interest targeting.
+Typically, a pair of instances from two parties (such as users
+and items), i ∈ I and j ∈ J , interact with each other with
+a response yij ∈ Y. The mapping
+
+{(i, j) → yij where i ∈ I, j ∈ J }
+
+constitutes a large matrix Y ∈ Y|I|×|J |
+, of which only a tiny
+proportion of entries are observable; the goal is to infer the
+value of a missing entry y˜i˜j, given an incoming pair (˜i, ˜j).
+Essentially, the observed interactions deﬁne a graph, either
+unipartite (when I = J ) or bipartite. The task amounts to
+propagating the sparse observations to the remainder (un-
+observed) part of the matrix. For convenience we will hence-
+forth refer to i as user and j as item unless stated otherwise.
+2.1 Interest Targeting
+
+Interest targeting, or (service) recommendation, works with
+
+a bipartite graph between two diﬀerent parties, e.g. user i
+and item j. It aims at matching the best item j
+to a given
+user i. We consider collaborative ﬁltering (CF) approaches,
+which tackle the problem by learning from past interactions.
+
+∗
+
+Neighborhood models. A popular approach to CF is
+based on the principle of locality of dependencies, which
+assumes that the interaction between user i and item j
+can be restored solely upon the observations of neighboring
+users or items [24, 17]. Such neighborhood-based models
+therefore propagate similar items to a particular user (item-
+oriented) or recommend a particular item to similar users
+(user-oriented). Basically, it predicts the interest of user i
+to item j by averaging the neighboring observations. For
+instance, the user-oriented model uses:
+i(cid:2)∈Ωi ωii(cid:2) yi(cid:2)j
+
+(cid:2)
+(cid:2)
+
+ˆyij =
+
+i(cid:2)∈Ωi ωii(cid:2)
+
+,
+
+where ωii(cid:2) measures the similarity, e.g. Pearson correlation
+coeﬃcient, between user i and its neighbor i
+
+(cid:4) ∈ Ωi.
+
+Latent factor models. This class of methods attempt to
+learn informative latent factors to uncover the dyadic in-
+teractions. The basic idea is to associate latent factors,1
+
+1Throughout this paper, we assume each latent factor φ
+contains a constant component so as to absorb user/item-
+speciﬁc oﬀset into latent factors.
+
+WWW 2011 – Session: Temporal DynamicsMarch 28–April 1, 2011, Hyderabad, India538k for each user i and φj ∈ R
+
+φi ∈ R
+k for each item j, and
+assume a multiplicative model for the interaction response
+
+p(yij|i, j) = p(yij|φ
+
+(cid:5)
+i φj ; Θ).
+
+This way the factors could explain past interactions and in
+turn make prediction for future ones. This model implicitly
+encodes the Aldous-Hoover theorem [6] for exchangeable ma-
+trices — yij are independent from each other given φi and
+φj . Parameter estimation for the model reduces to a low-
+rank approximation of the matrix Y that naturally embeds
+both users and items into a vector space in which the inner
+product φ
+
+(cid:5)
+i φj directly reﬂect the semantic relatedness.
+
+Latent factor models have gained tremendous successes
+in recommendation systems and have even become the cur-
+rent state-of-the-art for CF [10, 1]. A known drawback for
+such models is that, because it is learned only upon past
+interactions, the generalization performance is usually poor
+for completely new entities, i.e. unseen users or items, for
+which the observations are missing at the training stage.
+This scenario is well-known as the “cold-start problem” in
+recommendation systems. The recently proposed regression
+based latent factor model (RLFM) [1] addresses this problem
+by incorporating entity features into latent factor learning.
+The key idea is to use observable features to explain the
+learned latent variables (e.g. by regression or factorization).
+Suppose for each user and each item, there are observable
+features, xi for i (e.g. user’s demographic information, self-
+crafted registration proﬁles) and xj for j (e.g. content of a
+document, description of a product), as shown in Figure 2,
+RLFM [1] assumes the following dependencies:
+yij ∼ p(yij|φ
+
+φi ∼ p(φi|xi) φj ∼ p(φj|xj )
+
+(cid:5)
+i φj ; Θ).
+
+Neighborhood based latent factor models. It is nat-
+ural to combine the neighborhood models and latent factor
+models. A recent example is discussed [9], where the basic
+idea is to apply the locality of dependencies directly to the
+latent factors, for example:
+i(cid:2)∈Ωi ωii(cid:2) φi(cid:2)
+i(cid:2)∈Ωi ωii(cid:2)
+
+yij ∼ p(yij| ˆφ
+(cid:5)
+i φj; Θ).
+
+(cid:2)
+(cid:2)
+
+ˆφi =
+
+(1)
+
+This model2 which is quite similar to [9] was deployed on
+the Netﬂix data yielding signiﬁcantly better performances
+over both pure-neighborhood and pure latent factor models.
+2.2 Friendship Prediction
+
+Friendship (link) prediction recommends users to other
+users in the hope of acquainting people who were previously
+not connected in the network (or even unfamiliar with each
+other). Unlike interest targeting, the user network is unipar-
+(cid:4)
+tite. For a pair of users (i, i
+) the observation whether they
+are connected is a binary value Sii(cid:2) . Link prediction cru-
+cially inﬂuences both the traﬃc and the revenue of a social
+network and it is hence recognized as one of the key tasks
+in social network analysis.
+
+Ideally, our goal is to learn a distribution over jointly ex-
+changeable matrices (e.g. by applying the Aldous-Hoover
+factorization theorem). For reasons of practicality we pick a
+ﬁnite-dimensional factorization instead, which we shall dis-
+cuss in the next section. Before we do so, let us brieﬂy
+review existing approaches. Some of them employ random
+walk methods [14, 22] or spectral graph algorithms [19, 20].
+2In this case the set of neighbors Ωi contains i with ωii = 1.
+
+ix
+
+jx
+
+φ
+i
+
+φ
+j
+
+jx
+
+φ
+j
+
+ijy
+
+Θ
+
+y
+
+(a)
+
+ix
+
+φ
+i
+
+(b)
+
+ijy
+
+Θ
+
+y
+
+'ix
+
+φ
+'i
+
+'iis
+
+Θ
+
+s
+
+Figure 2: Graphical representations of (a) regres-
+sion based latent factor model (RLFM) and (b)
+friendship-interest propagation model (FIP).
+
+Random Walk. A random walk on the graph S is a
+reversible Markov chain on the vertexes I. The transi-
+(cid:4)
+tion probability from the vertex i to vertex i
+is deﬁned
+(cid:4)|i) = sii(cid:2) /di. Here di denotes the degree of vertex i;
+p(i
+(cid:4)
+sii(cid:2) the connection weight between nodes i and i
+. Vertexes
+are considered close whenever the hitting time is small or
+whenever the diﬀusion probability is large.
+Spectral Algorithms. For the given network S, the un-
+normalized Laplacian is deﬁned by L = D − S, where D is a
+diagonal matrix with Dii = di. Spectral algorithms diﬀuse
+the connections by maximizing the spectral smoothness to
+obtain the intrinsic kinship deﬁned by the dominant eigen-
+vectors of the Laplacian
+
+sii(cid:2) (cid:2)ui − ui(cid:2)(cid:2)2 = 2U LU(cid:5), where U = [u1, . . . , u|I|].
+
+(2)
+
+(cid:3)
+
+i,i(cid:2)
+
+3. MODEL
+
+We now consider interest targeting and link prediction in
+the context of social network, where evidence for both in-
+terest and friendship are available, allowing us to solve both
+tasks in a single framework. The rationale is that friendship
+and interest information are to some degree correlated,3 i.e.
+the network exhibits homophily [18] and the propagation
+of friendship and interest would be mutually reinforcing if
+modeled jointly.
+
+In this section we present our model of friendship-interest
+propagation (FIP). We start with a probabilistic formula-
+tion, discuss diﬀerent variants of the model and its imple-
+mentation within an optimization framework, and then dis-
+tinguish our model from existing works.
+3.1 Probabilistic Model
+
+The nontrivial correlation between interest and friendship
+motivates joint modeling of both sources of evidence. As
+shown in Figure 2, the friendship-interest propagation(FIP)
+model simultaneously encodes the two heterogeneous types
+of dyadic relationships: the user-item interactions {yij|i ∈
+I, j ∈ J }, and user-user connections {sii(cid:2)|i, i
+(cid:4) ∈ I}. Our
+model is built on latent factor models.
+
+3Empirical analysis on Yahoo! Pulse illustrates that the
+interest correlation (Pearson score, max 1.0) between two
+directly-linked friends is 0.43, much higher than average.
+
+WWW 2011 – Session: Temporal DynamicsMarch 28–April 1, 2011, Hyderabad, India539Modeling Interest Evidence. To characterize the user-
+item dyads, yij , we assume that for each user i and item
+j there exist observable properties xi (e.g. a user’s self-
+crafted registration ﬁles) and xj (e.g. a textual description of
+a service item)4. Moreover, we also assume that there exist
+some subtle properties which cannot be observed directly,
+such as a user’s interests, a service item’s semantic topics.
+We denote these latent features by φi for i and φj for j
+respectively. We assume the response yij depends on both
+types of features (i.e. observable and latent):
+yij ∼ p(yij|φi, φj , xi, xj, Θ),
+φi ∼ p(φi|xi) φj ∼ p(φj|xj )
+where Θ denotes the set of hyper-parameters. To design a
+concrete model, one needs to specify distributions for the
+dependencies, φi|xi, φj|xj, and yij|xi, xj, φi, φj .
+
+This model is essentially an integration of collaborative
+ﬁltering [1] and content ﬁltering [4]. On the one hand, if the
+user i or item j has no or merely non-informative observable
+features such that we have access to only their identity and
+past interactions, the model degrades to a factorization-style
+collaborative ﬁltering algorithms [23]. On the other hand, if
+we assume that φi and φj are irrelevant, for instance, if i or
+j is totally new to the system such that there is no interac-
+tion involving either of them as in a cold-start setting, this
+model becomes the classical feature-based recommendation
+algorithms [3, 31, 4], which predict the interaction response
+yij purely based on the observed properties of i and j, and
+are commonly used in, e.g. webpage ranking [31], advertise-
+ment targeting [3], and content recommendation [4].
+
+Modeling Friendship Evidence. We now extend the in-
+terest model to incorporate the social friendship-connection
+information among users. For this purpose, we deﬁne a ran-
+dom walk process for user-user networking. But unlike tra-
+ditional random walk models [14, 22], we assume a user i
+is fully characterized by her observable features xi and la-
+tent factor φi, and devise the following model for user-user
+transition:
+
+φi ∼ p(φi|xi, Θ) and sii(cid:2) ∼ p(sii(cid:2)|φi, φi(cid:2) , xi, xi(cid:2) , Θ),
+
+(3)
+(cid:4)
+where sii(cid:2) reﬂects an observed state transition from i to i
+.
+Unlike in random walk models where proximity in a graph is
+simply used to smooth secondary estimators of parameters
+(e.g. reachability, hitting times), we make direct use of it
+to model the latent variables φi. Note that whenever we
+restrict the norm of φi (e.g. by (cid:2)2 regularization) and when
+(cid:5)
+i φi(cid:2) to assess similarity, we
+we use an inner product model φ
+approximately recover the graph Laplacian of Eqn.(2).
+
+In this way our model integrates two diﬀerent methodolo-
+gies — collaborative ﬁltering and random walks. It is diﬀer-
+ent from traditional random walk models in which transition
+probability is deﬁned solely based on graph topologies. It
+is also diﬀerent from traditional CF models in that it is de-
+ﬁned on unipartite dyadic relationships. By doing so, this
+integrated model not only allows learning of latent factors to
+capture graph topologies, but it also alleviates certain crit-
+ical issues in random walks: for example, it naturally han-
+dles heterogeneous graphs (e.g. a compound graph consist-
+ing of both unipartite and bipartite connections such as Fig-
+ure 1), and it also makes applicable computationally-eﬃcient
+
+4Whenever we do not have access to these properties we
+simply default to the expected value of the latent variables,
+which is easily achieved in a probabilistic model.
+
+sequential learning algorithms (e.g. stochastic gradient de-
+scent), avoiding directly manipulating large matrices.
+Friendship-Interest Propagation model. Based on the
+above descriptions, we ﬁnally summarize the overall FIP
+model in Figure 2 and the table below. Note that the tu-
+ples (i, xi, φi) now play “double duty” in encoding interest
+(cid:4)
+, sii(cid:2) )
+interactions (i, j, yij) and friendship connections (i, i
+simultaneously. Learning shared factors from coupled rela-
+tionships gives us both more evidence and more constraints
+to work with, and in turn leads to better generalization.
+
+The Friendship-Interest Propagation (FIP) model.
+
+∀ i ∈ I
+∀ j ∈ J
+∀ i ∈ I, j ∈ J
+∀ i, i
+(cid:4) ∈ I
+
+φi ∼ p(φi|xi, Θ)
+φj ∼ p(φj|xj, Θ)
+yij ∼ p(yij|φi, φj, xi, xj, Θ)
+sii(cid:2) ∼ p(sii(cid:2)|φi, φi(cid:2) , xi, xi(cid:2) , Θ)
+
+3.2 Model Speciﬁcation
+
+So far we deliberately described the FIP model in terms
+of general dependencies between random variables to make
+it explicit that the model is quite a bit more general than
+what can be achieved by an inner product model. Here, we
+specify the model within an optimization framework.
+
+For computational convenience we assume linear depen-
+dencies between xi and φi plus a noise term5 . This means
+
+φi = Axi + i where E [i] = 0.
+φj = Bxj + j where E [j] = 0.
+
+(4)
+(5)
+
+ is typically assumed to be Gaussian or Laplace. Whenever
+nonlinearity in x is desired we can achieve this simply by
+using a feature map of x and an associated kernel expan-
+sion. Finally, we assume that the dyadic response (e.g. yij )
+depends on latent features only through the inner product
+(cid:5)
+(e.g. φ
+i φj) and on observable features through a bilinear
+product (e.g. x
+
+(cid:5)
+i W xj) [4]. That is:
+yij ∼ p(yij|fij ) where fij = φ
+(cid:5)
+i φj + x
+sii(cid:2) ∼ p(sii(cid:2)|hii(cid:2) ) where hii(cid:2) = φ
+
+(cid:5)
+i W xj.
+
+m and xj ∈ R
+
+Here, assume xi ∈ R
+m×n
+and M ∈ R
+m×m provide a bilinear form which captures the
+aﬃnity between the observed features for the corresponding
+dyads. We also impose Laplace or Gaussian priors on W
+and M . One advantage of using an (cid:2)1 (i.e. Laplace) prior
+is that it introduces sparsity, which makes (6) equivalent to
+sparse-coding [12] and thus improves both compactness and
+predictiveness of the learned latent factors φ.
+Given observed responses for the dyads {(i, j) ∈ Oy} and
+{(i, i
+) ∈ Os}, the problem of minimizing the negative log-
+(cid:4)
+posterior of FIP boils down to the following objective:
+
+(cid:5)
+i φi(cid:2) + x
+
+(cid:5)
+i M xi(cid:2) .
+n, the matrices W ∈ R
+
+min λy
+
+(cid:2)(yij, fij ) + λs
+
+(cid:2)(sii(cid:2) , hii(cid:2) )
+
++ λI
+
+γ(φi|xi) + λJ
+
+(6)
+
+(cid:3)
+(cid:3)
+
+i∈I
+
+(i,j)∈Oy
+
+(cid:3)
+
+(cid:3)
+
+j∈J
+
+(i,i(cid:2))∈Os
+
+γ(φj|xj )
+
++ λW Ω[W ] + λM Ω[M ] + λAΩ[A] + λBΩ[B],
+
+where λ·’s are trade-oﬀ parameters, (cid:2)(·,·) denotes a loss
+function for dyadic responses. The term γ(φ|x) = Ω[φ] +
+5Note that the latent ‘noise’ term is actually meaningful.
+It indicates the deviation of the user/item proﬁles from its
+cold-start estimates Axi and Bxj respectively.
+
+WWW 2011 – Session: Temporal DynamicsMarch 28–April 1, 2011, Hyderabad, India540γx(x, φ). Here Ω[·] is used to penalize the complexity (i.e.
+(cid:2)2, (cid:2)1 norm). The term γx(x, φ) regularizes φ by ﬁtting the
+observed feature x, as deﬁned by (6). This type of regular-
+ization are equivalent to applying content factorization (e.g.
+LSI, NMF, LDA) to the feature x in terms of a factor φ and
+bases A
+
+−1 or B
+
+−1.
+
+The motivations for a computational framework instead
+of direct probabilistic inference are mainly two-fold: First,
+the two formulations are somewhat equivalent — the dis-
+tribution of the dyadic response (e.g. yij ) and its depen-
+dence on the prediction (e.g. p(yij|fij )) can be encoded pre-
+cisely through the choice of loss functions; likewise, the prior
+over the observations or parameters could also be readily
+translated into the regularization penalties. Secondly, com-
+putational models allow more scalable algorithms, e.g. via
+stochastic gradient descent, whereas probabilistic reasoning
+often requires Monte Carlo sampling or quite nontrivial vari-
+ational approximations.
+3.3 Loss
+
+In our case, both y and s are binary, i.e. yij , sii(cid:2) ∈ {±1}.
+We performed an extensive study in our experiments com-
+paring a large variety of diﬀerent loss functions. For the
+convenience of optimization, we limit ourselves to diﬀeren-
+tiable (in many cases, also convex) loss functions (see also
+Figure 3 for details):
+
+Least Mean Squares: This is the most popularly-used loss
+in matrix factorization.
+It minimizes the Frobenius
+norm of the prediction residue matrix and leads to a
+SVD-style algorithm. We have the loss
+
+(cid:2)2(y, f ) =
+
+(1 − yf )
+
+2
+
+.
+
+1
+2
+
+(7)
+
+Lazy Least Mean Squares: This is a slight modiﬁcation
+of (cid:2)2 loss for the purpose of classiﬁcation [30]. Basi-
+cally, it is an iteratively truncated version of the (cid:2)2 loss
+via
+
+ll2(y, f ) = min(1, max(0, 1 − yf )
+
+2
+
+).
+
+(8)
+
+It has been shown that this loss approximates the clas-
+siﬁcation error rate in the example space [30].
+
+Logistic regression: This is the loss used in a binary ex-
+
+ponential families model. It is given by
+
+log(y, f ) = log[1 + exp(−yf )].
+
+(9)
+
+Huber loss: This is the one-sided variant of Huber’s robust
+loss function. It is convex and continuously diﬀeren-
+tiable via
+
+η(y, f ) =
+
+1
+
+2 max(0, 1 − yf )2,
+− yf,
+
+1
+2
+
+if yf > 0.
+otherwise.
+
+(10)
+
+(cid:4)
+
+(cid:4)
+
+Ψ loss: Unlike other loss functions, which are all convex
+upper bound of the 0-1 loss, the Ψ loss [25] is non-
+convex. Both theoretical and empirical studies have
+shown appealing advantages of using non-convex loss
+over convex ones, such as higher generalization accu-
+racy, better scalability, faster convergence to the Bayes
+limit [25, 30]. We implement the following version:
+
+Ψ(y, f ) =
+
+1
+
+2 max(0, 1 − yf )2,
+1 − 1
+
+2 max(0, 1 + yf )2,
+
+if yf > 0.
+otherwise.
+
+(11)
+
+2  
+
+s
+s
+o
+
+l
+
+1
+
+0  
+
+ 
+
+−1
+
+0
+
+yf
+
+1
+
+l2
+log
+Huber
+Psi
+
+ 
+
+2
+
+Figure 3: Least mean squares ((cid:2)2), logistic (log), Hu-
+ber and Ψ-loss (Psi). We use these four and the lazy
+(cid:2)2 (omitted since its shape in parameter space is es-
+sentially identical to (cid:2)2) loss for binary classiﬁcation.
+
+3.4 Bias Correction
+
+A key challenge for learning latent factors from dyadic in-
+teractions is that the observations are extremely sparse with
+almost exclusively positive interactions observable. That is,
+we typically do not observe explicit information that user
+i does not like item j. Rather, the fact that we have not
+observed (i, j) suggests that i might not even know about
+j. In other words, absence of a preference statement or a
+social link should not be interpreted absolutely as negative
+information.
+
+At the same time, unless we have access to negative sig-
+nals, we will almost inevitably obtain an estimator that is
+overly optimistic with regard to preferences (e.g. predict pos-
+itive for all the interactions). To balance both requirements
+we draw uniformly from the set of unobserved tuples (i, j)
+(cid:4)
+and (i, i
+) respectively and we require that, on average, ob-
+served pairs are preferred to unobserved ones.
+
+In practice, since we use a stochastic gradient algorithm
+for minimization, for every positive observation, e.g. yij = 1,
+we randomly sample a handful set of missing (unobserved)
+entries {yij(cid:2)}j(cid:2)=1:m, and treat them as negative examples
+(e.g. yij(cid:2) = −1,) with credibility 1/m each. Since the sam-
+pling procedure is random, the set of pseudo-negatives changes
+at each iteration and consequently each missing entry is
+treated as a potentially very weak negative instance.
+3.5 Optimization and Implementation
+
+Minimizing (6) is a nonconvex problem regardless of the
+choice of the loss functions and regularizers due to its use
+of bilinear terms. While there are convex reformulations for
+some settings, they tend to be computationally ineﬃcient
+for large scale problems — the convex formulations require
+the manipulation of a full matrix which is impractical for
+anything beyond thousands of users. Moreover, the rela-
+tionships between users change over time and it is desirable
+to have algorithms which process this information incremen-
+tally. This calls for learning algorithms that are eﬃcient and
+amendable to dynamic updating so as to reﬂect upcoming
+data streams, rendering less attractive those oﬄine learn-
+ing algorithms such as classical SVD-based CF algorithms
+or spectral link prediction methods that involve manipula-
+tion of large-scale matrices. This requirement becomes more
+important for FIP than for traditional latent factor models
+
+WWW 2011 – Session: Temporal DynamicsMarch 28–April 1, 2011, Hyderabad, India541because we are now dealing with two (instead of one) large-
+scale coupled interactions and feature observations.
+
+We established algorithms for distributed optimization based
+
+on the Hadoop MapReduce framework. The basic idea is to
+decompose the objective in (6) by optimizing with respect to
+yij and sii(cid:2) independently in the Map phase, and to combine
+the results for φi in the Reduce phase.
+
+Stochastic Gradient Descent. We brieﬂy describe a
+stochastic gradient descent algorithm to solve the optimiza-
+tion of (6). The algorithm is computationally eﬃcient and
+decouples diﬀerent users. For a detailed discussion see [33].
+The algorithm loops over all the observations and updates
+the parameters by moving in the direction deﬁned by nega-
+tive gradient. For example, for each (i, j, yij ) ∈ Oy:
+- φi ← φi − δ × ((cid:2)
+(cid:4)
+(cid:4)
+[φi])
+(yij , fij )φj + λΩ
+- φj ← φj − δ × ((cid:2)
+(cid:4)
+(cid:4)
+(yij, fij )φi + λΩ
+[φj])
+- W ← W − δ × ((cid:2)
+(cid:4)
+(cid:5)
+(cid:4)
+(yij, fij )xix
+j + λΩ
+To update on feature observations, for each i ∈ I:
+- φi ← φi − δ × (φi − Axi + λΩ
+(cid:4)
+[φi])
+- A ← A − δ × ((Axi − φi)x
+(cid:5)
+(cid:4)
+i + λΩ
+where the subscripts of the trade-oﬀ parameters λ are omit-
+ted but clear from the context, δ is the learning rate6. Note
+that the gradient of (cid:2)1 regularizer is the discontinuous sign
+function. We approximate it by a steep soft sign function:
+1−exp(−αx)
+1+exp(−αx) , where α is a positive number controlling
+σ(x) =
+the ramp of σ(x) (we use α = 100).
+
+[W ])
+
+[A])
+
+Feature Hashing. A key challenge in learning FIP from
+large-scale data is that the storage of parameters as well as
+observable features requires a large amount of memory and
+a reverse index to map user IDs to memory locations.
+In
+particular in social networks with hundreds of millions of
+users the memory requirement would easily exceed what is
+available on today’s computers (100 million users with 100
+latent feature dimensions each amounts to 40GB of RAM).
+We address this problem by implementing feature hashing
+[28] on the space of matrix elements.
+In particularly, by
+allowing random collisions and applying hash mapping to
+the latent factors (i.e. φ), we make possible most-needed la-
+tent factors to remain in-memory, and in turn allow storing,
+accessing and updating (i.e. the stochastic gradient descent
+algorithm) to perform at suﬃcient speeds.
+
+3.6 Discussion
+model is related to the models discussed in §2.
+
+We end this section with a brief discussion on how our
+
+Our ﬁrst observation is that our FIP model indirectly in-
+(cid:4)
+duces a kernel for the friendship network graph: k(i, i
+) =
+(cid:5)
+i φi(cid:2) via the learned embedding φs . This is similar to the
+φ
+information diﬀusion kernel for graph [8, 11] in that both
+kernels inherent a Riemannian manifold for I deﬁned by the
+friendship network S, rather than a ﬂat Euclidean space as
+in traditional CF models (e.g. neighborhood [24], factoriza-
+tion [23], RLFM [1]). However, it is also worth mentioning
+that the FIP induced kernel is diﬀerent from diﬀusion kernels
+in that (i) our feature mapping φi is obtained from latent-
+factor based random walk model rather than topology-based
+random walk; and (ii) our model deﬁnes a compact low-rank
+manifold rather than a manifold that is potentially of inﬁnite
+dimensionality [8, 11].
+
+6We carry out an annealing procedure to discount δ by a
+factor of 0.9 after each iteration, as suggested by [9].
+
+|I|×|I|
+
+Traditional latent factor CF models [1, 23] work in Eu-
+clidean space where user factors φi are assumed identically
+and independently distributed: φi ∼ N (0, σ2I). Our model
+relates φi with one another by modeling the social net-
+work graph. This is equivalent to a row-correlated matrix-
+Gaussian Φ ∼ MN (0, Σ ⊗ I), where Φ = [φi, . . . , φ|I|]
+(cid:5)
+,
+MN is a matrix-variate Gaussian, and Σ ∈ R
+deﬁnes
+the row-covariance (user-user covariance). By inexplicably
+modeling the friendship manifold, our model hereby gener-
+alizes traditional latent factor CF models from Euclidean
+space to Riemannian space, in a way analogous to how dif-
+fusion kernels generalize Gaussian kernels.
+Note that, although the neighborhood based latent factor
+model [9] also induces a manifold structure for I, this man-
+ifold is virtual as it is directly constructed from Euclidean
+representations that essentially reﬂect the same amount of
+information. Our model generalizes this model by exploiting
+the true connections from social networks.
+
+The FIP also diﬀers from traditional link prediction al-
+gorithms. Actually, it borrows the idea of latent factor CF
+models to model the transition probability in terms of la-
+tent factors, making possible that (i) latent factors can be
+learned from network topologies; and (ii) connections can
+be propagated collaboratively through the interaction be-
+tween latent factors. Essentially, our approach establishes
+an integrated network of interest and friendship that con-
+nects people with similar interests, and upon which both
+friendship and interests could be eﬃciently propagated.
+
+4. EXPERIMENTS
+
+We demonstrate the FIP model on Yahoo! Pulse in terms
+
+of both interest targeting and friendship prediction.
+4.1 Yahoo! Pulse Data
+
+Yahoo! Pulse (pulse.yahoo.com) is a social network site
+that allows users to create proﬁles, connect to friends, post
+updates, and respond to questions, as in other social net-
+works. More importantly, it provides a mechanism for users
+to share interests, i.e. users can upload, download, install
+applications, and invite friends to try interesting applica-
+tions. Our motivation is to utilize the user-user friendship
+network and user-application interest network from Yahoo!
+Pulse, so as to simultaneously propagate interest and friend-
+ship. We examine data collected on Yahoo! Pulse for about
+one year, involving hundreds of millions of users and a large
+collection of applications, such as games, sports, news feeds,
+ﬁnance, entertainment, travel, shopping, and local informa-
+tion services. Figure 4 shows the degree distribution of this
+data set. The data is very sparse and almost half of the
+users only have one friend connections and do not like any
+of the applications (they are essentially not using the net-
+work). Our goal is to propagate evidence to establish reli-
+able connections both among users and between users and
+applications.
+
+We use a subset of Yahoo! pulse data. The data set has
+386 application items, 1.2M users, 6.1M friend connections
+and 29M interest interactions. There is a signiﬁcant diﬀer-
+ence in the densities of the two networks in this data set. As
+the item set is pretty small, the interest network is relatively
+dense – each user likes 23.5 items on average. In contrast,
+as the user population is large, the friendship network is ex-
+tremely sparse: on average, each user only has 4.9 friends
+out of the total 1.2 million.
+
+WWW 2011 – Session: Temporal DynamicsMarch 28–April 1, 2011, Hyderabad, India542Service recommendation performance.
+Table 1:
+item oriented
+We compared the following models:
+neighborhood model (SIM), regression based la-
+tent factor model (RLFM), neighborhood based la-
+tent factor model (NLFM), and friendship-interest
+propagation (FIP). For the latter we distinguish by
+choice of regularizer Ω[·] and loss function (cid:2) as de-
+scribed in §3.3.
+
+Models
+SIM
+RLFM
+NLFM
+FIP
+FIP
+FIP
+FIP
+FIP
+FIP
+FIP
+FIP
+FIP
+FIP
+
+loss
+
+(cid:2)2
+lazy (cid:2)2
+logistic
+Huber
+Ψ
+(cid:2)2
+lazy (cid:2)2
+logistic
+Huber
+Ψ
+
+Ω[·] AP@5 AR@5
+0.186
+0.211
+0.222
+0.228
+0.232
+0.232
+0.232
+0.231
+0.231
+0.231
+0.231
+0.233
+0.215
+
+0.630
+0.729
+0.748
+0.768
+0.781
+0.781
+0.781
+0.777
+0.778
+0.780
+0.779
+0.786
+0.765
+
+(cid:2)2
+(cid:2)2
+(cid:2)2
+(cid:2)2
+(cid:2)2
+(cid:2)1
+(cid:2)1
+(cid:2)1
+(cid:2)1
+(cid:2)1
+
+nDCG@5
+0.698
+0.737
+0.761
+0.774
+0.790
+0.793
+0.794
+0.771
+0.787
+0.791
+0.792
+0.797
+0.772
+
+Table 2: Friendship prediction performance. We
+used the identical setting as in Table 1. The best
+results are printed in boldface.
+
+Models
+RLFM
+FIP
+FIP
+FIP
+FIP
+FIP
+FIP
+FIP
+FIP
+FIP
+FIP
+
+loss
+
+(cid:2)2
+lazy (cid:2)2
+logistic
+Huber
+Ψ
+(cid:2)2
+lazy (cid:2)2
+logistic
+Huber
+Ψ
+
+Ω[·] AP@5 AR@5
+0.202
+0.284
+0.269
+0.220
+0.234
+0.255
+0.230
+0.223
+0.217
+0.222
+0.208
+
+0.164
+0.359
+0.193
+0.174
+0.210
+0.187
+0.186
+0.180
+0.183
+0.188
+0.178
+
+(cid:2)2
+(cid:2)2
+(cid:2)2
+(cid:2)2
+(cid:2)2
+(cid:2)1
+(cid:2)1
+(cid:2)1
+(cid:2)1
+(cid:2)1
+
+nDCG@5
+0.174
+0.244
+0.200
+0.189
+0.215
+0.185
+0.214
+0.194
+0.189
+0.200
+0.179
+
+4.2 Evaluation Metrics
+
+Both interest targeting and link prediction lead to a rank-
+ing of entities (e.g. items and users that the system may rec-
+ommend) according to a score function. In our context this
+means that the scores fij and hii(cid:2) induce a ranking. Hence
+it is natural to use ranking metrics to assess performance.
+We consider the following three scores:
+
+AP is the average precision. AP@n averages the precision
+
+of the top-n ranked list of each query.
+
+AR is the average recall of the top-n rank list of each query.
+nDCG or normalized Discounted Cumulative Gain is the
+normalized position-discounted precision score. It gives
+larger credit to top-ranked entities.
+
+In all three metrics we use n = 5 since most social networks
+and recommendation sites use a similar number of items for
+friend and application suggestions; it is also the standard
+recommendations size used in the current system. For our
+evaluation we use cross-validation, where we randomly par-
+tition the data into two equally sized pieces and use one for
+
+108
+
+106
+
+104
+
+102
+
+)
+s
+r
+e
+s
+u
+#
+(
+ 
+y
+t
+i
+s
+n
+e
+d
+
+100
+
+100
+
+105
+
+104
+
+103
+
+102
+
+101
+
+)
+s
+r
+e
+s
+u
+#
+(
+ 
+y
+t
+i
+s
+n
+e
+d
+
+100
+
+100
+
+101
+
+102
+
+degree (#friends)
+
+103
+
+101
+
+102
+
+103
+
+degree (#interests)
+
+Figure 4: Degree distributions of Yahoo! Pulse
+friendship (top) and interest (bottom) networks.
+
+training and the other for testing. All three measures are
+computed on testing data only, and they are averaged over
+ﬁve random repeats.
+
+4.3 Interest Targeting
+
+In this section, we report the results on interest targeting
+(i.e. application recommendation). We adopt a fairly strict
+evaluation by assessing the top results out of a total prefer-
+ence ordering of the item set for each user. In particular, for
+each user i, we consider all the 386 items as candidates; we
+evaluate the recommendation performance by assessing the
+quality of the top-5 items based on the comparison between
+ground truth (the actual list of the applications that user
+i liked) and the top-5 ranked shortlist outputted by each
+model.
+
+For comparison, we take three popular CF models as base-
+line: the item-oriented neighborhood model (SIM), the re-
+gression based latent factor model (RLFM) [1], and the com-
+bination of them (referred to as neighborhood based latent
+factor model or NLFM [23]). SIM and RLFM use inter-
+est information; NLFM use both friendship information and
+interest information.
+
+We test the baselines and diﬀerent variants of FIP model,
+each of which is referred to in terms of the name combina-
+tion of a loss and a regularization (e.g. FIP((cid:2)2, (cid:2)2)). Table 1
+demonstrate the overall results, i.e. the mean value of met-
+rics averaged over 5 random runs. As the scale of the data is
+quite large, the predictive variance is very small (less than
+0.002) and it is therefore not reported.
+
+For the relatively dense interest network, all the reported
+models in our system actually achieve satisfactory perfor-
+mance in interest propagation. For most models, both the
+nDCG@5 and AP@5 scores are above 0.7, that is, out of the
+ﬁve recommended items, on average 3.5 are truly “relevant”
+(i.e. actually being liked by the user). Such performance
+is suﬃciently satisfactory for propagating the 386 approved
+services in the current interest network. With such good
+performance, there is really not much room for further im-
+provement. However, we still observe that noticeable im-
+provements are obtained by the FIP models. Speciﬁcally,
+
+WWW 2011 – Session: Temporal DynamicsMarch 28–April 1, 2011, Hyderabad, India5435
+@
+G
+C
+D
+n
+
+0.79
+
+0.78
+
+0.77
+
+0.76
+
+0.75
+
+ 
+
+101
+
+102
+
+latent dimensionality
+
+ 
+
+0.8
+
+0.78
+
+0.76
+
+0.74
+
+5
+@
+G
+C
+D
+n
+
+ 
+
+10−1
+
+100
+
+credit of friendship
+
+ 
+
+ 
+
+0.8
+
+5
+@
+G
+C
+D
+n
+
+0.78
+
+0.76
+
+0.74
+
+ 
+0.1
+
+L2
+LL2
+Log
+Huber
+Psi
+
+0.2
+
+0.3
+
+0.5
+
+0.6
+0.4
+hold−out data (%)
+
+0.7
+
+0.8
+
+Figure 5: Service recommendation performance (nDCG@5) as a function of latent dimensionality (left),
+friendship credibility (mid) and the proportion of hold-out data (right).
+
+ 
+
+ 
+
+5
+@
+G
+C
+D
+n
+
+0.2
+
+0.15
+
+0.1
+
+0.05
+
+ 
+
+101
+
+latent dimensionality
+
+102
+
+5
+@
+G
+C
+D
+n
+
+0.18
+
+0.16
+
+0.14
+
+0.12
+
+ 
+
+10−1
+
+0.2
+
+0.19
+
+0.18
+
+0.17
+
+0.16
+
+0.15
+
+5
+@
+G
+C
+D
+n
+
+0.14
+
+ 
+0.1
+
+100
+credit of interest
+
+0.2
+
+0.3
+
+0.5
+
+0.4
+0.6
+hold−out data (%)
+
+0.7
+
+0.8
+
+ 
+
+Figure 6: Friend prediction performance (nDCG@5) as a function of latent dimensionality (left), interest
+credibility (mid) and the proportion of hold-out data (right).
+
+in terms of the nDCG@5 scores (similar comparisons apply
+to other metrics), FIP outperform the SIM model by up to
+11.4%, RFLM by up to 10.8%, and NLFM by up to 4.7%.
+All improvements are signiﬁcant (according to t-test with
+conﬁdence threshold 0.01).
+
+Among the 5 loss options for FIP, the one-sided Huber
+loss, the lazy (cid:2)2 loss and logistic regression perform equally
+well (with Huber slightly better). Surprisingly, the noncon-
+vex Ψ loss performs very poorly, even worse than (cid:2)2. We
+attribute this to the non-convexity of the Ψ loss – while non-
+convex losses perform superiorly in learning linear classiﬁers
+[25, 30], they could totally fail in learning the bilinear form
+of latent factor models because of the strong nonconvexity.
+With respect to the two types of regularization, we ob-
+serve that for each loss the (cid:2)1 regularizer almost consis-
+tently outperforms (cid:2)2. As (cid:2)1 regularization leads to compact
+(i.e. sparse) latent factors by assigning submissive latent di-
+mensions to exactly 0, this observation suggests that sparse-
+ness can improve the informativeness of latent factors (being
+sparser implies smaller description length) and in turn leads
+to superior performance.
+
+One of our claims is that friendship information is help-
+ful for interest targeting. An interesting test would be to
+check how the credibility (i.e. λs) of the friendship inﬂu-
+ences the performance of interest prediction. We report this
+result in Figure 5. We can see that, as we increase λs, the
+performance ﬁrst increases (it peaks at 0.5, or 1.0 for Ψ)
+and thereafter it starts to drop. This observation coincides
+with our intuitions:
+friendship information is truly useful
+for interest propagation, it helps interest targeting with dis-
+counted credit; yet, if too much weight is given to friendship,
+the latter may pollute the interest evidence and in turn harm
+interest targeting performance.
+
+We also test the eﬀects of two parameters: the dimension-
+ality of latent factors k, and the proportion of hold-out test-
+ing data. Results are reported in Figure 5. For most losses,
+between 10 and 20 latent factors are suﬃcient for prediction.
+Also, with the exception of the Ψ loss, the performance is
+
+0.8
+
+0.6
+
+0.4
+
+5
+@
+G
+C
+D
+n
+
+0.2
+
+0
+
+ 
+
+ 
+
+ 
+
+0.2
+
+0.1
+
+5
+@
+G
+C
+D
+n
+
+with BC
+without BC
+
+L2
+
+LL2
+
+Log Huber
+
+Psi
+
+0
+
+ 
+
+L2
+
+LL2
+
+Log Huber
+
+Psi
+
+Figure 7: Recommendation performance in terms
+of nDCG@5 with and without bias-correction (BC)
+when applied to service recommendation (left) and
+friendship prediction (right).
+
+quite stable to both parameters. This observation validates
+our hypothesis of the Ψ loss not being very amenable to eﬃ-
+cient optimization: as latent dimension increases, more local
+optima are created and the Ψ loss performs worse; likewise,
+as training data becomes more sparse, the Ψ loss may be
+trapped in worse local optima.
+
+An important procedure in our implementation is the bias-
+correction, i.e. generating pseudo-negative samples to cor-
+rect the selection bias, as described in §3.4. We demonstrate
+the eﬀects by comparing results obtained with and without
+this procedure in Figure 7. The comparisons are striking,
+indicating that latent factor models, if trained without neg-
+ative examples, turn to overﬁt the training observations and
+misleadingly predict “positive” for most dyads. Our algo-
+rithms, by sampling missing interactions and using them
+as very weak negatives, guide the latent factor to capture
+the dyadic interactions while avoiding being fooled by the
+positive-only observations.
+
+4.4 Friendship Prediction
+
+We conducted similar evaluations on friendship propaga-
+tion (i.e. link prediction). As the user population in the
+
+WWW 2011 – Session: Temporal DynamicsMarch 28–April 1, 2011, Hyderabad, India544Pulse social network is huge, it is prohibitive to take all the
+users as candidate friends and generate a total ordering of
+the whole user set for each user to evaluate the prediction
+performance; similarly, the models relying on neighborhood
+information (e.g. SIM and NLFM) are no longer tractable
+as they require computations quadratic in the number of
+users. To this end, we use a diﬀerent evaluation mechanism:
+for each user i, we randomly sample M users that are not
+connected to i, we mix them with the set of users that i
+actually connects to. We then use this probe-polluted set
+as candidates, upon which the ranking performance is com-
+puted. In our experiments, we use M = 300 random probes
+per user.
+
+We report the overall results in Table 2, where RLFM is
+used as the baseline model. The friend-network is extremely
+sparse (0.0039% density). Propagating friendship based on
+such sparse evidence is much more diﬃcult, for example,
+RLFM only achieves 17% AP@5 and nDCG@5, which means
+out of the top-5 recommendations, less than 1 is truly rele-
+vant. Yet, we observe a signiﬁcant improvement, as high as
+a 40% gain in nDCG@5, when FIP is used. This observation
+indicates that there is strong evidence of homophily in the
+Pulse social network such that users with similar interests
+are truly interested in each other. By leveraging the rela-
+tively dense interest evidence to assist the extremely sparse
+friendship graph, FIP achieves much higher performance in
+friendship predictions.
+
+Regarding the loss functions, this time the (cid:2)2 loss per-
+forms the best. We hypothesize that for much sparser friend-
+ship networks, losses that are more suitable for classiﬁcation
+tasks tend to overﬁt the observed connections by making
+prematurely hard decisions to exclude connections that are
+not observed at the training stage. Similarly, because the
+(cid:2)1 regularizer makes the latent factor sparser (some com-
+ponents of φ are shrunk to be exactly 0), it also turns to
+make hard predictions and in turn performs worse. Indeed,
+we observe signiﬁcantly better performance for the (cid:2)2 loss
+and/or regularizer, which turn to make smoother decisions.
+The eﬀects of parameter settings on this task are reported
+in Figure 6. We observe similar trends as in the previous
+task, although the performance is more sensitive: the per-
+formance changes faster as latent dimensionality increases
+or training data decreases. This matches the bias-variance
+analysis of statistic learning: as friendship connections are
+extremely sparse, we are typically dealing with a small-
+sample-size estimation, for which decrease of training data
+(e.g. increase hold-out proportion) or increase of model com-
+plexity (e.g. increase latent dimensionality) will inevitably
+lead to the increase of either bias or variance or both, and
+therefore the models are more likely to overﬁt the training
+observations and in turn generalize poorly.
+
+As before, Figure 7 (right) shows that bias correction sig-
+niﬁcantly improves the performance. Note that the diﬀer-
+ence is not as large as in interest targeting. This is likely
+due to the observation sparsity:
+in the sparser friendship
+network, two users that were not observed in the training
+set still have a good chance to be friends, which means many
+pseudo-negatives could be false-negatives.
+
+5. RELATED WORKS
+
+Collaborative ﬁltering (CF) and link prediction were pre-
+viously studied separately in two diﬀerent research commu-
+nities. The proposed FIP model bridges these two method-
+
+ologies with a uniﬁed model. Essentially, FIP embeds all the
+users and items into the same space (e.g. Euclidean, simplex)
+so that the distances between two entities (e.g. user-item,
+user-user) reﬂect the relatedness (e.g. interest, friendship)
+between them, and hence, provides a uniﬁed treatment for
+both interest targeting and link prediction.
+
+Existing approaches to link prediction diﬀuse the sparse
+connections using topology-based random walk [14, 22, 32]
+or spectral graph algorithms [19, 20], both of which involve
+expensive manipulation of large matrices. FIP borrows the
+idea of latent factor models in collaborative ﬁltering [23, 1,
+10] and it shows connections to random walk based mod-
+els. As a side eﬀect we obtain computationally attractive
+algorithms for eﬃcient random walks.
+
+Traditional CF techniques exploit past records of user be-
+havior for future prediction based on either neighborhood
+based or latent factor based methods. The neighborhood la-
+tent factor model [9] merged these two models and reported
+signiﬁcant performance improvement on the Netﬂix data.
+Though promising, the network structure exploited in this
+combined model [9] is a virtual one, constructed using the
+same evidence for learning latent factors. Our FIP model
+extends this model to allow the actual social network struc-
+ture to be captured in latent factor learning.
+
+Along another line, the recently proposed regression based
+latent factor model (RLFM) [1] incorporates node (user or
+item) features to improve recommendation performance in
+the cold-start scenario. The FIP model also generalizes
+RLFM [9] in a way analogous to how information diﬀusion
+kernels [8, 11] generalize the Gaussian kernels. Basically, in-
+stead of working in the Euclidean space as RLFM does, FIP
+induces a limited-dimensional Riemannian manifold deﬁned
+by the topologies of both the unipartite friendship network
+and the bipartite user-service interaction network.
+
+The FIP model has a close connection with recent works
+on collective matrix factorization [15, 29, 27, 32], where
+the tasks of learning relational data were also formulated
+in terms of factorizing multiple matrices. The current work
+continues our prior investigations on this topic and further
+examines interest and friendship propagation in the context
+of social networks, a task urgently motivated by emerging
+demands from social network services [21]. The techniques
+developed in this work also advances the state-of-the art
+from several aspects: (i) besides the dyadic relational data
+(i.e. edges), we also attempt to leverage the rich information
+conveyed by the node features using regression model similar
+to RLFM [1] or factorization models similar to sparse cod-
+ing [12]; in this way, FIP integrates latent factor models [10,
+23, 1] and predictive bilinear models [31, 4]; (ii) we present
+distributed optimization algorithms, address bias correction,
+discuss and benchmark diﬀerent loss objectives and regular-
+izers; and our work provides one of the ﬁrst large-scale ex-
+aminations of interest-friendship propagation in a real social
+network system.
+
+One work relevant to ours is the social recommendation
+approach proposed by [16], where the trust relationships
+among users are used to improve cold-start recommenda-
+tion. This model can be seen as a special case of our FIP
+model by assuming (i) no node feature xi or xj; (ii) (cid:2)2 loss
+objective; and (iii) asymmetric factor based random walk
+model, i.e. the transition probability is modeled as a multi-
+plicative function of user-factor and a basis. Also, this work
+did not address the task of user relationships (e.g. trust,
+
+WWW 2011 – Session: Temporal DynamicsMarch 28–April 1, 2011, Hyderabad, India545friendship) propagation. Along this line, our work addresses
+both tasks with a more general framework and conducts
+large-scale evaluation on a social networking system.
+
+6. CONCLUSIONS
+
+Eﬀectively modeling interest and friendship and accord-
+ingly recommending services and/or suggesting friends are
+fundamental to all social network services. In this paper, we
+have shown that the interest and friendship information is
+highly relevant and mutually helpful. We established a joint
+friendship-interest propagation model that leverages both
+evidences to address both tasks in one uniﬁed framework.
+The FIP model bridges collaborative ﬁltering in recommen-
+dation systems and random walk in social network analysis
+with a coupled latent factor model. We conducted extensive
+experiments to benchmark diﬀerent variants of FIP in the
+Yahoo! Pulse social networking system.
+
+Two directions of future research appear attractive: The
+FIP model oﬀers a latent factor for each user that captures
+both interest and friendship information. We plan to lever-
+age such deeper user proﬁles to detect interest communities
+(i.e. grouping users according to interest with user-friendship
+in mind) and to identify the macro-behavior (i.e. the global
+eﬀect as a result of individual actions) of each interest group.
+We also plan to investigate the underlying mechanism of
+how the interactions between users impact individual deci-
+sion making in the context of social networks.
+
+Acknowledgements
+The authors would like to thank Su-Lin Wu, Yi Chang and
+the anonymous reviewers for helpful comments. Part of this
+work was done while Shuang-Hong Yang was on a summer
+internship at Yahoo! Labs. Part of the work of Shuang-Hong
+Yang and Hongyuan Zha was supported by NSF Grant IIS-
+1049694.
+
+7. REFERENCES
+[1] D. Agarwal and B.-C. Chen. Regression-based latent
+
+factor models. In KDD’09.
+
+[2] D. M. Blei, A. Y. Ng, and M. I. Jordan. Latent
+
+dirichlet allocation. JMLR, 3:993–1022, 2003.
+
+[3] Y. Chen, D. Pavlov, and J. F. Canny. Large-scale
+
+behavioral targeting. In KDD’09.
+
+[4] W. Chu and S.-T. Park. Personalized recommendation
+
+on dynamic content using predictive bilinear models.
+In WWW’09.
+
+[5] S. Gauch, M. Speretta, A. Chandramouli, and
+
+A. Micarelli. User proﬁles for personalized information
+access. In The Adaptive Web, 2007.
+
+[6] O. Kallenberg. Probabilistic symmetries and
+
+invariance principles. Springer, 2005.
+
+[7] T. Kameda, Y. Ohtsubo, and M. Takezawa. Centrality
+
+in sociocognitive networks and social inﬂuence: An
+illustration of group decision-making. Journal Social
+Psychology, 73(2):296–309, 1997.
+
+[8] R. I. Kondor and J. D. Laﬀerty. Diﬀusion kernels on
+graphs and other discrete input spaces. In ICML’02.
+
+[9] Y. Koren. Factorization meets the neighborhood: a
+
+multifaceted collaborative ﬁltering model. In KDD’08.
+
+[10] Y. Koren, R. Bell, and C. Volinsky. Matrix
+
+factorization techniques for recommender systems.
+
+Computer, 42(8):30–37, 2009.
+
+[11] J. Laﬀerty and G. Lebanon. Diﬀusion kernels on
+
+statistical manifolds. JMLR, 6:129–163, 2005.
+
+[12] H. Lee, R. Raina, A. Teichman, and A. Y. Ng.
+
+Exponential family sparse coding with applications to
+self-taught learning. In IJCAI’09.
+
+[13] J. Leskovec, K. J. Lang, and M. Mahoney. Empirical
+
+comparison of algorithms for network community
+detection. In WWW’10.
+
+[14] D. Liben-Nowell and J. Kleinberg. The link prediction
+
+problem for social networks. In CIKM’03.
+
+[15] B. Long, Z. M. Zhang, X. Wu, and P. S. Yu. Spectral
+clustering for multi-type relational data. In ICML’06.
+[16] H. Ma, H. Yang, M. R. Lyu, and I. King. Sorec: social
+
+recommendation using probabilistic matrix
+factorization. In CIKM’08.
+
+[17] M. R. McLaughlin and J. L. Herlocker. A collaborative
+
+ﬁltering algorithm and evaluation metric that
+accurately model the user experience. In SIGIR’04.
+
+[18] M. McPherson, L. S. Lovin, and J. M. Cook. Birds of
+
+a feather: Homophily in social networks. Annual
+Review of Sociology, 27(1):415–444, 2001.
+
+[19] M. E. J. Newman. Detecting community structure in
+
+networks. European Physical Journal B, 2004.
+[20] M. E. J. Newman. Modularity and community
+
+structure in networks. PNAS, 2006.
+
+[21] J. Owyang. The many challenges of social network
+
+sites. Web strategist blog, Feb.11, 2008.
+
+[22] M. Rosvall and C. T. Bergstrom. Maps of random
+
+walks on complex networks reveal community
+structure. PNAS, 105(4):1118–1123, 2008.
+
+[23] R. Salakhutdinov and A. Mnih. Bayesian probabilistic
+
+matrix factorization using MCMC. In ICML’08.
+[24] B. Sarwar, G. Karypis, J. Konstan, and J. Reidl.
+
+Item-based collaborative ﬁltering recommendation
+algorithms. In WWW’01.
+
+[25] X. Shen, G. C. Tseng, X. Zhang, and W. H. Wong. On
+
+psi-learning. JASA, 98:724–734, 2003.
+
+[26] M. Shmueli-Scheuer, H. Roitman, D. Carmel,
+
+Y. Mass, and D. Konopnicki. Extracting user proﬁles
+from large scale data. In MDAC’10.
+
+[27] A. P. Singh and G. J. Gordon. Relational learning via
+
+collective matrix factorization. In KDD’08.
+
+[28] K. Weinberger, A. Dasgupta, J. Langford, A. Smola,
+
+and J. Attenberg. Feature hashing for large scale
+multitask learning. In ICML’09.
+
+[29] M. Weimer, A. Karatzoglou, Q. Le, and A. Smola
+
+CoﬁRank–maximum margin matrix factorization for
+collaborative ranking. In NIPS’07.
+
+[30] S.-H. Yang and B.-G. Hu. A stagewise least square
+
+loss function for classiﬁcation. In SDM’08.
+
+[31] Z. Zheng, H. Zha, T. Zhang, O. Chapelle, K. Chen,
+
+and G. Sun. A general boosting method and its
+application to learning ranking functions for web
+search. In NIPS’08.
+
+[32] D. Zhou, S. Zhu, K. Yu, X. Song, B. L. Tseng, H. Zha,
+
+and C. L. Giles. Learning multiple graphs for
+document recommendations. In WWW’08.
+
+[33] M. Zinkevich, M. Weimer, A. Smola, and L. Li.
+
+Parallelized Stochastic Gradient Descent. In NIPS’ 10.
+
+WWW 2011 – Session: Temporal DynamicsMarch 28–April 1, 2011, Hyderabad, India546

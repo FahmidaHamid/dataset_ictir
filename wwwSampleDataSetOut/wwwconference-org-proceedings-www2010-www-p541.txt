@@ -1,0 +1,1853 @@
+Towards Natural Question-Guided Search
+
+Alexander Kotov
+
+Department of Computer Science
+
+University of Illinois at Urbana-Champaign
+
+Urbana, Illinois 61801
+akotov2@illinois.edu
+
+ChengXiang Zhai
+
+Department of Computer Science
+
+University of Illinois at Urbana-Champaign
+
+Urbana, Illinois 61801
+czhai@cs.uiuc.edu
+
+ABSTRACT
+Web search is generally motivated by an information need.
+Since asking well-formulated questions is the fastest and the
+most natural way to obtain information for human beings,
+almost all the queries posed to search engines correspond
+to some underlying questions, which represent the informa-
+tion need. Accurate determination of these questions may
+substantially improve the quality of search results and us-
+ability of search interfaces. In this paper, we propose a new
+framework for question-guided search, in which a retrieval
+system would automatically generate potentially interesting
+questions to the users. Since the answers to such questions
+are known to exist in search results, these questions can po-
+tentially guide the users directly to the answers they are
+looking for, eliminating the need to scan the documents in
+the results list. Moreover, in case of imprecise or ambigu-
+ous queries, automatically generated questions can naturally
+engage the users into feedback cycles to reﬁne their informa-
+tion need and guide them towards their search goals. Im-
+plementation of the proposed strategy raises new challenges
+in content indexing, question generation, ranking and feed-
+back. We proposed new methods to address these challenges
+and evaluated them with a prototype system on a subset of
+Wikipedia. The evaluation results show the promise of this
+new question-guided search strategy.
+
+Categories and Subject Descriptors
+H.3.1 [Content Analysis and Indexing]: Linguistic Pro-
+cessing; H.3.3 [Information Search and Retrieval]: Rel-
+evance feedback, Search process
+
+General Terms
+Algorithms, Experimentation
+
+Keywords
+Interactive search, query processing, search interface
+
+1.
+
+INTRODUCTION
+
+Presenting a ranked list of URL anchor texts and their
+associated snippets in return for a user query has become a
+standard interface for all major commercial search engines.
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2010, April 26–30, 2010, Raleigh, North Carolina, USA.
+ACM 978-1-60558-799-8/10/04.
+
+While for most simple queries the ranked list-based presen-
+tation of search results is suﬃcient to easily ﬁnd relevant
+documents, for more complicated queries it would take a
+user signiﬁcantly more time to peruse the long list of re-
+turned documents and, potentially, reformulate the query
+multiple times. In order to understand why existing search
+interfaces often fail on certain types of queries and propose
+an improvement, we need a closer look at the very nature of
+search queries.
+
+Almost all the queries are motivated by some underlying
+question. For example, if a user is searching for information
+about John Fitzgerald Kennedy, the easiest and the most
+straightforward way to do so for a person, who is used to
+keyword-based search, would be to pose a query, such as
+“john kennedy” or “kennedy.” However, such a query does
+not fully specify the user’s information need, which often
+includes particular aspects of information about JFK that
+a user is most interested in. For example, in this case, the
+underlying question that has caused a user to search, might
+be as broad as “Who is John Kennedy?” or as speciﬁc as
+“When was Kennedy sworn as the President of the United
+States?”.
+
+The query-based search paradigm assumes that search en-
+gine users have suﬃcient knowledge about the query domain
+and are able to ﬁnd good diﬀerentiator terms to make their
+queries speciﬁc and precise. In reality, however, there is still
+a large number of queries, which are over- or under-speciﬁed,
+and it is often the case that the users are unable to ﬁnd any-
+thing useful as a result of their ﬁrst search, sometimes even
+after tedious perusal of document titles and snippets. This
+has to do with the fact that in their daily life people naturally
+tend to use verbose or imprecise statements to express their
+requirements and, thus, are not used to formulating artiﬁcial
+short string requests. According to [17], formulating natural
+language questions is the most natural way for most search
+engine users to express their information needs. Unfortu-
+nately, state-of-the-art question answering systems cannot
+yet accurately answer arbitrary natural language questions
+posed by users.
+
+Another widely recognized deﬁciency of modern search
+systems is the lack of interactivity. Bookstein [2] points out
+that information retrieval should be envisioned as a process,
+in which the users are examining the retrieved documents
+in sequence and the system can and should actively gather
+the user feedback to adjust retrieval. For this reason, the
+interface of search engines should reﬂect the fact that Web
+search is a process, rather than an event. This work is an
+attempt to emphasize the exploratory nature of Web search
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA541by providing a search interface that helps the users reﬁne
+their queries with automatically generated natural language
+questions, which can be answered precisely.
+
+Ideally, questions should reﬁne the query topic from mul-
+tiple perspectives. For example, presented with the query
+“john kennedy”, an interactive question-based retrieval sys-
+tem can generate the following questions: “Who is John
+Kennedy?”, “When was John Kennedy born?”, “What num-
+ber president was John F. Kennedy?”, “Who killed President
+Kennedy?”. Each of the above questions can be considered
+as a clariﬁcation question, which puts the general query
+terms in a speciﬁc context. Our intuition is that by auto-
+matically generating clariﬁcation questions, an information
+retrieval system would enable the users to interactively spec-
+ify their information need. Since the questions are generated
+based on the system’s internal information repository, they
+can always be answered precisely, which is not always the
+case with ordinary question answering systems. In addition
+to providing answers, which are guaranteed to be correct,
+this model of interaction also has the beneﬁt of helping the
+users to quickly navigate to the information they are looking
+for, eﬀectively eliminating the need to read the documents
+to locate it.
+
+Enabling interactive question-based retrieval requires ma-
+jor changes to all components of the retrieval process: from
+more sophisticated methods of content analysis to ranking
+and feedback. Speciﬁcally, an interactive question-based re-
+trieval system must be able to locate and index the con-
+tent, which can be used for question generation, generate
+well-formed and meaningful questions in response to user’s
+queries and rank those questions in such a way that the most
+interesting and relevant questions appear at the top of the
+question list. In this paper, we propose solutions to all of the
+above problems and evaluate our approach with a prototype
+system.
+
+The rest of this paper is organized as follows. In Section 2,
+we provide a brief overview of existing work. Section 3 intro-
+duces the general concept of question-guided search. Imple-
+mentation details of the question-guided search framework
+are presented in detail in Section 4. Section 5 presents the
+results of an experimental evaluation of our question-guided
+search engine prototype. Finally, in Section 6 we give con-
+cluding remarks and identify directions for future work.
+
+2. RELATED WORK
+
+In this section, we provide an overview of research eﬀorts
+in two major research areas that are the closest to our work:
+application of Natural Language Processing (NLP) methods
+to Information Retrieval (IR) and presentation of search re-
+sults. The brittleness of NLP methods have traditionally
+been one of the major concerns and obstacles to using them
+in IR. However, it has been experimentally shown in [20]
+that “the speed and robustness of natural language process-
+ing has improved to the point where it can be applied to
+the real IR problems”. One of the research directions that
+has recently gained particular attention is focused on using
+lexical and semantic relations to improve the accuracy and
+completeness of search results over the traditional “bag-of-
+words” approaches. The importance of lexico-syntactic re-
+lations for information retrieval was demonstrated by Wang
+et al.
+[23] experimentally showed that in-
+dexing lexical atoms and syntactic phrases improves both
+the precision and recall. Hearst [7] used the semantics of
+
+[21]. Zhai et al.
+
+lexico-syntactic patterns to automatically extract hyponym
+relations between the lexical items in large corpora. Syntac-
+tic pattern matching is also a popular technique in Question
+Answering (QA) to improve the performance on factoid [11]
+and deﬁnitional [4] questions. Katz et al.
+[12] extracted
+syntactic relations between the words through dependency
+parsing and used these relations to retrieve potential answers
+to a question. Jijkoun et al. [11] experimentally proved that
+a linguistically deeper method for factoid QA, based on a
+small number of patterns, including syntactic relations, out-
+performs the traditional surface text pattern-based methods.
+Our work can be viewed as a new way of using NLP tech-
+niques to support question answering in an IR system that
+is more robust than the regular question answering meth-
+ods in the sense that automatically generated questions can
+always be answered.
+
+An important aspect of any information access system is
+eﬀective presentation of retrieval results. Hearst [8] provides
+an extensive overview of research eﬀorts over the past several
+decades that aimed at improving the usability of search. The
+various alternatives to traditional presentation of search re-
+sults can be classiﬁed into three major categories: clustering
+[9] [22] [1], summarization [13] and visualization. The infor-
+mation retrieval community has for a long time explored a
+number of graphical visualization techniques as an alterna-
+tive to the ranked list presentation of search results. Fowler
+et al.
+[5] combined visual representations of queries, re-
+trieved documents, associative thesaurus and a network of
+inter-document similarities into one graphical retrieval en-
+vironment. Chalmers et al.
+[3] proposed to represent bib-
+liography articles as particles in a 3-dimensional space and
+apply the potential ﬁelds modeling equations from theoreti-
+cal physics to represent the relationships between the articles
+by their relative spatial position. InfoCrystal [19] is a visual
+query language that allows the users to graphically formulate
+arbitrarily complex boolean and vector-space queries by or-
+ganizing the graphical query building blocks into hierarchies.
+Leuski et al.
+[14] integrated the ranked list representation
+and clustering of the retrieved documents into a visual en-
+vironment for interactive relevance feedback. As a new way
+to present search results, our work enables the users to navi-
+gate directly into the answers they are searching for without
+needing to read the documents.
+
+In the following sections, we present the general idea be-
+hind the question-guided retrieval process and examine its
+each individual component in detail.
+
+3. QUESTION-GUIDED SEARCH
+
+The idea of question-guided search comes naturally from
+the fact that a search for information is often motivated by
+the need for answering a question. Asking a well-formulated
+question is the fastest and the most natural way to express
+the search goal. However, the current search technologies
+cannot fully support a search interface, which is based en-
+tirely on free natural language question queries. Moreover,
+search engine users have already got used to the keyword-
+based search paradigm. In this work, we propose a method
+to augment the standard ranked list presentation of search
+results with a question based interface to reﬁne initially im-
+precise queries.
+
+A typical scenario for question-guided search is as follows.
+After a user types in initial keyword query, the automatically
+generated clariﬁcation questions can be presented next to
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA542the traditional ranked list of documents or any other search
+result presentation interface, should the system decide that
+a query requires further speciﬁcation. Alternatively, users
+may press a button (e.g., “Guide Me”) and see the list of
+questions any time they want. In general, we envision that
+question-guided query reﬁnement is likely to be very useful
+for exploratory search, especially for diﬃcult, imprecise or
+ambiguous queries.
+
+Clariﬁcation questions can be short (more general) or long
+(more speciﬁc) and should ideally be about diﬀerent aspects
+of the query topic. Similar to documents in the classic rel-
+evance feedback scenario, questions place the query terms
+in a speciﬁc context, which may help the users ﬁnd relevant
+information or initiate exploration of other topics. However,
+unlike the full-sized documents, questions are much shorter
+and hence require less time and eﬀort from the users for read-
+ing and relevance judgment. In addition to questions, users
+may also be presented with short answers to them, when
+they point to a particular question. Users can also click on
+the question and be redirected to the document, containing
+the answer, for further information. In this sense, questions
+can be considered as shortcuts to speciﬁc answers.
+
+We also believe that questions can more naturally engage
+the users into a relevance feedback cycle. By clicking on
+the questions, users indicate their interest in a particular
+aspect of the query topic. Therefore, based on that signal,
+a search system can present the next set of questions and
+search results, by adding the terms in the clicked question
+to the current query to improve results. Although question-
+guided search can be used to supplement the results of any
+query, it may not be equally eﬀective for all types of queries.
+Short, under-speciﬁed queries are the best candidates for
+reﬁnement through questions. Since question generation al-
+gorithm is based on capturing syntactic relations between
+the terms, queries, containing named entities are well-suited
+for reﬁnement through questions as well, since reﬁning ques-
+tions will allow to explore potential relations of the named
+entities in a query with other named entities in a corpus.
+Overall, question-guided search is a novel way of applying
+natural language processing methods to improve the usabil-
+ity of search. It seamlessly integrates lightweight search re-
+sults navigation and contextual interactive relevance feed-
+back into one retrieval framework.
+
+4.
+
+IMPLEMENTATION
+
+In this section, we demonstrate how the idea of natu-
+ral language question-guided retrieval process can be im-
+plemented in a search engine.
+In order to experimentally
+evaluate the proposed idea, we have built a prototype of
+a QUestion-guided Search Engine, which we called QUSE.
+In the following sections, we consecutively focus on each
+individual component of the retrieval process: indexing, re-
+trieval, ranking and feedback. In Section 4.1, we begin with
+a description of how dependency parsers can be used to
+index the occurrences of syntactic patterns, which can be
+later transformed into questions. In Section 4.3, we describe
+the structure of the index, used in QUSE. Question ranking
+is discussed in Section 4.4. And, ﬁnally, we overview the
+question-based relevance feedback in Section 4.6.
+
+4.1 Parsing and question generation
+
+Due to the fact that information contained in a sentence
+is represented not only by its basic lexical units (words), but
+
+also by syntactic relations between them, any natural lan-
+guage sentence can be phrased in multiple ways, even if the
+meaning conveyed by all the variants is identical. According
+to the linguistic theory of dependency grammars [16], any
+sentence can be represented as a set of dependency relations,
+which form a tree structure, usually called a dependency
+tree. A dependency relationship is an asymmetric binary
+relationship between a word, called the head (or governor,
+parent), and another word called the modiﬁer (or depen-
+dent, daughter). Each term in a sentence can have several
+modiﬁers, but can modify at most one other term. The
+root of a dependency tree does not modify any other words.
+Verbs cannot modify any other constituents and, thus, are
+always the roots of dependency trees. For example, the de-
+pendency structure of the sentence “John found a solution
+to the problem” is shown in Figure 1.
+
+Figure 1: Example of a dependency tree
+
+In the example sentence in Figure 1, there are six pairs
+of dependency relationships, depicted by the arrows from
+heads to modiﬁers. Each edge is labeled by the syntactic
+role of a modiﬁer. For example, the label “subj” means that
+the modiﬁer in this relation is the subject of a sentence.
+
+In order to convert the sentences in a document collection
+into dependency trees, we used Minipar [15], a broad cov-
+erage dependency parser. Given an input sentence, Minipar
+returns its dependency tree, in which the nodes correspond
+to the terms in the sentence along with the syntactic and
+semantic labels assigned to them, and the edges represent
+the dependency relationships between the terms. Minipar
+also classiﬁes proper nouns into semantic categories (names
+of people, organizations, geographical locations, titles, cur-
+rencies), based on its internal dictionary.
+
+If we consider only syntactic and semantic labels of the
+nodes in a dependency tree, disregarding the speciﬁc terms
+corresponding to the nodes, we will get a generalized de-
+pendency tree or syntactic pattern. Obviously, a syntactic
+pattern is a compressed representation of all dependency
+trees with the same structure. We will refer to the nodes of
+a syntactic pattern as slots. During indexing, slots are ﬁlled
+with the actual words from a matching sentence. When the
+semantic role of a constituent is important, it is speciﬁed
+after the syntactic label of a node. For example, node 1 of
+the generalized tree in Figure 2 has the label “subj:person”,
+which means that a parse tree or subtree can match this
+particular pattern, only if there is a node at that speciﬁc
+position, which is syntactically labeled as the subject of a
+sentence and semantically labeled as a proper name, desig-
+nating a person.
+
+Dependency trees can be used to convert any nomina-
+tive sentence (or part of it) into a question. The transfor-
+mation of a nominative sentence into a question involves
+changes only to its syntactic structure, without any signif-
+icant changes to its lexical content. The general idea be-
+hind the question generation algorithm is that we can in-
+dex the instances of syntactic patterns in a document col-
+lection along with the terms ﬁlling the slots of these pat-
+terns and convert those instances into questions, according
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA543Slots are parts of both the patterns and their instances. In
+the patterns, slots specify what kind of lexemes can match
+the pattern.
+In the instances, slots store the actual con-
+stituents of matching sentences and their stems.
+
+Definition 2. Syntactico-semantic pattern 𝑃 deﬁnes
+
+a structure on a subset of a set of slots 𝑆, given the relation
+of syntactic dependency. In other words, a syntactic pattern
+is a set of the ordered pairs of slots:
+
+𝑃 = {(𝑠𝑖, 𝑠𝑗), . . . , (𝑠𝑘, 𝑠𝑚)}
+
+such that in each pair (𝑠𝑖, 𝑠𝑗), 𝑠𝑖 is a head of syntactic de-
+pendency relationship and 𝑠𝑗 is a modiﬁer.
+
+Let 𝒫 = {𝑃1, 𝑃2, . . . , 𝑃𝑀} be a collection of 𝑀 syntactic
+
+patterns.
+
+Definition 3. An Instance of a syntactic pattern
+𝐼 is a mapping 𝑇×𝑇′ → 𝑆, where 𝑆 is a set of slots belonging
+to some pattern 𝑃 ∈ 𝒫.
+
+An instance of a syntactic pattern occurs when a sentence
+in the corpus matches one of the syntactic patterns. An
+instance is stored and represented by pairs of words and
+their stems, which are ﬁlling the slots of a matching pattern.
+
+Definition 4. Context of a pattern instance in-
+cludes the sentence, containing a pattern instance, and the
+sentences immediately before and immediately after it. The
+context of a sentence is saved to be later shown as an answer
+to the question generated from an instance.
+
+The purpose of the context is to provide a short answer
+
+to the automatically generated question.
+
+Definition 5. Question template is a subset of the
+set of ordered slots 𝑆 of a syntactic pattern 𝑃 ∈ 𝒫, per-
+turbed and mixed with other terms in such a way that, when
+instantiated from an instance of a pattern, it conveys the
+semantics of a question.
+
+4.3 Indexing
+
+In question-guided search, the purpose of the index is to
+store the instances of syntactic patterns. The nature of
+syntactic patterns allows to use relational tables for storing
+them in the index. The most important parts of the index,
+used for question generation are the following relations:
+
+∙ Dictionary of terms and stems 𝑉 (𝑖𝑑, 𝑡𝑒𝑟𝑚): 𝑖𝑑 - the
+
+ID of a term or a stem; 𝑡𝑒𝑟𝑚 - term or stem itself;
+
+∙ Documents in the repository 𝐷(𝑖𝑑, 𝑤𝑐𝑜𝑢𝑛𝑡): 𝑖𝑑 - the
+ID of a document; 𝑤𝑐𝑜𝑢𝑛𝑡 - number of words in a
+document
+
+∙ Instances of syntactic patterns:
+
+𝐼(𝑖𝑖𝑑, 𝑑𝑖𝑑, 𝑠𝑖𝑑, 𝑝𝑖𝑑, 𝑠𝑙𝑖𝑑, 𝑡𝑖𝑑, 𝑠𝑡𝑖𝑑)
+
+where 𝑖𝑖𝑑 is the ID of an instance; 𝑑𝑖𝑑 is the ID of
+the document, where an instance occurred; 𝑠𝑖𝑑 is the
+ID of a sentence in the document, where an instance
+occurred; 𝑝𝑖𝑑 is the ID of the pattern, corresponding
+to an instance; 𝑠𝑙𝑖𝑑 is the number of the slot, which
+the term and its stem are ﬁlling; 𝑡𝑖𝑑 is the ID of the
+term, ﬁlling the slot of a pattern instance; 𝑠𝑡𝑖𝑑 is the
+ID of the stem, ﬁlling the slot of a pattern instance.
+
+Figure 2: Compressed dependency tree (syntactic
+pattern)
+
+to the question generation templates. The algorithm to con-
+vert sentences into questions is illustrated with the following
+example sentence: “John went to school in Massachusetts”,
+the dependency tree of which is shown in Figure 3.
+
+Figure 3: Dependency tree of an example sentence
+
+In particular, we can manually deﬁne the following ques-
+
+tion templates for the syntactic pattern in Figure 2:
+
+Where did {1:stem} {0:stem} {2:term} {3:term}?
+
+Who {0:term} {2:term} {3:term} {4:term} {5:stem}?
+
+“Term” in the slot description of a question template means
+that when the actual question is generated from this tem-
+plate, the original form of the word from the corresponding
+slot of a syntactic pattern instance is used. “Stem” means
+that a morphologically normalized version of a word is used.
+Given our example sentence “John went to school in Mas-
+sachusetts”, which matches the pattern in Figure 2, the fol-
+lowing questions can be generated from the question tem-
+plates above:
+
+Where did John go to school?
+
+Who went to school in Massachusetts?
+
+Examples of other patterns, used in QUSE, along with the
+sample sentences, matching each of them, are shown in Ta-
+ble 1. Terms, ﬁlling the slots of pattern instances, are high-
+lighted with numbered under-braces. Eﬃcient algorithms
+for recognition of syntactic patterns are discussed in detail
+in [6].
+
+4.2 Formal deﬁnition
+Let 𝒟 = {𝑑1, 𝑑2, . . . , 𝑑𝑛} be a collection of 𝑛 documents,
+composed from a set of 𝑘 terms 𝒯 = {𝑡1, . . . , 𝑡𝑘} and their
+stems 𝒯 ′ = {𝑡1′, . . . , 𝑡𝑘′}.
+
+Definition 1. Slot: given a set of syntactic labels 𝐿
+and a set of semantic roles 𝑅, a set of slots 𝑆 is a subset of
+𝐿 × 𝑅. A slot of a syntactic pattern is a relation (𝑙, 𝑟) ∈ 𝑆,
+where 𝑙 ∈ 𝐿 and 𝑟 ∈ 𝑅.
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA544Syntactic Patterns
+1.{1:s(person)}◀{0:i}▶{2:mod}▶{3:pcomp-
+n(location)}▶{4:mod}▶{5:pcomp-n(date)}
+
+2.{1:s(person)}◀{0:i}▶{2:obj(person)}▶{3:mod}▶{4:pcomp-
+n(location)}▶{5:mod}▶{6:pcomp-n(date)}
+
+3.{1:s(person)}◀{0:i}▶{2:obj}▶{3:mod}▶{4:pcomp-
+n(location)}
+
+4.{1:s(person)}◀{0:i}▶{2:pred}▶{3:mod}▶{4:pcomp-
+n(person)}
+
+5.{1:s(person)}◀{0:i}▶{2:pred}▶{3:mod}▶{4:pcomp-
+n(location)}
+
+6.{1:s(location)}◀{0:i}▶{2:pred}▶{3:mod}▶{4:pcomp-
+n(location)}
+
+Matching Sentences
+Columbia, SouthCarolina
+, the state capital,
+(cid:2)
+(cid:5)
+
+(cid:3)(cid:4)
+3
+
+, where his father was professor at the
+(cid:5)
+
+Wilson
+(cid:5)
+(cid:2)
+
+lived
+(cid:2) (cid:3)(cid:4) (cid:5)
+
+in
+(cid:2)(cid:3)(cid:4)(cid:5)
+
+(cid:3)(cid:4)
+1
+from
+(cid:2) (cid:3)(cid:4) (cid:5)
+
+(cid:2)
+
+4
+
+0
+
+2
+
+1870 − 1874
+
+(cid:3)(cid:4)
+5
+
+5
+
+6
+
+Massachusetts
+.
+(cid:2)
+(cid:5)
+
+(cid:3)(cid:4)
+4
+
+Columbia Theological Seminary.
+
+In
+(cid:2)(cid:3)(cid:4)(cid:5)
+
+1764
+(cid:2) (cid:3)(cid:4) (cid:5)
+
+, Adams
+(cid:5)
+
+(cid:2)
+
+(cid:3)(cid:4)
+1
+
+married
+(cid:5)
+(cid:2)
+
+(cid:3)(cid:4)
+0
+
+Abigail Smith
+(cid:2)
+(cid:5)
+
+(cid:3)(cid:4)
+2
+
+at
+(cid:2)(cid:3)(cid:4)(cid:5)
+
+3
+
+Weymouth
+(cid:2)
+(cid:5)
+
+(cid:3)(cid:4)
+4
+
+,
+
+Kennedy
+(cid:2)
+(cid:5)
+
+(cid:3)(cid:4)
+1
+
+had
+(cid:2) (cid:3)(cid:4) (cid:5)
+
+0
+
+near − legendary status
+
+(cid:2) (cid:3)(cid:4) (cid:5)
+
+2
+
+in
+(cid:2)(cid:3)(cid:4)(cid:5)
+
+3
+
+Ireland
+, as the ﬁrst
+(cid:5)
+(cid:2)
+
+(cid:3)(cid:4)
+4
+
+person of Irish heritage to have a position of world power.
+
+Voight
+(cid:2) (cid:3)(cid:4) (cid:5)
+
+is
+
+(cid:2)(cid:3)(cid:4)(cid:5)
+
+the father
+(cid:2) (cid:3)(cid:4) (cid:5)
+
+of
+(cid:2)(cid:3)(cid:4)(cid:5)
+
+1
+
+0
+
+2
+
+3
+
+actress Angelina Jolie
+(cid:5)
+
+(cid:2)
+
+(cid:3)(cid:4)
+4
+
+(Angelina Jolie
+
+Voight is her birthname) and actor James Haven.
+
+President Kennedy
+(cid:2)
+(cid:5)
+
+was
+(cid:2) (cid:3)(cid:4) (cid:5)
+
+0
+
+assassinated
+(cid:2)
+(cid:5)
+
+(cid:3)(cid:4)
+2
+
+in
+(cid:2)(cid:3)(cid:4)(cid:5)
+
+3
+
+Dallas, Texas
+(cid:2)
+(cid:5)
+
+(cid:3)(cid:4)
+4
+
+at 12:30
+
+Washington, D.C.
+, formally the District of Columbia and com-
+(cid:2)
+(cid:5)
+
+monly referred to as Washington, the District, or simply
+founded on July
+D.C.,
+
+is
+
+of
+(cid:2)(cid:3)(cid:4)(cid:5)
+
+the United States
+,
+(cid:5)
+
+(cid:2)
+
+the capital
+(cid:2) (cid:3)(cid:4) (cid:5)
+
+(cid:2)(cid:3)(cid:4)(cid:5)
+
+(cid:3)(cid:4)
+4
+
+0
+16, 1790.
+
+2
+
+3
+
+p.m.
+
+(cid:3)(cid:4)
+1
+
+(cid:3)(cid:4)
+1
+
+Table 1: Examples of syntactic patterns and sentences matching them
+
+4.4 Question ranking
+
+Similar to the traditional document-based retrieval model,
+the goal of question ranking methods is to determine and
+use as many useful heuristics (features) as possible to bring
+potentially interesting and relevant questions up to the top
+of the list of clariﬁcation questions, returned for a keyword
+query. Our approach to question ranking is based on deter-
+mining the position of a newly added question in the ranked
+list, according to several heuristics, numerically expressing
+the relative interestingness and relevance of questions.
+Formally, given a set 𝐻 = {ℎ1, ℎ2, . . . , ℎ𝑛} of 𝑛 rank-
+ing heuristics (features), where each heuristic is a function
+ℎ : Θ → ℝ, mapping questions in the set Θ into the real num-
+bers (feature values), and the two questions 𝛿1 = (ℎ1(𝛿1), . . . , ℎ𝑛(𝛿1))
+and 𝛿2 = (ℎ1(𝛿2), . . . , ℎ𝑛(𝛿2)), represented as 𝑛-tuples of fea-
+ture values, a non-parametric question ranking function 𝑟 is
+a binary function: Θ × Θ → {0, 1} on question pairs, such
+that, if 𝑟(𝛿1, 𝛿2) = 1, then the question 𝛿1 should be ranked
+above 𝛿2 or, i.e., question 𝛿1 is more relevant to the query
+than the question 𝛿2, or 𝛿1 ≻ 𝛿2.
+
+Therefore, the ranking procedure is similar to the inser-
+tion sorting algorithm, where each new question is compared
+with the questions that are already in the list until a less
+relevant question is found or the end of the list has been
+reached. When such a question is found, a new question is
+inserted before it. It is important to note that, in such a
+setting, the order, in which the heuristics are applied, deter-
+mines their relative importance for ranking. We applied the
+following ranking heuristics in the order, in which they are
+presented below:
+QT: 𝑞𝑡(𝛿, 𝑞), the number of query terms that occur both
+in the query 𝑞 and the question 𝛿, generated from it. The
+motivation behind this heuristic is that the questions match-
+ing more query terms are potentially more relevant to the
+information need.
+PM: 𝑝𝑚(𝛿, 𝑞, 𝐼), the number of query terms that occur both
+
+in the query 𝑞 and the slots of the pattern instance 𝐼, from
+which the question 𝛿 was generated. The intuition behind
+this heuristic is that questions generated from instances that
+match more query terms are more speciﬁc, and, thus, are
+more aggressively guiding the users towards their search
+goals.
+DS: 𝑑𝑠(𝛿, 𝑞, 𝑑), the retrieval score of the query 𝑞 with respect
+to the document 𝑑 that contains an instance of the pattern,
+from which the question 𝛿 was generated. This heuristic al-
+lows to use the scores of traditional retrieval models (vector
+space, probabilistic or language modeling based) for ques-
+tion ranking. In our implementation, we used the popular
+Okapi/BM25 retrieval formula [18]:
+
+𝑠(𝑞, 𝑑) =
+
+𝑡∈𝑄,𝐷 ln 𝑁−𝑑𝑓 +0.5
+
+𝑑𝑓 +0.5
+
+×
+
+(𝑘1+1)𝑡𝑓
+𝑘1((1−𝑏)+𝑏 𝑑𝑙
+
+𝑎𝑣𝑑𝑙
+
+)+𝑡𝑓
+
+∑
+
+× (𝑘3+1)𝑞𝑡𝑓
+
+𝑘3+𝑞𝑡𝑓
+
+where 𝑁 is the total number of documents in the collection;
+𝑑𝑓 is the number of documents that contain a query term;
+𝑡𝑓 is the term’s frequency in a document; 𝑞𝑡𝑓 is the term’s
+frequency in a query; 𝑑𝑙 is the document’s length; 𝑎𝑣𝑑𝑙 is
+the average length of a document in the collection.
+
+We will illustrate our non-parametric approach to ques-
+tion ranking with the following example. Suppose a user
+submits a query 𝑞 = {𝑡1, 𝑡2, 𝑡3}, which matches three pat-
+tern instances (query terms that are matching the slots of
+an instance are given in brackets for each instance) in two
+documents, such that the instances 𝐼1 and 𝐼2 occur in the
+document 𝑑1 and the instance 𝐼3 occurs in the document
+𝑑2. The retrieval score of the document 𝑑2 with respect to
+the query 𝑞 is greater than the score of the document 𝑑1,
+𝑑𝑠(𝛿, 𝑞, 𝑑2) > 𝑑𝑠(𝛿, 𝑞, 𝑑1). Six questions, which are summa-
+rized in Table 2, were generated from the instances 𝐼1, 𝐼2
+and 𝐼3. The query terms, contained in each question, are
+given in braces after each question.
+
+The ﬁnal ranking of the sample questions in Table 2 by
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA545documents
+
+instances
+
+𝑑1
+
+𝑑2
+
+𝐼1[𝑡1, 𝑡2, 𝑡3]
+
+𝐼2[𝑡1, 𝑡3]
+
+𝐼3[𝑡2]
+
+questions
+𝛿1(𝑡1, 𝑡2, 𝑡3)
+𝛿2(𝑡2)
+𝛿3(𝑡2, 𝑡3)
+𝛿4(𝑡3)
+𝛿5(𝑡1, 𝑡3)
+𝛿6(𝑡2)
+
+Table 2: Matching documents, instances and gener-
+ated questions for a sample query
+
+applying the non-parametric ranking heuristics
+𝐻 = {𝑞𝑡(𝛿, 𝑞), 𝑝𝑚(𝛿, 𝑞, 𝐼), 𝑑𝑠(𝛿, 𝑞, 𝑑))}
+
+is shown in Table 3.
+
+𝑞𝑡
+3
+2
+2
+1
+1
+1
+
+𝑝𝑚
+3
+3
+2
+3
+2
+1
+
+𝑑𝑠
+
+𝑠(𝑑1)
+𝑠(𝑑1)
+𝑠(𝑑1)
+𝑠(𝑑1)
+𝑠(𝑑1)
+𝑠(𝑑2)
+
+1. 𝛿1
+2. 𝛿3
+3. 𝛿5
+5. 𝛿2
+6. 𝛿4
+4. 𝛿6
+
+Table 3: Non-parametric ranking of questions for a
+sample query
+
+4.5 Question generation
+
+In this section, we present an algorithm for generating a
+ranked list of clariﬁcation questions for keyword queries. Let
+ℐ be a set of instances:
+ℐ = {{(𝑡11, 𝑡11′), . . . , (𝑡1𝑖, 𝑡1𝑖′)}, . . . , {(𝑡𝑚1, 𝑡𝑚1′), . . . , (𝑡𝑚𝑙, 𝑡𝑚𝑙′)}}
+of 𝑚 syntactic patterns 𝒫:
+
+𝒫 = {(𝑠11, 𝑠12, . . . , 𝑠1𝑖), . . . , (𝑠𝑚1, 𝑠𝑚2, . . . , 𝑠𝑚𝑙)}
+
+obtained after indexing a document collection. Suppose a
+user poses an 𝑛-term keyword query 𝑞 = {𝑡1, 𝑡2, . . . , 𝑡𝑛}.
+Let 𝑟(𝛿𝑖, 𝛿𝑗) be a ranking function deﬁned on a set of ranking
+heuristics:
+
+𝐻 = {𝑞𝑡(𝛿, 𝑞), 𝑝𝑚(𝛿, 𝑞, 𝐼), 𝑑𝑠(𝛿, 𝑞, 𝑑)}.
+
+The algorithm to generate a list of clariﬁcation questions Θ
+ranked according to the ranking function 𝑟(𝛿𝑖, 𝛿𝑗) is shown
+in Algorithm 1.
+Algorithm 1 operates as follows. First, a set of pattern
+instances ℐ′ with at least one query term is obtained by
+querying the index (line 1). Next, for each instance in ℐ′,
+the corresponding pattern and the document, where the pat-
+tern instance occurred, are obtained (lines 3 and 4, respec-
+tively). Templates of the questions, which are focused on
+the query terms and include other slots of the instance, are
+obtained in line 5. Next, the slots of the question templates
+are ﬁlled with the terms from the corresponding slots of the
+pattern instance (lines 6 and 7). Once a question is gener-
+ated from the template, the values of the ranking features
+are calculated in lines 9-11: the number of query terms, oc-
+curring in the generated question, is obtained in line 9; the
+number of query terms occurring in the slots of the pat-
+tern instance, from which the question 𝛿 was generated, is
+obtained in line 10; the score of a document containing the
+pattern instance 𝐼, from which the question 𝛿 was generated,
+is obtained in line 11. Finally, the current list of questions is
+
+Algorithm 1 Algorithm to generate a ranked list of clariﬁ-
+cation questions Θ for a keyword query 𝑞
+Require: Keyword query, 𝑞 = {𝑡1, 𝑡2, . . . , 𝑡𝑛}
+Require: Set of 𝑚 syntactic patterns, 𝒫
+Require: Set of 𝑙 instances of syntactic patterns, ℐ
+Require: Ranking function 𝑟(𝛿𝑖, 𝛿𝑗 )
+1: ℐ′ ← {∀𝐼 : ∃𝑡, 𝑡 ∈ 𝑄 𝑎𝑛𝑑 𝑡 ∈ 𝐼}
+2: for all 𝐼, 𝐼 ∈ ℐ′ do
+𝑃 ← 𝑝𝑎𝑡𝑡𝑒𝑟𝑛(𝐼)
+3:
+𝑑 ← 𝑑𝑜𝑐𝑢𝑚𝑒𝑛𝑡(𝐼)
+4:
+𝑇 ← 𝑡𝑒𝑚𝑝𝑙𝑎𝑡𝑒(𝑞, 𝑃, 𝐼)
+5:
+for 𝑖 = 0 to ∣𝑇∣ do
+6:
+7:
+8:
+9:
+10:
+11:
+12:
+13:
+14:
+15:
+16:
+17:
+18: end for
+
+end for
+𝑞𝑡(𝛿, 𝑞) = ∣𝛿 ∩ 𝑞∣
+𝑝𝑚(𝛿, 𝑞, 𝐼) = ∣𝑞 ∩ 𝐼∣
+𝑑𝑠(𝛿, 𝑞, 𝑑) = 𝐵𝑀 25(𝑑, 𝑞)
+for 𝑖 = 0 to ∣Θ∣ do
+
+end if
+end for
+
+𝛿[𝑖] ← 𝐼[𝑖]
+
+𝛿𝑖 ← Θ[𝑖]
+if 𝑟(𝛿, 𝛿𝑖) = 1 then
+
+𝑖𝑛𝑠𝑒𝑟𝑡(Θ, 𝛿, 𝑖)
+
+being searched (lines 12-17) for the question, which should
+be ranked below the question 𝛿, according to the ranking
+function (line 14).
+If such a question is found at position
+𝑖, the newly generated question is inserted at this position
+(line 15), pushing other questions towards the end of the
+list.
+4.6 Interactive feedback
+
+Our method for automatic question generation provides a
+natural way for implicit relevance feedback. Indeed, when a
+question is clicked, it can be assumed that a user is inter-
+ested in this question. Suppose a user submits a query: 𝑞 =
+{𝑡𝑖, . . . , 𝑡𝑗, 𝑡𝑘, . . . , 𝑡𝑛} and, after viewing the ranked list of
+questions Θ, clicks on the question 𝑞(𝑡𝑗, 𝑡𝑘, 𝑡𝑙, 𝑡𝑚), which was
+generated from the instance 𝐼 = {𝑡𝑝, . . . , 𝑡𝑗, 𝑡𝑘, 𝑡𝑙, 𝑡𝑚, . . . , 𝑡𝑞},
+𝐼 ∈ ℐ. The key idea for question-based relevance feedback
+is that when a user clicks on the question, containing non-
+query terms, a system can interpret this action as an indica-
+tion of the direction of interest, and all the non-query terms
+in the question can then be added to the original query to
+enrich the representation of information need. Speciﬁcally,
+the original query can be augmented with the terms from
+other slots of the same instance of a syntactic pattern that
+was matched with the original query. Formally, a new query
+is 𝑞′ = 𝑞 ∪ 𝑓 , where 𝑓 = 𝐼 − 𝐼 ∩ 𝑞; for the example above,
+𝑞′ = {𝑡𝑖, . . . , 𝑡𝑗 , 𝑡𝑘, . . . , 𝑡𝑛} ∪ {𝑡𝑝, . . . , 𝑡𝑞}.
+
+For example, suppose a user submits a query containing
+a person’s name and clicks on the question, generated from
+the pattern instance, involving a location and a date. Both
+the location and the date can now be added to the orig-
+inal query. The new query can then be re-submitted to
+the search system to generate an updated question list and
+search results, achieving the eﬀect of feedback.
+
+5. EXPERIMENTS
+
+In this section, we present the results of an experimental
+evaluation of a prototype search system with the question-
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA546guided functionality (i.e., QUSE) by a group of users. The
+evaluation is aimed at demonstrating the added value of the
+question-guided search process from the two major perspec-
+tives: easier and faster navigation in the search results and
+interactive feedback. Within the ﬁrst perspective, the focus
+is on the quality of question generation (automatically gener-
+ated questions should be grammatically correct) and ranking
+(relevant and interesting question should be presented ﬁrst).
+The second perspective is related to how natural, interesting
+and interactive the question feedback is for the users (gener-
+ated questions should encourage further exploration of the
+query topic).
+
+5.1 Dataset and queries
+
+We crawled, preprocessed and indexed a subset of Wikipedia,
+
+consisting of 3000 most viewed articles in 2009, combined
+with the biographic articles about the famous Americans 1.
+Such composition of the test collection allows the users to
+pose a variety of interesting exploratory queries. The test
+collection includes 19547 articles and its total size is around
+300 megabytes. The indexer was conﬁgured to recognize
+and index the occurrences of 32 diﬀerent syntactic patterns,
+some of which are presented in Table 1.
+
+We designed a special evaluation interface for the system
+and opened it to the users for a week. The users, who par-
+ticipated in the evaluation, were a group of 20 engineering
+graduate students. We allowed the users to select the queries
+from a list of predeﬁned queries or type their own queries di-
+rectly into the search box. After submitting their own query
+or clicking on a link for a predeﬁned one, the users were for-
+warded to a page with search results, which were organized
+into question-answer pairs. For each query, a maximum of
+30 top-ranked questions, along with the answers, have been
+presented for evaluation. A snapshot of the sample result
+page is shown in Figure 4.
+
+Users were asked to provide their judgments regarding
+the well-formedness (column ’W’ in Figure 4), interesting-
+ness (column ’I’ in Figure 4) and relevance (column ’R’ in
+Figure 4) of each question, by putting a check mark into the
+corresponding check box. We deﬁned a well-formed question
+as a question, which is grammatically correct and meaning-
+ful to the user; an interesting question as a question, which is
+either unexpected or about some fact not previously known
+by the user, or if it generates interest in further exploration
+of the question topic; and a relevant question as a question
+relevant to the topic of a query. We also explicitly clariﬁed
+that some questions may be interesting, but not necessarily
+relevant, as well as some relevant questions may not nec-
+essarily be interesting. For example, if a user submits the
+query “clinton” and is willing to ﬁnd some information about
+Bill Clinton, questions about Hillary Clinton are not rele-
+vant. However, among the questions about Hillary Clinton,
+there can still be questions interesting to the user.
+
+The ’Answer’ column in Figure 4 was intended to help the
+users judge the interestingness and, especially, the relevance
+of questions. Well-formedness of a question is not related
+to its interestingness or relevance. A question can be well-
+formed, even if it is not interesting or relevant. Note that the
+questions in Figure 4 are presented as hyperlinks, which may
+be clicked on, should the user be interested in exploring the
+topic of the clicked question. After clicking on a question,
+
+1
+
+http://en.wikipedia.org/wiki/Category:Lists_of_people_by_U.S.
+
+_state
+
+the user is presented with another ranked list of feedback
+question-answer pairs, generated by issuing a reformulated
+(feedback) query. A maximum of 10 feedback questions have
+been presented for evaluation during each feedback cycle.
+
+5.2 Judgments
+
+After running the system for a week, we collected the user
+judgments of 2895 questions generated for 184 queries (63
+non-feedback queries and 121 feedback ones).
+In order to
+get a more detailed picture of how the proposed retrieval
+framework performs on diﬀerent types of information needs,
+we manually classiﬁed the collected queries into the three
+groups, which are listed below along with some sample real
+queries:
+
+∙ SQ (short queries): short (one term only), underspec-
+iﬁed and potentially ambiguous queries: e.g., “ford”,
+“paris”, “illinois”;
+
+∙ NQ (normal queries): well-formed, generally unam-
+biguous, exploratory queries: “michael jackson”, “bill
+gates”;
+
+∙ LQ (long queries):
+
+long (three or more terms), very
+speciﬁc queries: “barry bonds babe ruth record”, “bush
+gulf war”;
+
+∙ FB (feedback queries): queries, generated by the sys-
+tem, when one of the questions was clicked: “cher david
+letterman return”, “diagnose disease reagan ronald”.
+
+The aggregated statistics of user judgments with respect
+to the absolute number (upper half of each cell) and the rela-
+tive percentage (lower part of each cell) of clicked (C), well-
+formed (W), interesting (I), and relevant (R) questions to
+the total number (T) of questions, generated for the queries
+of each type, are shown in Table 4. All queries, regardless
+of the type, are designated as ALL.
+
+C
+19
+
+I
+
+128
+
+99
+
+11
+
+R
+135
+
+W
+232
+
+T
+310
+SQ 6.13% 74.84% 41.29% 43.55% 100%
+1105
+NQ 8.96% 85.06% 38.1% 54.84% 100%
+270
+LQ 4.07% 80.0% 45.19% 31.48% 100%
+1210
+0.0% 81.57% 58.6% 38.26% 100%
+2895
+129
+ALL 4.45% 82.03% 47.67% 44.52% 100%
+
+2375
+
+1380
+
+421
+
+122
+
+1289
+
+940
+
+216
+
+987
+
+606
+
+85
+
+463
+
+FB
+
+0
+
+709
+
+Table 4: User judgments for diﬀerent query types
+
+There are several important conclusions, which could be
+made based on the analysis of Table 4. First, questions cor-
+responding to the feedback queries have the largest propor-
+tion of interesting questions. This clearly shows the beneﬁt
+of the question-based feedback strategy. Second, the over-
+all question click-through rate greater than 3.33% indicates
+that the users clicked on at least one of the 30 questions pre-
+sented for each non-feedback query. Third, relevance of the
+questions varies across diﬀerent query types and is the high-
+est for normal queries. Therefore, unambiguous queries gen-
+erate relatively more relevant questions. The low precision
+of questions, generated by the long and feedback queries,
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA547Figure 4: Fragment of a question-answers list for the query “bill clinton”
+
+can be explained by the more speciﬁc information need cor-
+responding to those types of queries, and hence a smaller
+subset of potentially relevant questions/answers. Ambigu-
+ous queries naturally result in questions with lower precision.
+Finally, the well-formedness of questions is independent of
+the query type and is about 80% across all query types. Af-
+ter taking a high-level look at the initial user judgments, we
+are now ready to move on to a more detailed analysis of all
+components of the question-guided retrieval process.
+
+5.3 Ranking and feedback
+
+5.3.1 Metrics
+
+Due to the fact that a set of questions, which can be po-
+tentially returned for a query, can be much larger than a set
+of documents, accurate ranking of questions in the question-
+guided search framework is very important. Since there may
+be many relevant questions and their usefulness to the users
+may vary, we distinguish diﬀerent levels of usefulness of a
+question and use the Normalized Discounted Cumulative
+Gain or nDCG [10] to measure the quality of a ranked list
+of questions. The DCG at the 𝑖-th question is computed as:
+
+𝐺(𝑖) =
+
+3 if 𝛿𝑖 is both interesting and relevant
+2 if 𝛿𝑖 is just relevant
+1 if 𝛿𝑖 is just interesting
+0 if 𝛿𝑖 is neither interesting, nor relevant
+
+Given a DCG vector 𝑉 = ⟨𝑣1, 𝑣2, . . . , 𝑣𝑘⟩ computed for
+a list of 𝑘 questions Θ that are generated by some ranking
+method and the DCG vector 𝐼 = ⟨𝑖1, 𝑖2, . . . , 𝑖𝑘⟩, which cor-
+responds to the ideal ranking of the same question list Θ, a
+normalized DCG vector is 𝑛𝐷𝐶𝐺 = ⟨𝑣1/𝑖1, 𝑣2/𝑖2, . . . , 𝑣𝑘/𝑖𝑘⟩.
+
+𝐷𝐶𝐺(𝑖) =
+
+𝐺(𝑖),
+𝐷𝐶𝐺(𝑖 − 1) + 𝐺(𝑖)
+
+log2(𝑖+1)
+
+if 𝑖 = 1
+
+, otherwise
+
+where 𝐺(𝑖) is the grade of the 𝑖-th question 𝛿𝑖 in the ranked
+list, which is computed as follows:
+
+{
+
+⎧⎨
+⎩
+
+5.3.2 Evaluation of ranking
+
+In this section, we present the results of an experimen-
+tal evaluation of diﬀerent question ranking strategies de-
+scribed in Section 4.4 to determine the best performing non-
+parametric ranking function. First, we started with the
+ranking functions that include only one ranking heuristic
+𝑞𝑡, 𝑝𝑚, 𝑑𝑠 at a time. Then, we kept adding additional
+heuristics to the best performing ranking function at each
+step to determine the best performing combination of rank-
+ing heuristics. The relative performance of diﬀerent ranking
+functions is summarized in Table 5
+
+As follows from Table 5, the best performing non-parametric
+
+question ranking function is 𝑟(𝑝𝑚, 𝑑𝑠, 𝑞𝑡). This indicates
+that all three ranking heuristics are useful. The sequence
+of application of ranking heuristics in the best-performing
+ranking function also suggests that the questions, gener-
+ated from the more speciﬁc patterns (those that match more
+query terms), should be ranked higher. This can be ex-
+plained by fact that the users prefer more speciﬁc questions
+to the broader ones.
+
+5.3.3 Evaluation of feedback
+
+One of the key beneﬁts of the question-based retrieval pro-
+cess is the possibility of contextual query expansion. We
+evaluated the eﬀectiveness of question-based feedback by
+comparing precision@n (Figure 5) and nDCG@n (Figure 6)
+across all feedback and non-feedback questions. Non-feedback
+questions were presented after the users submitted their
+initial queries or clicked on the predeﬁned query. Feed-
+back questions were generated and presented after the users
+clicked on one of the initial questions and the updated ini-
+tial query has been re-submitted to the system. Since the
+updated query includes the original query terms, the clicked
+question may appear in the feedback questions, however it
+may not necessarily be ranked high enough to be presented
+to the users, since the updated query also generates other
+questions, which could be ranked higher than the clicked
+one.
+
+The steep slope of the precision curve for the feedback
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA548𝑟(𝑝𝑚)
+0.8962
+MAP
+0.2927
+MRR
+Avg. NDCG 0.8765
+0.6435
+Prec@5
+Prec@10
+0.4755
+
+𝑟(𝑞𝑡)
+0.8823
+0.2895
+0.8651
+0.6402
+0.4717
+
+𝑟(𝑑𝑠)
+0.8889
+0.2932
+0.8841
+0.6543
+0.4761
+
+𝑟(𝑝𝑚, 𝑑𝑠)
+
+𝑟(𝑑𝑠, 𝑝𝑚)
+
+𝑟(𝑝𝑚, 𝑑𝑠, 𝑞𝑡)
+
+0.9080
+0.2968
+0.8907
+0.6620
+0.4804
+
+0.8920
+0.2936
+0.8850
+0.6533
+0.4761
+
+0.9083
+0.2969
+0.8911
+0.6625
+0.4821
+
+Table 5: Performance of diﬀerent ranking functions
+
+ 
+
+FB
+non−FB
+
+Head Click
+how
+what
+who
+when
+where
+
+21
+43
+32
+26
+7
+
+Inter Relev
+212
+215
+472
+461
+390
+454
+168
+180
+59
+58
+
+1
+
+0.9
+
+0.8
+
+0.7
+
+0.6
+
+0.5
+
+0.4
+
+n
+@
+n
+o
+s
+c
+e
+r
+p
+
+i
+
+i
+
+ 
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+question position
+
+7
+
+8
+
+9
+
+10
+
+Figure 5: Precision@n for all feedback and non-
+feedback questions
+
+questions in Figure 5 indicates that the question-based feed-
+back aggressively reﬁnes the information need by bringing
+up a small number of both highly relevant and interesting
+questions to the top of the question list.
+
+ 
+
+non−FB
+FB
+
+0.96
+
+0.94
+
+0.92
+
+0.9
+
+0.88
+
+0.86
+
+0.84
+
+0.82
+
+0.8
+
+0.78
+
+n
+@
+G
+C
+D
+n
+
+0.76
+
+ 
+1
+
+2
+
+3
+
+4
+
+5
+
+6
+
+question position
+
+7
+
+8
+
+9
+
+10
+
+Figure 6:
+feedback questions
+
+nDCG@n for all
+
+feedback and non-
+
+Figure 6 further conﬁrms our conclusion that the question-
+
+based feedback eﬀectively improves question ranking by bring-
+ing the highly relevant and interesting questions to the ﬁrst
+three positions of the ranked list.
+5.4 Detailed analysis
+
+The proposed novel retrieval framework opens up many
+interesting opportunities for exploration of user search be-
+havior. In this section, we aim to analyze user preferences
+regarding diﬀerent types of questions. In particular, we fo-
+cus on the two speciﬁc questions:
+
+∙ is there any relationship between the head word of a
+
+question and user judgments/click-through rate?
+
+Table 6: User behavior with respect to diﬀerent
+question types
+
+∙ is there any relationship between the length of a ques-
+
+tion and user judgments/click-through rate?
+
+In order to answer the ﬁrst question, we calculated the break-
+down of clicked, interesting, and relevant questions across
+the diﬀerent question types, which is shown in Table 6.
+From Table 6, it follows that the users ﬁnd factual ques-
+tions (i.e. the “what” questions) and questions about a per-
+son (i.e. the “who” questions) to be more interesting than
+questions about time or location. The same applies to click-
+throughs, although the diﬀerence is less pronounced, which
+could be partially explained by the low absolute number of
+click-throughs compared to the judgments. In order to an-
+swer the second question, in Figure 7 we plotted the distri-
+bution of clicked, interesting, and relevant questions across
+the questions of diﬀerent length. From Figure 7, it follows
+
+s
+n
+o
+i
+t
+s
+e
+u
+q
+ 
+f
+o
+ 
+r
+e
+b
+m
+u
+n
+
+350
+
+300
+
+250
+
+200
+
+150
+
+100
+
+50
+
+0
+
+ 
+1
+
+ 
+
+clicked
+interesting
+relevant
+
+2
+
+3
+
+4
+
+5
+
+6
+
+7
+
+8
+
+9
+
+10
+
+11
+
+12
+
+question length
+
+Figure 7: Distribution of clicked, interesting, and
+relevant questions over question lengths
+
+that the users mostly click on the medium length 3,4,5-word
+questions. Users also ﬁnd such medium-length questions to
+be more interesting and relevant than others.
+
+6. CONCLUSIONS AND FUTURE WORK
+
+This work proposed a novel idea of question-guided search
+process,
+in which a retrieval system would automatically
+generate and present to the users a set of potentially inter-
+esting questions, based on the search results of a query. The
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA549generated questions can naturally supplement the standard
+search result presentation methods to improve the utility
+of search engines in two ways. First, it enables the users
+to navigate directly into the answers, contained in search
+results, without needing to read the documents, when the
+generated questions are relevant to their information need.
+Second, in case of imprecise or ambiguous queries, the auto-
+matically generated questions can naturally engage the users
+into a feedback cycle to reﬁne their information need and
+guide them towards their search goals as well as stimulate
+new interests for exploratory search. We proposed a suite of
+methods for implementing the question-guided search strat-
+egy, including the methods for indexing of syntactic pat-
+tern instances, generating questions from pattern instances
+with question templates and ranking questions with multi-
+ple heuristics. We implemented these methods in a proto-
+type and evaluated it on a subset of Wikipedia. The exper-
+imental results demonstrated that the proposed method for
+question-based query reﬁnement allows the users to more
+easily navigate in search results and eﬀectively explore the
+results space in an interactive and natural way.
+
+We believe that question-guided search is a very promis-
+ing novel paradigm of interactive search. Our work is only a
+ﬁrst step to show its feasibility; there are many interesting
+directions for future research. First, it would be interesting
+to further explore alternative methods for question presen-
+tation and ranking; in particular, applying learning to rank
+methods to optimize the ranking of questions would be very
+interesting. Second, we have only explored question genera-
+tion based on manually created templates; it would be inter-
+esting to develop techniques for automatic induction of inter-
+esting syntactic patterns and question generation templates.
+Finally, a question-guided search engine would generate rich
+user history, including sequences of questions clicked by the
+users; such search log data oﬀers interesting opportunities
+for user intent analysis and massive implicit feedback.
+
+7. ACKNOWLEDGMENTS
+
+This material is based upon work supported by the Na-
+tional Science Foundation under Grant Numbers IIS-0347933,
+IIS-0713581, IIS-0713571, and CNS-0834709. We would like
+to thank everyone, who participated in the evaluation of
+QUSE, as well as the anonymous reviewers for their com-
+ments, which helped to improve the quality of this paper.
+
+8. REFERENCES
+[1] R. B. Allen, P. Obry, and M. Littman. An interface for
+
+navigating clustered document sets returned by
+queries. In Proceedings of the ACM COOCS, pages
+166–171, 1993.
+
+[2] A. Bookstein. Information retrieval: A sequential
+
+learning process. Journal of the American Society for
+Information Science, 34(5):331–342, 1983.
+
+[3] M. Chalmers and P. Chitson. Bead: Exploration in
+
+informaion visualization. In Proceedings of the ACM
+SIGIR, pages 330–337, 1992.
+
+[4] H. Cui, M.-Y. Kan, and T.-S. Chua. Generic soft
+
+pattern models for deﬁnitional question answering. In
+Proceedings of the ACM SIGIR, pages 384–391, 2005.
+
+[5] R. H. Fowler, W. A. Fowler, and B. A. Wilson.
+
+Integrating query, thesaurus, and documents through
+
+a common visual representation. In Proceedings of the
+ACM SIGIR, pages 142–151, 1991.
+
+[6] K.-S. Fu and B. K. Bhargava. Tree systems for
+
+syntactic pattern recognition. IEEE Transactions on
+Computers, C-23(12):1087–1098, 1973.
+
+[7] M. A. Hearst. Automatic acquisition of hyponyms
+from large text corpora. In Proceedings of the 14th
+International Conference on Computational
+Lingustics, pages 539–545, 1992.
+
+[8] M. A. Hearst. Search User Interfaces. Cambridge
+
+University Press, 2009.
+
+[9] M. A. Hearst and J. O. Pedersen. Reexamining the
+
+cluster hypothesis: Scatter/gather on retrieval results.
+In Proceedings of the ACM SIGIR, pages 76–84, 1996.
+[10] K. J¨arvelin and J. Kek¨al¨ainen. Cumulated gain-based
+
+evaluation of ir techniques. ACM Transactions on
+Information Systems, 20(4):422–446, 2002.
+
+[11] V. Jijkoun, M. de Rijke, and J. Mur. Information
+
+extraction for question answering: Improving recall
+through syntactic patterns. In Proceedings of the 20th
+International Conference on Computational
+Linguistics, 2004.
+
+[12] B. Katz and J. Lin. Selectively using relations to
+
+improve precision in question answering. In
+Proceedings of the EACL-2003 Workshop on Natural
+Language Processing for Question Answering, pages
+43–50, 2003.
+
+[13] D. Lawrie, W. B. Croft, and A. Rosenberg. Finding
+
+topic words for hierarchical summarization. In
+Proceedings of the ACM SIGIR, pages 349–357, 2001.
+[14] A. Leuski and J. Allan. Improving interactive retrieval
+
+by combining ranked lists and clustering. In
+Proceedings of the RIAO, pages 665–681, 2000.
+
+[15] D. Lin. Dependency-based evaluation of minipar. In
+
+Proceedings of the Workshop on Evaluation of Parsing
+Systems at LREC, 1998.
+
+[16] I. Melˇcuk. Dependency syntax: theory and practice.
+
+State University of New York Press, 1987.
+
+[17] A. Pollock and A. Hockley. What’s wrong with
+
+internet searching. In Proceedings of the “Designing
+for the Web: Empirical Studies”, 1996.
+
+[18] A. Singhal. Modern information retrieval: A brief
+
+overview. IEEE Data Engineering Bulletin,
+24(4):35–43, 2001.
+
+[19] A. Spoerri. Infocrystal: A visual tool for information
+
+retrieval & management. In Proceedings of CIKM,
+pages 11–20, 1993.
+
+[20] T. Strzalkowski, J. P. Carballo, and M. Marinescu.
+
+Natural language information retrieval. In Proceedings
+of the 3rd Text Retrieval Conference (TREC-3), 1994.
+
+[21] Y.-C. Wang, J. Vandendorpe, and M. Evans.
+
+Relational thesauri in information retrieval. Journal of
+the American Society for Information Science,
+36(1):15–27, 1985.
+
+[22] O. Zamir and O. Etzioni. Grouper: A dynamic
+
+clustering interface to web search results. In
+Proceedings of the WWW, pages 46–54, 1999.
+
+[23] C. Zhai, X. Tong, N. Mili´c-Frayling, and D. A. Evans.
+
+Evaluation of syntactic phrase indexing - clarit nlp
+track report. In Proceedings of the 5th Text Retrieval
+Conference (TREC-5), 1997.
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA550

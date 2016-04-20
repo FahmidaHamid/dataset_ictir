@@ -1,0 +1,1478 @@
+Just the Right Amount:
+
+Extracting Modules from Ontologies∗
+
+Bernardo Cuenca Grau, Ian Horrocks, Yevgeny Kazakov and Ulrike Sattler
+
+The University of Manchester
+School of Computer Science
+Manchester, M13 9PL, UK
+
+{bcg,horrocks,ykazakov,sattler}@cs.man.ac.uk
+
+ABSTRACT
+The ability to extract meaningful fragments from an ontology is key
+for ontology re-use. We propose a deﬁnition of a module that guar-
+antees to completely capture the meaning of a given set of terms,
+i.e., to include all axioms relevant to the meaning of these terms,
+and study the problem of extracting minimal modules. We show
+that the problem of determining whether a subset of an ontology
+is a module for a given vocabulary is undecidable even for rather
+restricted sub-languages of OWL DL. Hence we propose two “ap-
+proximations”, i.e., alternative deﬁnitions of modules for a vocab-
+ulary that still provide the above guarantee, but that are possibly
+too strict, and that may thus result in larger modules: the ﬁrst ap-
+proximation is semantic and can be computed using existing DL
+reasoners; the second is syntactic, and can be computed in poly-
+nomial time. Finally, we report on an empirical evaluation of our
+syntactic approximation which demonstrates that the modules we
+extract are surprisingly small.
+
+Categories and Subject Descriptors
+I.2.4 [Knowledge Representation Formalisms and Methods]:
+Miscellaneous
+
+General Terms
+Algorithms
+
+Keywords
+Ontologies, Description Logics, OWL, Semantic Web
+
+1.
+
+INTRODUCTION
+
+The design, maintenance, reuse, and integration of ontologies
+are highly complex tasks—especially for ontologies formulated in
+a logic-based language such as OWL. Like software engineers, “on-
+tology engineers” need to be supported by tools and methodologies
+that help them to minimise the introduction of errors, i.e., to ensure
+that ontologies have appropriate consequences. In order to develop
+this support, important notions from software engineering, such as
+module, black-box behavior, and controlled interaction, need to be
+∗This work is supported by the EU Project TONES (Thinking ON-
+tologiES) ref: IST-007603 and by the EPSRC Project REOL (Rea-
+soning in Expressive Ontology Languages) ref:EP/C537211/1. The
+authors would like to thank Boris Motik for his suggestions and as-
+sistance concerning this work.
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2007, May 8–12, 2007, Banff, Alberta, Canada.
+ACM 978-1-59593-654-7/07/0005.
+
+adapted so as to take into account the fact that an OWL ontology is,
+in essence, a logical theory; due to the expressive power of OWL,
+this turns out to be difﬁcult.
+
+In earlier work [4], we have studied modularity in the context
+of collaborative ontology development and controlled integration,
+and deﬁned what it means for an ontology we are developing to be
+safely integrated with a “foreign” ontology; roughly speaking, such
+an integration is safe if it does not change the meaning of the terms
+in the foreign ontology.
+
+In this paper, we focus on the use of modularity to support the
+partial reuse of ontologies: continuing with the above integration
+scenario, as a next step, we would like to extract, from the for-
+eign ontology, a small fragment that captures the meaning of the
+terms we use in our ontology. For example, when building an
+ontology describing research projects, we may use terms such as
+Cystic Fibrosis and Genetic Disorder in our descriptions of medi-
+cal research projects. In order to improve the precision of our on-
+tology, we may want to add more detail about the meaning of these
+terms; for reasons of cost and accuracy, we would prefer to do this
+by reusing information from a medical ontology. Such ontologies
+are, however, typically very large, and importing the whole ontol-
+ogy would make the consequences of the additional information
+costly to compute and difﬁcult for our ontology engineers (who are
+not medical experts) to understand. Thus, in practice, we need to
+extract a module that includes just the relevant information. Ideally,
+this module should be as small as possible while still guaranteeing
+to capture the meaning of the terms used; that is, when answering
+arbitrary queries against our projects ontology, importing the mod-
+ule would give us exactly the same answers as if we had imported
+the whole medical ontology. In this case, importing the module in-
+stead of the whole ontology will have no observable effect on our
+ontology—apart from allowing for more efﬁcient reasoning.
+
+Concerning the efﬁciency of reasoning, the time needed to pro-
+cess an ontology is often too high for ontology engineering, where
+fast response under changes in the ontology is required, or for de-
+ployment in applications, where fast response to queries is required.
+The ability to extract modules in the sense described above would
+address both these problems: it would allow us to identify a (hope-
+fully small) part of the ontology that is affected by a given change
+or that is sufﬁcient to answer a given query—and then to reason
+over this part only without losing any consequences.
+
+The contributions of this paper are as follows:
+1. We propose a deﬁnition of a module Q1 within a given on-
+
+tology Q for a given vocabulary S.
+
+2. We take the above deﬁnition as a starting point, and investi-
+gate the problem of computing minimal modules. We show
+that none of the reasonable variants of this problem is solv-
+
+WWW 2007 / Track: Semantic WebSession: Ontologies717able in general already for rather restricted sub-languages of
+OWL DL. In fact, it is even not possible to determine whether
+a subset Q1 of an ontology Q is a module in Q for S.
+
+3. Given these negative results, we propose two “approxima-
+tions”, i.e., alternative deﬁnitions of a module that still guar-
+antee to completely capture the meaning of the terms in S,
+but that are possibly too strict, and that may thus result in
+larger modules; these approximations are based on the no-
+tion of locality of an ontology with respect to a vocabulary,
+as ﬁrst introduced in [4]. The ﬁrst approximation is semantic,
+and can be computed using existing OWL reasoners; the sec-
+ond one is a restriction of the ﬁrst one which can be computed
+in polynomial time. We propose an algorithm for computing
+the smallest module for each of these approximations.
+
+4. Finally, we describe our implementation and present our ex-
+perimental results on a set of real-world ontologies of vary-
+ing size and complexity. We show that, using our syntac-
+tic approximation, we obtain modules that are much smaller
+than the ones computed using existing techniques, but still
+sufﬁcient to capture the meaning of the speciﬁed vocabulary.
+This paper comes with a Technical Report [3], available online,
+which contains the complete proofs for the results we discuss here.
+
+2. PRELIMINARIES
+
+In this section we introduce description logics (DLs) [2] which
+underly modern ontology languages, such as OWL DL. The syn-
+tax of a description logic L is given by a signature and a set of
+constructors. A signature (or vocabulary) S of a DL is the (dis-
+joint) union of a set C of atomic concepts (A, B, . . . ) represent-
+ing sets of elements, a set R of atomic roles (r, s, . . . ) represent-
+ing binary relations between elements, and a set I of individuals
+(a, b, c, . . . ) representing elements. Every DL provides construc-
+tors for deﬁning the set Rol(S) of (general) roles (R, S, . . . ), the
+set Con(S) of (general) concepts (C, D, . . . ), and the set Ax(S) of
+axioms (α, β, . . . ) for a signature S which is a union of role axioms
+(RBox), terminological axioms (TBox) and assertions (ABox).
+EL [1] is a simple description logic which allows one to con-
+struct complex concepts using conjunction C1 (cid:117) C2 and existential
+restriction ∃R.C starting from atomic concepts A, roles R and the
+bottom concept ⊥. EL provides no role constructors and no role
+axioms; thus, every role R in EL is atomic. The TBox axioms of
+EL can be either concept deﬁnitions A ≡ C or general concept in-
+clusion axioms (GCIs) C1 (cid:118) C2. EL assertions are either concept
+assertions a : C or role assertions r(a, b).
+The basic description logic ALC [14] is obtained from EL by
+adding complement of concepts ¬C. We introduce some additional
+constructors as abbreviations: the top concept (cid:62) is a shortcut for
+¬⊥, the disjunction of concepts C1(cid:116)C2 stands for ¬(¬C1(cid:117)¬C2),
+and the value restriction ∀R.C stands for ¬(∃R.¬C).
+S is an extension of ALC where, additionally, some atomic roles
+can be declared to be transitive using a role axiom Trans(r).
+Further extensions of description logics include inverse roles r−
+(indicated by appending a letter I), role inclusion axioms (RIs) also
+called role hierarchies R1 (cid:118) R2 (+H), functional roles Funct(R)
+(+F), number restrictions ((cid:62) n S) (+N ), qualiﬁed number re-
+strictions ((cid:62) n S.C)1 (+Q), and nominals {a} (+O). Nominals
+make it possible to construct a concept representing a singleton
+set {a} (a nominal concept) from an individual a. These exten-
+sions can be used in different combinations, for example ALCO
+1the dual constructors ((cid:54) n S) and ((cid:54) n S.C) are abbreviations for
+¬((cid:62) n S.¬C) and ¬((cid:62) n S.¬C), respectively
+
+is an extension of ALC with nominals; SHIQ is an extension of
+S with role hierarchies, inverse roles and qualiﬁed number restric-
+tions; and SHOIQ is the DL that uses all the constructors and
+axiom types we have presented.
+
+Modern ontology languages, such as OWL [12], are based on
+description logics and, to a certain extent, are syntactic variants
+thereof. In particular, OWL DL corresponds to SHOIN [8]. In
+this paper, we assume an ontology O based on a description logic
+L to be a set of axioms in L. The signature of an ontology O (of
+an axiom α) is the set Sig(O) (Sig(α)) of atomic concepts, atomic
+roles and individuals that occur in O (respectively in α).
+an ontology O and an axiom α, check if O implies α.
+
+The main reasoning task for ontologies is query answering: given
+The logical entailment |= is deﬁned using the usual Tarski-style
+set-theoretic semantics for description logics as follows. Given a
+signature S = R ∪ C ∪ I, an S-interpretation I is a pair I =
+(∆I,·I), where ∆I is a non-empty set, called the domain of the
+interpretation, and ·I is the interpretation function that assigns: to
+every A ∈ C a subset AI ⊆ ∆I, to every r ∈ R a binary relation
+rI ⊆ ∆I × ∆I, and to every a ∈ I an element aI ∈ ∆I.
+The interpretation function ·I is extended to complex roles and
+concepts via DL-constructors in the standard way (see [2, 3] for
+details). The satisfaction relation I |= α between an interpretation
+I and a DL axiom α (read as I satisﬁes α) is also standard and can
+be found in [2, 3]. An interpretation I is a model of an ontology
+O if I satisﬁes all axioms in O. An ontology O implies an axiom
+α (written O |= α) if I |= α for every model I of O. An axiom α
+is a tautology if it is implied by the empty ontology.
+Let S1, S be signatures such that S1 ⊆ S. The restriction of an
+S-interpretation I = (∆I,·I) to S1 is an interpretation I|S1 =
+(∆I1 ,·I1 ) over S1 such that ∆I1 = ∆I and XI1 = XI for
+every X ∈ S1. An expansion of an S1-interpretation I1 to S is
+an S-interpretation I such that I|S1 = I1. A trivial expansion of
+an S1-interpretation I1 to S is an expansion of I1 to S such that
+XI = ∅ for every atomic concept and atomic role X ∈ S \ S1.
+
+3. MODULES FOR KNOWLEDGE REUSE
+For exposition, suppose that an ontology engineer wants to build
+an ontology about research projects. The ontology deﬁnes dif-
+ferent types of projects according to the research topics they fo-
+cus on. Suppose that the ontology engineer deﬁnes two concepts
+Genetic Disorder Project and Cystic Fibrosis EUProject in his
+ontology P. The ﬁrst one describes projects about genetic disor-
+ders; the second one describes European projects about cystic ﬁ-
+brosis, as given by the axioms P1 and P2 in Figure 1.
+
+The ontology engineer is supposed to be an expert on research
+projects: he knows, for example, that a EUProject is a Project
+(axiom P3). He is unfamiliar, however, with most of the topics the
+projects cover and, in particular, with the terms Cystic Fibrosis and
+Genetic Disorder mentioned in P1 and P2. In this case, he decides
+to reuse the knowledge about these subjects from a well-established
+and widely-used medical ontology
+
+The most straightforward way to reuse these concepts is to im-
+port the medical ontology. This may be, however, a large ontology,
+which deals with other matters in which the ontology engineer is
+not interested, such as genes, anatomy, surgical techniques, etc.
+Ideally, one would like to extract a (hopefully small) fragment of
+the medical ontology—a module—that describes in detail the con-
+cepts we are reusing in our ontology.
+Intuitively, importing the
+module Q1 into P instead of the full ontology Q should have no
+impact on the modeling of the ontology P.
+Continuing with the example, suppose that Cystic Fibrosis and
+Genetic Disorder are described in an ontology Q containing ax-
+
+WWW 2007 / Track: Semantic WebSession: Ontologies718Ontology of medical research projects P:
+P1 Genetic Disorder Project ≡ Project (cid:117)
+
+(cid:117) ∃has Focus.Genetic Disorder
+(cid:117) ∃has Focus.Cystic Fibrosis
+
+Cystic Fibrosis EUProject ≡ EUProject (cid:117)
+EUProject (cid:118) Project
+
+P2
+
+P3
+
+Ontology of medical terms Q:
+
+M1 Cystic Fibrosis ≡ Fibrosis (cid:117) ∃located In.Pancreas (cid:117)
+M2 Genetic Fibrosis ≡ Fibrosis (cid:117)
+M3 Fibrosis (cid:117) ∃located In.Pancreas (cid:118) Genetic Fibrosis
+M4 Genetic Fibrosis (cid:118) Genetic Disorder
+M5 DEFBI Gene (cid:118) Immuno Protein Gene (cid:117)
+
+(cid:117) ∃has Origin.Genetic Origin
+(cid:117) ∃has Origin.Genetic Origin
+
+(cid:117) ∃associated With.Cystic Fibrosis
+
+Figure 1: Reusing medical terminology for an ontology on medical
+research projects
+
+ioms M1-M5 in Figure 1. If we include in the module Q1 just the
+axioms that mention Cystic Fibrosis or Genetic Disorder, namely
+M1, M4 and M5, we lose the following dependency:
+Cystic Fibrosis (cid:118) Genetic Disorder
+
+(1)
+The concept inclusions Cystic Fibrosis (cid:118) Genetic Fibrosis (cid:118)
+Genetic Disorder follow from M1-M5, but not from M1, M4, M5,
+since the dependency Cystic Fibrosis (cid:118) Genetic Fibrosis does not
+hold after removing M2 and M3. The dependency (1), however, is
+crucial for our ontology P as it (together with axiom P3) implies
+the following axiom:
+
+(2)
+
+Cystic Fibrosis EUProject (cid:118) Genetic Disorder Project
+This means, in particular, that all the projects annotated with
+Cystic Fibrosis EUProject must be included in the answer for a
+query on Genetic Disorder Project. Consequently, importing a
+part of Q containing only axioms that mention the terms used in
+P instead of Q results in an underspeciﬁed ontology. We stress
+that the ontology engineer might be unaware of dependency (2),
+even though it concerns the concepts of his primary scope.
+The example above suggests that the central requirement for a
+module Q1 ⊆ Q to be reused in our ontology P is that P ∪ Q1
+should yield the same logical consequences in the vocabulary of P
+as P ∪ Q does. Note that, as seen in the example, this requirement
+does not force us to include in Q1 all the axioms in Q that mention
+the vocabulary to be reused, nor does it imply that the axioms in Q
+that do not mention this vocabulary should be omitted.
+
+Based on the discussion above, we formalize our ﬁrst notion of
+
+a module as follows:
+
+Deﬁnition 1 [Module]. Let Q1 ⊆ Q be two ontologies and S
+a signature. We say that Q1 is an S-module in Q w.r.t. a language
+L, if for every ontology P and every axiom α expressed in L with
+Sig(P ∪{α})∩Sig(Q) ⊆ S, we have P ∪Q |= α iff P ∪Q1 |= α.
+In Deﬁnition 1 the signature S acts as the interface signature be-
+tween P and Q in the sense that it contains the symbols that P and
+α may share with Q. It is also important to realize that there are
+two free parameters in Deﬁnition 1, namely the ontology P and the
+axiom α. Both P and α are formulated in some ontology language
+L, which might not necessarily be a sub-language of OWL DL.
+
+Fixing the language L in which P and α can be expressed is
+essential in Deﬁnition 1 since it may well be the case that Q1 is
+a module in Q w.r.t. a language L1, but not w.r.t. L2. Fixing L,
+If Q1 is an S-module in Q,
+however, is not always reasonable.
+it should always be possible to replace Q with Q1 regardless of
+the particular language in which P and α are expressed. In fact,
+we may extend our ontology P with a set of Horn rules, or ex-
+tend our query language to support arbitrary conjunctive queries.
+In any case, extending the ontology language for P and the query
+language for α should not prevent Q1 from being a module in Q.
+It is therefore convenient to formulate a more general notion of
+a module which abstracts from the particular language under con-
+sideration; that is, we say that Q1 is an S-module in Q iff it is
+an S-module in Q, according to Deﬁnition 1 for every language L
+with Tarski-style set-theoretic semantics. The modules we obtain
+in this paper will be modules in precisely this stronger sense.
+
+In our knowledge reuse scenario, small modules are preferred
+over large modules. Therefore, it makes sense to focus only on min-
+imal modules. We say that Q1 is a minimal S-module in Q if there
+is no Q2 (cid:40) Q1 that is also an S-module in Q. In our example from
+Figure 1, there are two minimal S-modules Q1 = {M1, M2, M4}
+and Q2 = {M1, M3, M4}: if we remove any axiom from them,
+the dependency (1) will no longer hold. Hence minimal modules
+are not necessarily unique. While in some cases it is reasonable to
+extract all minimal modules, in others it may sufﬁce to extract just
+one. Thus, given Q and S, the following tasks are of interest:
+
+T1.
+T2.
+
+compute all minimal S-modules in Q
+compute some minimal S-module in Q
+
+(3)
+
+Surprisingly, we can show (see [3] for detail) that these tasks are
+inter-reducible; that is, an algorithm that solves T1 can be used to
+solve T2 and vice-versa. Let us now consider the axioms M1–M4.
+These axioms occur in both minimal S-modules Q1 and Q2; thus,
+they are, in a certain sense, essential for dependency (1). In certain
+situations, one can be interested in computing just the set Qe of
+such essential axioms, instead of computing all minimal modules.
+This is the case, for example, if the ontology engineer wants to
+compute a module that is “safe” under removal of axioms: if we
+1 = Q1 \ M2 = {M1, M4} is no
+remove M2 from Q, then Q(cid:48)
+longer an S-module for the updated ontology Q(cid:48) := Q \ {M2}
+since the dependency (1) is lost, but Q(cid:48)
+e := Qe \ {M2} is still a
+module in Q. This example suggests the following deﬁnition:
+
+Deﬁnition 2 [Essential Axiom]. Given a signature S and an on-
+tology Q, we say that an axiom α ∈ Q is S-essential in Q w.r.t. L
+if α belongs to some minimal S-module in Q w.r.t. L.
+Hence, the following task may also be of interest:
+T3.
+
+compute the union of all minimal S-modules in Q,
+which is the set of all S-essential axioms in Q
+
+(4)
+
+Obviously, task T3 is not harder then task T1: a procedure for com-
+puting all minimal modules can be used in a straightforward way
+to compute the union of these minimal modules.
+
+PROPOSITION 1. Tasks T1 and T2 are reducible to task T3; that
+
+is, any procedure for T1 or T2 can be used for solving T3.
+
+In the last few years, numerous techniques for extracting frag-
+ments of ontologies for knowledge reuse purposes have been de-
+veloped. Most of these techniques rely on syntactically traversing
+the axioms in the ontology and employ various heuristics for deter-
+mining which axioms are relevant and which are not.
+
+An example of such a procedure is the algorithm implemented
+in the PROMPT-FACTOR tool [11]. Given a signature S and an
+
+WWW 2007 / Track: Semantic WebSession: Ontologies719ontology Q, the algorithm retrieves a fragment Q1 ⊆ Q as follows:
+ﬁrst, the axioms in Q that mention any of the symbols in S are
+added to Q1; second, S is expanded with the symbols in Sig(Q1).
+These steps are repeated until a ﬁxpoint is reached. In our example,
+the axioms M1-M5 would be retrieved.
+
+Another example is the algorithm in [15], which was used for
+segmentation of the medical ontology GALEN [13]. Given a signa-
+ture S and an ontology Q, the algorithm adds to Q1 all deﬁnitions
+A ≡ C for symbols in S, expands S with symbols in Sig(Q1), and
+then repeats these steps again until a ﬁxpoint is reached. The main
+idea of this algorithm is to prune irrelevant axioms by traversing the
+class hierarchy only “upwards” and across existential restrictions.
+Unfortunately, this algorithm does not detect other dependencies,
+in particular those expressed by GCIs. In our example, when ini-
+tialized with Cystic Fibrosis and Genetic Disorder, the algorithm
+retrieves only the axiom M1 and the dependency (1) is lost.
+
+Therefore, none of these algorithms is appropriate for extracting
+modules according to Deﬁnition 1. On the one hand, the PROMPT-
+FACTOR algorithm extracts many unnecessary axioms (such as
+M5 in our case) whereas, on the other hand, the segmentation algo-
+rithm from [15] misses essential axioms (like M2, M3 and M4).
+
+In our example, the PROMPT-FACTOR algorithm would ex-
+tract a module (though not a minimal one). In general, however,
+this is also not the case. For example, consider an ontology Q =
+{(cid:62) (cid:118) {a}, A (cid:118) B}, α = (A (cid:118) ∀r.A), and S = {A}. It is easy
+to see that Q admits only single element models and α is satisﬁed
+in every such a model; that is, Q |= α. The PROMPT-FACTOR
+algorithm extracts in this case Q1 = {A (cid:118) B}, which does not
+imply α.
+
+The main problem with these algorithms is that they ignore the
+semantics of the ontologies. As a consequence, they may, on the
+one hand, extract irrelevant axioms and, on the other hand, miss
+essential axioms. These algorithms, however, were not intended
+to extract modules in accordance to a formal collection of require-
+ments; instead, they were intended to extract “relevant parts” of
+ontologies which are “likely to be related” to the given signature,
+and they do not guarantee the correctness of the results. Correct-
+ness, however, is the primary requirement for the procedures we
+present in this paper.
+3.1 Modules and Conservative Extensions
+
+The notion of a module is closely related to the notion of a con-
+servative extension which has been used to characterize formal re-
+quirements in ontology integration tasks [7, 5, 4, 10]. In the lit-
+erature we can ﬁnd at least two different notions of conservative
+extensions in the context of ontologies [10]:
+
+Deﬁnition 3 [Conservative Extensions].
+Let Q1 ⊆ Q be two ontologies, S a signature and L a logic.
+We say that Q is a deductive S-conservative extension of Q1
+w.r.t. L, if for every axiom α over L with Sig(α) ⊆ S, we have
+Q |= α iff Q1 |= α.
+We say that Q is a model S-conservative extension of Q1 if,
+for every model I1 of Q1, there exists a model I of Q such that
+I|S = I1|S.
+
+Intuitively, an ontology Q is a deductive conservative extension
+of an ontology Q1 ⊆ Q for a signature S iff every logical conse-
+quence α of Q constructed using only symbols from S is already
+a consequence of Q1; that is, the additional axioms in Q do not
+add new logical consequences over the vocabulary S. Analogously
+to modules, the notion of a deductive conservative extension de-
+pends on the ontology language L in which Q and α are expressed.
+In contrast, model conservative extensions are not deﬁned in terms
+
+of logical entailment, but using the models directly. Intuitively, an
+ontology Q is a model conservative extension of Q1 ⊆ Q if ev-
+ery model of Q1 can be expanded to a model of Q by interpreting
+new symbols and leaving the interpretations of the old symbols un-
+changed.
+
+The notion of semantic conservative extension is strictly stronger
+than the syntactic one [10] since it does not depend on expressivity
+of the ontology language. That is, if Q is a model S-conservative
+extension of Q1, it is also a deductive S-conservative extension of
+Q1, but not necessarily vice versa.
+
+Example 1. Let Q be the ontology consisting of axioms M1 −
+M5 in Figure 1. Let Q1 consist of the axioms M1 − M4 and let
+S = {Cystic Fibrosis, Genetic Disorder}. We show that Q is a
+model S-conservative extension of Q1 and, hence, also a deductive
+conservative extension of Q1.
+Let I1 be an arbitrary model of Q1. We demonstrate that we can
+always construct a model I of Q which interprets the symbols from
+S in the same way as I1 does, i.e. I|S = I1|S.
+Indeed, let I be identical to I1 except for the interpretation of the
+atomic concepts DEFBI Gene and Immuno Protein Gene, and the
+atomic role associatedWith, all of which we interpret in I as the
+empty set. Note that these atomic concepts and this atomic role do
+not occur in Q1. Hence, I interprets the concepts in Q1 exactly
+like I1, and so I is a model of Q1. Furthermore, I is a model of
+M5 since the concepts on the left-hand-side and the right-hand-side
+of this axiom are both interpreted as the empty set. Thus, Q is a
+model S-conservative extension of Q1.
+
+Although Deﬁnition 1 is close to the notion of deductive con-
+servative extension, there are two important differences. First, in
+the deﬁnition of deductive conservative extension, the logical con-
+sequences are considered only w.r.t. the ontologies Q and Q1 of
+interest whereas, in our deﬁnition of module, all the possible on-
+tologies P in which the module can be used are taken into account.
+Second, in the deﬁnition of deductive conservative extension, the
+signature of α is required to be a subset of S whereas, in our deﬁ-
+nition of module, only the common part of α∪P and Q is required
+to be a subset of S. Despite these differences, the two notions of
+conservative extensions are related to our notion of module:
+PROPOSITION 2. Let Q1 ⊆ Q be two ontologies. Then:
+1. If Q1 is an S-module in Q w.r.t. L then Q is a deductive
+
+S-conservative extension of Q1 w.r.t. L;
+
+2. If Q is a model S-conservative extension of Q1 then Q1 is
+an S-module in Q for every ontology language L with Tarski-
+style set-theoretic semantics.
+
+PROOF. 1. Let α be an axiom with Sig(α) ∈ S such that Q |=
+α. We have to show that Q1 |= α ((cid:63)). Take P := ∅ (the empty
+ontology). Since Q1 is a module in Q, Sig(P∪{α})∩Sig(Q) ⊆ S,
+and P∪Q = Q |= α, by Deﬁnition 1, we have Q1 = P∪Q1 |= α.
+2. Assume that Q is a model S-conservative extension of Q1,
+but Q1 is not an S-module in Q w.r.t. some logic L. According
+to Deﬁnition 1, this means that there exists an ontology P and an
+axiom α over L with Sig(P ∪ {α}) ∩ Sig(Q) ⊆ S, such that
+P ∪ Q |= α but P ∪ Q1 (cid:54)|= α. The last implies that for some
+interpretation I1, we have I1 |= P ∪ Q1, but I1 (cid:54)|= α. Let
+I(cid:48)
+1 := I1|S∪Sig(Q). Obviously, I(cid:48)
+1 |= Q1. By Deﬁnition 3, since
+Q is a model S-conservative extension of Q1, there exists an in-
+terpretation I(cid:48) such that I(cid:48) |= Q and I(cid:48)|S = I(cid:48)
+1|S. Let I be the
+expansion of I(cid:48)|S∪Sig(Q) to Sig(P ∪ {α}) by setting XI := XI1
+for every X ∈ Sig(P ∪ {α}) \ S. Note that we also have I|S =
+
+WWW 2007 / Track: Semantic WebSession: Ontologies720I(cid:48)|S = I(cid:48)
+1|S = I1|S, hence I|Sig(P∪{α}) = I1|Sig(P∪{α}), and so
+I |= P and I (cid:54)|= α. Since I|S∪Sig(Q) = I(cid:48)|S∪Sig(Q) and I(cid:48) |= Q,
+we have I |= Q, which yields a contradiction.
+
+Proposition 2 shows that our notion of module stays “in be-
+tween” the two notions of conservative extensions. In particular,
+by applying Property 2 in Proposition 2 to Example 1, we can show
+that the axioms M1-M4 in Figure 1 constitute a module in the on-
+tology Q, consisting of M1-M5. The converse of Property 1 in
+Proposition 2, however, does not hold in general:
+
+Example 2. Let Q1 = {}, Q = {(cid:62) (cid:118) ∃R.A} and S = {A}.
+The ontology Q is a deductive S-conservative extension of Q1
+w.r.t. ALC.
+Indeed, every ALC-axiom α = (C1 (cid:118) C2) over
+S = {A}, is equivalent in ALC to either (cid:62) (cid:118) (cid:62), (cid:62) (cid:118) ⊥, (cid:62) (cid:118) A
+or A (cid:118) ⊥, which are indistinguishable by Q1 and Q—that is, the
+axiom is implied by Q1 iff it is implied by Q. Q1, however, is not
+an S-module in Q. Consider an ALC-ontology P = {A (cid:118) ⊥},
+which is constructed over S. It is easy to see that P ∪Q |= (cid:62) (cid:118) ⊥,
+but P ∪ Q1 (cid:54)|= (cid:62) (cid:118) ⊥.
+
+Given the relationships between our deﬁnition of module and
+conservative extensions, it is worth examining the computational
+complexity of the associated problems. The problem of deciding
+whether Q is an S-conservative extension of Q1 has been stud-
+ied in [10], where it is proved to be 2NEXPTIME-complete for
+ALCIQ (roughly OWL-Lite) and undecidable for OWL DL. For
+model conservative extensions, the problem is highly undecidable
+(non recursively enumerable), even for ALC [10].
+
+The decidability result from [10] for deductive conservative ex-
+tensions, however, does not transfer to our problem since an ontol-
+ogy Q may well be an S-deductive conservative extension of Q1,
+but still Q1 might not be an S-module in Q. In fact, we show that
+our problem is already undecidable for ALC ontologies when the
+language allows for nominals:
+
+THEOREM 1. Given a signature S, an ALC-ontology Q and
+an axiom α ∈ Q, it is undecidable whether α is S-essential in Q
+w.r.t. L = ALCO.
+
+The proof of Theorem 1 is a variation of the proof from [10] for
+undecidability of deductive conservative extensions in ALCQIO,
+which is based on a reduction to domino tiling problems. The proof
+is rather technical and we refer the reader to [3] for details.
+
+COROLLARY 1. There exists no algorithm for performing any
+
+of the tasks T1-T3 from (3), and (4) for ALC.
+
+PROOF. Theorem 1 implies directly that there is no algorithm
+for task T3 from (4), because otherwise, one can check if an axiom
+α is S-essential in Q by simply computing the set of all essential
+axioms by this algorithm for T3 and then checking if α is contained
+in this set. The remaining tasks from (3) are unsolvable since they
+are reducible to T3 by Proposition 1 .
+
+COROLLARY 2. Given a signature S, an ALC-ontology Q and
+an ontology Q1 ⊆ Q, it is undecidable whether Q1 is an S-module
+in Q w.r.t. L = ALCO.
+
+PROOF. The procedure for deciding if Q1 is an S-module in Q
+can be used for solving task T1, which is not possible by Corol-
+lary 1. Indeed, by enumerating the subsets of Q and checking if
+they are modules, one can compute all subsets M of Q that are
+S-modules in Q. The set of all minimal modules in Q can be then
+computed from M by ﬁltering out those sets in M that are proper
+subsets of some other sets in M.
+
+Corollary 2 has a strong impact on the problem of knowledge
+reuse and forces us to revisit the original problem we aim at solv-
+ing. As the problem of extracting minimal modules cannot be com-
+putationally solved for OWL DL in none of the forms T1-T3, we
+propose to relax some of the requirements in these tasks. We cannot
+drop the requirements that extracted fragments should be modules
+since, in this case, we have no guarantee for the correctness of the
+result. We can sacriﬁce, however, the minimality requirements for
+the computed modules and consider the following weakened ver-
+sion of the task T2:
+
+T2w.
+
+compute some small enough S-module in Q
+
+(5)
+Although it is always possible to extract an S-module in Q (one
+can simply return Q which is always an S-module in Q), it still
+makes sense to develop, compare, and practically apply procedures
+that compute reasonably small modules. In the rest of the paper
+we describe two procedures of this form, based on the notions of
+locality, which we ﬁrst introduced in [4]. The modules we obtain
+might be larger than the minimal modules and therefore we need to
+show that, in practice, they are still reasonably small.
+
+4. MODULES BASED ON LOCALITY
+
+In this section, we formulate the notion of locality, ﬁrst intro-
+duced in [4] which will constitute the basis of our algorithm for
+extracting modules.
+4.1 Locality
+
+As a consequence of Case 2 in Proposition 2, model conserva-
+tive extensions can be used as a sufﬁcient condition for the notion
+of module. It is not possible, however, to design a procedure that
+extracts modules based on this condition since the problem of de-
+ciding model conservative extensions is highly undecidable [10].
+The idea underlying this notion, however, can be used to establish
+sufﬁcient conditions for the notion of module which are decidable
+and can be used in practice.
+Consider Example 1, where we show that the set Q of axioms
+M1-M5 in Figure 1 is a model S-conservative extension of Q1 =
+{M1, . . . , M4}, for S = {Cystic Fibrosis, Genetic Disorder}. In
+this example, the model conservative extension property was shown
+by ﬁnding expansions of Sig(Q1)-interpretations to models of Q in
+which all concept and atomic roles not in Sig(Q1) were interpreted
+as the empty set. One could consider the cases where conservative
+extensions (and hence modules) can be determined in this manner.
+This idea can be formalized using the notion of locality:
+
+Deﬁnition 4 [Locality [4]]. Let S be a signature. We say that
+an axiom α is local w.r.t. S if every trivial expansion of any S-
+interpretation to S∪Sig(α) is a model of α. We denote by local(S)
+the collection of all axioms that are local w.r.t. S. An ontology O
+is local w.r.t. S if O ⊆ local(S).
+Intuitively, an ontology O is local w.r.t. a signature S if we can take
+any interpretation for the symbols in S and extend it to a model of
+O that interprets the additional symbols as the empty set.
+
+Example 3. Consider axiom M5 from Figure 1. This axiom
+is local w.r.t. S = {Cystic Fibrosis, Genetic Disorder}. Indeed,
+as shown in Example 1, for every trivial expansion I of an S-
+interpretation to S ∪ Sig(α), the atomic concept DEFBI Gene is
+interpreted as the empty set, and so, I satisﬁes M5.
+On the other hand, M5 is not local w.r.t. S = {DEFBI Gene}.
+Indeed, take any S-interpretation I1 in which DEFBI Gene is in-
+terpreted as a non-empty set. Then, for every trivial expansion I of
+I1, the concept on the left-hand-side of M5 is always interpreted
+
+WWW 2007 / Track: Semantic WebSession: Ontologies721as a non-empty set, whereas the concept on the right-hand-side is
+always interpreted as the empty set. So I does not satisfy α.
+
+Locality can be used to formulate a sufﬁcient condition for an
+ontology to be a model conservative extension of another ontology:
+PROPOSITION 3. Let O1, O2 be two ontologies and S a signa-
+ture such that O2 is local w.r.t. S ∪ Sig(O1). Then O1 ∪ O2 is an
+S-model conservative extension of O1.
+
+PROOF. Let I1 be a model of O1. We show that there exists a
+model I of O1 ∪ O2 such that I|S = I1|S.
+Let I be a trivial expansion of I1|S∪Sig(O1) to S ∪ Sig(O1) ∪
+Sig(O2), thus, in particular, I|S∪Sig(O1) = I1|S∪Sig(O1). We need
+to show that I is a model of O1 ∪ O2. Since O2 is local w.r.t.
+S ∪ Sig(O1), by Deﬁnition 4, I is a model of O2. Moreover, since
+I|Sig(O1) = I1|Sig(O1) and I1 |= O1, we have I |= O1. Hence,
+I |= O1 ∪ O2 what was required to show.
+
+Using Proposition 3 and Property 2 of Proposition 2 we obtain:
+COROLLARY 3. Let O1, O2 and S be as given in Proposition 3.
+
+Then O1 is an S-module in O1 ∪ O2.
+
+Next, we introduce our ﬁrst restricted class of modules:
+
+Deﬁnition 5 [Modules based on Locality Condition].
+
+Given an ontology Q and a signature S, we say that Q1 ⊆ Q is a
+locality-based S-module in Q if Q \ Q1 is local w.r.t S ∪ Sig(Q1).
+
+Example 4 [Example 3, continued]. We have seen in Example 3
+that axiom M5 is local w.r.t. every S that does not contain the
+atomic concept DEFBI Gene. In particular, for Q1 consisting of
+axioms M1-M4 from Figure 1, M5 is local w.r.t. Sig(Q1). Hence,
+according to Deﬁnition 5, Q1 is a locality-based S-module in Q =
+{M1, . . . , M5} for every S ⊆ Sig(Q1).
+4.2 Computing Locality-Based Modules
+
+As demonstrated in Example 3, for testing locality of an axiom α
+w.r.t. S, it is sufﬁcient to interpret every atomic concept and atomic
+role not in S with the empty set and then check if α is satisﬁed
+for all interpretations of the remaining symbols. This observation
+suggests that locality can be tested by ﬁrst simplifying the ontology
+by eliminating atomic roles and concepts that are not in S, and then
+checking if the resulting axioms are satisﬁed in every interpretation
+for the remaining symbols. This idea is formalized as follows:
+
+PROPOSITION 4
+
+(TESTING LOCALITY).
+
+Let O be a SHOIQ ontology and S a signature. Let OS be ob-
+tained from O by applying the transformations below, where every
+A is an atomic concept, every r is an atomic role with A, r /∈ S,
+and every R is a role r or r− with r /∈ S: (1) replace all concepts
+of form A, ∃R.C or ((cid:62) n R.C) with ⊥; (2) remove every transitiv-
+ity axiom Trans(r) ; (3) replace every assertion a : A and r(a, b)
+with the contradiction axiom (cid:62) (cid:118) ⊥.
+
+Then O is local w.r.t. S iff every axiom in OS is a tautology.
+PROOF. It is easy to check that the transformation above pre-
+serves the satisfaction of axioms under every trivial expansion I of
+every S-interpretation to S ∪ Sig(O). Hence, the resulting ontol-
+ogy OS is local w.r.t. S iff the original ontology O was local w.r.t.
+S. Moreover, it is easy to see that there are no atomic concepts and
+atomic roles outside S left in OS after the transformation. Hence,
+every axiom α from OS is a tautology iff Q is local w.r.t. S.
+
+Note that according to Deﬁnition 4, assertions a : A and r(a, b)
+can never be local since they can only be satisﬁed by interpretations
+that interpret A and r as non-empty sets. Hence, assertions must be
+included in every locality-based module, which is reﬂected by the
+step (3) of the transformation in Proposition 4.
+
+An important conclusion of Proposition 4 is that one can use the
+standard capabilities of available DL-reasoners2 for testing local-
+ity since these reasoners can test for DL-tautologies. Checking for
+tautologies in description logics is, theoretically, a difﬁcult prob-
+lem (e.g. for DL SHOIQ is NEXPTIME-complete). There are,
+however, several reasons to believe that the locality test would per-
+form well in practice. First, and most importantly, the size of the
+axioms in an ontology is usually small compared to the size of the
+ontology. Second, DL reasoners are highly optimized for standard
+reasoning tasks and behave well for most realistic ontologies.
+approximation to the locality conditions for SHOIQ:
+
+In case this is too costly, it is possible to formulate a tractable
+
+Deﬁnition 6 [Syntactic Locality for SHOIQ].
+
+Let S be a signature. The following grammar recursively deﬁnes
+two sets of concepts C⊥
+
+S and C(cid:62)
+
+S for a signature S:
+S ::= A⊥ | (¬C(cid:62)) | (C (cid:117) C⊥) | (∃R⊥.C)
+C⊥
+C(cid:62)
+S ::= (¬C⊥) | (C(cid:62)
+
+| (∃R.C⊥) | ((cid:62) n R⊥.C) | ((cid:62) n R.C⊥) .
+
+1 (cid:117) C(cid:62)
+2 ) .
+
+S , C(cid:62)
+
+(i) ∈ C(cid:62)
+
+S , i = 1, 2, and R⊥ /∈ Rol(S) is a role.
+
+where A⊥ /∈ S is a atomic concept, R is a role, and C is a concept,
+C⊥ ∈ C⊥
+An axiom α is syntactically local w.r.t. S if it is of one of the
+following forms: (1) R⊥ (cid:118) R, or (2) Trans(R⊥), or (3) C⊥ (cid:118) C
+or (4) C (cid:118) C(cid:62). We denote by s local(S) the set of all SHOIQ-
+axioms that are syntactically local w.r.t. S. A SHOIQ-ontology
+O is syntactically local w.r.t. S if O ⊆ s local(S).
+Intuitively, every concept in C⊥
+S becomes equivalent to ⊥ if we
+replace every symbol A⊥ or R⊥ not in S with the bottom concept
+⊥ and the empty role respectively, which are both interpreted as the
+empty set under every interpretation. Similarly, the concepts from
+S are equivalent to (cid:62) under this replacement. Syntactically local
+C(cid:62)
+axioms become tautologies after these replacements.
+For example, the axiom M2 from Figure 1 is local w.r.t. S =
+{Fibrosis, has Origin}: if we replace the remaining symbols in this
+axiom with ⊥, we obtain a tautology ⊥ ≡ ⊥:
+
+z
+
+}|
+
+⊥
+
+{
+
+Genetic Fibrosis ≡ Fibrosis (cid:117) ∃has Origin.
+
+Genetic Origin
+
+|
+
+}|
+
+⊥
+
+z
+{z
+
+⊥
+
+{
+}
+
+Syntactic locality is an approximation for (semantic) locality:
+PROPOSITION 5. Let S be a signature. Then s local(S) ⊆
+
+local(S).
+
+S and C(cid:62)
+
+PROOF. Let α be an axiom that is syntactically local w.r.t. S and
+let I = (∆,·I) be a trivial expansion of some S-interpretation to
+S ∪ Sig(α). We have to demonstrate that I is a model of α. By
+induction over the deﬁnitions of C⊥
+S from Deﬁnition 6, it
+is easy to show that: (i) every role R /∈ Rol(S) and every every
+concept from C⊥
+S is interpreted in I with the empty set, and (ii)
+every concept from C(cid:62)
+S is interpreted in I with ∆. By checking all
+the possible cases for a syntactically local axiom α in Deﬁnition 5,
+it is easy to see that in every of these cases I is a model of α.
+2See http://www.cs.man.ac.uk/∼sattler/reasoners.html for a list of
+currently available reasoners.
+
+WWW 2007 / Track: Semantic WebSession: Ontologies722Algorithm 1 extract module(Q, S)
+Input:
+
+Q: ontology
+S: signature
+Q1: a locality-based S-module in Q
+
+Output:
+
+α ← select axiom(Q2)
+if locality test( α, S ∪ Sig(Q1) ) then
+
+1: Q1 ← ∅ Q2 ← Q
+2: while not empty(Q2) do
+3:
+4:
+5:
+6:
+7:
+8:
+end if
+9:
+10: end while
+11: return Q1
+
+Q2 ← Q2 \ {α}
+Q1 ← Q1 ∪ {α}
+Q2 ← Q \ Q1
+
+else
+
+(cid:46) α is processed
+(cid:46) move α into Q1
+(cid:46) reset Q2 to the complement of Q1
+
+Q1 is a syntactical locality-based S-module in Q
+
+(Corollary 4)
+
+Q1 is a locality-based S-module in Q
+
+(Proposition 8)
+
+Q1 contains all S-essential
+
+axioms w.r.t. L in Q
+
+(Deﬁnition 2)
+
+(Proposition 3)
+
+Q is a model S-conservative
+
+extension of Q1
+(Proposition 2, part 2)
+
+Q1 is an S-module in Q w.r.t. L
+
+Q is a deductive S-conservative extension of Q1 w.r.t. L
+
+(Proposition 2, part 1)
+
+Figure 2: Summary for the main theoretical results of the paper
+
+The converse of Proposition 5 does not hold in general since
+there are semantically local axioms that are not syntactically lo-
+cal. For example, the axiom α = (A (cid:118) A (cid:116) B) is a tautology
+and thus is local w.r.t. every S. This axiom, however, is not syn-
+tactically local w.r.t. S = {A, B} since it involves symbols in S
+only. Another example, which is not a tautology, is the GCI α =
+(∃R.¬A (cid:118) ∃R.¬B), which is semantically local w.r.t. S = {R}
+(∃R.(cid:62) (cid:118) ∃R.(cid:62) is a tautology), but not syntactically local. Thus,
+the limitation of syntactic locality is its inability to perform reason-
+ing elements from S.
+
+We distinguish the notion of modules based on these two lo-
+cality conditions as semantic locality-based modules and syntactic
+locality-based modules.
+
+COROLLARY 4. If Q1 is a syntactic locality-based S-module
+
+in Q, then Q1 is a semantic locality-based S-module in Q.
+
+For the reference and for the convenience of the reader, we il-
+lustrate in Figure 2 the relationships between the key theoretical
+results of this paper.
+Recall that, according to Deﬁnition 5, in order to construct a
+locality-based S-module in an ontology Q, it sufﬁces to partition
+the ontology Q as Q = Q1 ∪ Q2 such that Q2 is local w.r.t.
+S ∪ Sig(Q1). Algorithm 1 outlines a simple procedure which
+performs this task. Assuming there is an effective locality test
+locality test(α, S) (either using a reasoner or the syntactical ap-
+proximation) that returns true only for axioms α that are local w.r.t.
+S, the algorithm ﬁrst initializes the partition to the trivial one: Q1 =
+
+(cid:93) Q1
+1 ∅
+
+New elements in S ∪ Sig(Q1) α loc.?
+
+Q2
+M1−M5 Cystic Fibrosis,
+Genetic Disorder
+M2−M5 Fibrosis, located In, Pancreas,
+
+M1 No
+
+has Origin, Genetic Origin
+
+2 M1
+3 M1, M2 M3−M5 Genetic Fibrosis
+4 M1−M3 M4, M5 −
+−
+5 M1−M4 M5
+6 M1−M4 −
+−
+Table 1: A trace of Algorithm 1 for Q = {M1, . . . , M5} and S =
+{Cystic Fibrosis, Genetic Disorder}
+
+M2 No
+M3 No
+M4 No
+M5 Yes
+−
+
+∅ and Q2 = Q, and then repeatedly moves to Q1 those axioms
+from Q2 that are not local w.r.t. S ∪ Sig(Q1) until no such axioms
+are left in Q2.
+In Table 1 we provide a trace of Algorithm 1 for the input (Q, S),
+where Q consists of the axioms M1-M5 from Figure 1 and S =
+{Cystic Fibrosis, Genetic Disorder}. Each row in the table corre-
+sponds to an iteration of the while loop in Algorithm 1. The last
+column of the table provides the result of the locality test in line 4.
+Note that the syntactic locality condition was sufﬁcient in all tests:
+all axioms that were semantically non-local were also syntactically
+non-local.
+
+PROPOSITION 6
+For every input Q and S, Algorithm 1 computes a locality-based
+S-module in Q.
+
+(CORRECTNESS OF ALGORITHM 1).
+
+PROOF. We have to show that (1) Algorithm 1 terminates for
+every input T and S, and (2) the output extract module(S,Q) is a
+locality-based S-module in Q.
+(1) Termination of the algorithm follows from the fact that in
+every iteration of the while loop either the size of Q1 increases, or
+the size of Q1 remains the same but the size of Q2 decreases. Note
+that this means that Algorithm 1 terminates in quadratic time in the
+number of axioms in Q, assuming constant time locality test.
+(2) It is easy to observe that every axiom α that is neither in Q1
+nor in Q2 is local w.r.t. S ∪ Sig(Q1), since the only way such an
+α can appear is at the line 3 of the algorithm, and α remains in
+Q \ (Q1 ∪ Q2) only if S ∪ Sig(Q1) does not change.
+
+Note that there is an implicit non-determinism in Algorithm 1,
+namely, in line 3 in which an axiom from Q2 is selected. It might
+well be the case that several choices for α are possible at this mo-
+ment. For example, in Table 1 at step 2 we might have selected
+axiom M3 instead of M2. It is possible to show (see [3] for detail)
+that the output of Algorithm 1 is uniquely determined by its input
+Q and S, and, moreover, is a subset of every locality-based module:
+PROPOSITION 7. The output of Algorithm 1 for Q and S is the
+
+smallest (syntactic) locality-based S-module in Q.
+4.3 Properties of Locality-based Modules
+
+In this section, we outline some interesting properties of locality-
+based modules which make it possible to use them for applications
+other than knowledge reuse.
+S be the smallest locality-based S-module in Q, which
+is unique by Proposition 6 and is the output of Algorithm 1 for Q
+and S. The ﬁrst property is a consequence of Proposition 6:
+
+Let Qloc
+
+PROPOSITION 8. Qloc
+
+S
+
+contains all S-essential axioms in Q
+
+w.r.t. every logic L with Tarski-style set-theoretic semantics.
+
+WWW 2007 / Track: Semantic WebSession: Ontologies723Ontology
+
+Language (cid:93) Atomic
+
+A1: Prompt-Factor [11]
+
+A2: Modularization from [6]
+
+A3: Locality-based mod.
+
+EL
+EL
+EL
+EL
+
+NCI
+SNOMED
+GO
+SUMO
+GALEN-Small SHF
+SHIF
+GALEN-Full
+SHOIF
+SWEET
+SHOIN
+DOLCE-Lite
+
+21045 (75.8)
+
+15254
+
+(55)
+
+Concepts Max. Size (%) Avg. Size (%) Max. Size (%) Avg. Size (%) Max. Size(%) Avg. Size(%)
+22 (0.08)
+12.8 (0.05)
+13 (0.05)
+8 (0.09)
+(1.7)
+(3.5)
+34
+(0.1)
+186 (37.3) 123.4 (24.6)
+
+24342 (87.6)
+8565 (30.8)
+255318 (100) 255318 (100) 255318 (100) 255318 (100)
+(0.1)
+22
+869 (100)
+47.7
+2748 (100)
+24089 (100) 7379 (29.8) 865.5
+1.7
+
+(1)
+226
+869 (100)
+2748 (100)
+24089 (100)
+1512 (83.3)
+498 (100)
+
+(1)
+226
+869 (100)
+2748 (100)
+24089 (100)
+1750 (96.4)
+498 (100)
+
+(0.1)
+22
+869 (100)
+2748 (100)
+24089 (100)
+1610 (88.7)
+497.9 (100)
+
+27772
+255318
+22357
+869
+2749
+24089
+1816
+499
+
+(0.8)
+(0.5)
+(0.4)
+(2)
+(10)
+
+935 (51.5)
+497.9 (100)
+
+226
+136
+92
+18
+297
+
+(1.9)
+
+Table 2: Comparison of Different Modularization Algorithms
+
+As shown in Table 1, the minimal locality-based S-module ex-
+tracted from Q contains all S-essential axioms M1–M4.
+In our
+case, the module contains only essential axioms; in general, how-
+ever, locality-based modules might contain non-essential axioms;
+otherwise, they would provide a solution for our task T3 in (4).
+
+PROPOSITION 9. Let Q be ontology, A and B atomic concepts
+
+and S(i) a signature. Then:
+
+S2
+
+(monotonicity);
+
+S1 ⊆ Qloc
+
+implies Qloc
+
+iff Qloc{A} |= (A (cid:118) B).
+
+1. S1 ⊆ S2
+2. Q |= (A (cid:118) B)
+Proposition 9 (see [3] for a proof) gives two interesting proper-
+ties of locality-based modules. The ﬁrst one states that such mod-
+ules may only grow if the input signature extends. The second one
+implies that the module for a single atomic concept A provides
+complete information about all the super-classes of A. This prop-
+erty can be used for optimizing classiﬁcation: in order to classify an
+ontology Q, i.e. to compute all subsumption relations A (cid:118) B be-
+tween pairs A, B of atomic concepts in Q, it is sufﬁcient to (1) ex-
+tract all modules Qloc{A} of Q for each atomic concept A (2) clas-
+sify each of these modules independently (possibly in parallel), and
+(3) merge the results of the individual classiﬁcations. By Property
+2, if the subsumption A (cid:118) B is implied by the ontology Q then it
+is implied by the module Qloc{A} and, hence, it will be obtained in
+step (2).
+
+5. RELATED WORK
+
+The problem of extracting modular fragments of ontologies has
+
+recently been addressed in [16], [11] and [15].
+
+In [16], the authors have proposed an algorithm for partitioning
+the concepts in an ontology. The intended application is to facilitate
+the visualization of and navigation through the ontology. The al-
+gorithm uses a set of heuristics for measuring the degree of depen-
+dency between the concepts in the ontology and outputs a graphical
+representation of these dependencies. The algorithm is intended as
+a visualization technique, and does not establish a correspondence
+between the nodes of the graph and sets of axioms in the ontology.
+The algorithms in [11] and [15], which we have brieﬂy outlined
+in Section 3, use structural traversal to extract modules of ontolo-
+gies for a given signature. None of these approaches provides a
+characterization of the logical properties of the extracted modules,
+nor do they establish a notion of correctness of the modularization.
+In [6], the authors propose a deﬁnition of a module and an algo-
+rithm for extracting modules based on that deﬁnition. The notion
+
+of a module in an ontology Q for a signature S is also based on
+conservative extensions: if Q1 ⊆ Q is an S-module in Q as in
+[6], then it can be shown that Q is a model S-conservative exten-
+sion of Q. The deﬁnition in [6], however, makes use of additional
+requirements which lead, in many cases, to the extraction of mod-
+ules which are larger than one may wish. The reason is that, for
+every atomic concept A ∈ S, the module Q1 for A in Q must be a
+module for all its sub-classes and super-classes.
+It is worth pointing out that, given Q and S, the fragment ob-
+tained using the algorithm in [6] is an S-module according to Def-
+inition 1. This is not the case, however, for the fragment extracted
+using [15], as we have illustrated in Section 3.
+
+6.
+
+IMPLEMENTATION AND EVALUATION
+Given an input ontology and an input signature, locality-based
+modules are not the only possible modules we can obtain. It re-
+mains to be shown that the locality-based modules obtained in re-
+alistic ontologies are small enough to be useful in practice.
+
+For evaluation and comparison, we have implemented the fol-
+
+lowing algorithms using Manchester’s OWL API:3
+
+A1: The PROMPT-FACTOR algorithm, as described in [11];
+
+A2: The algorithm for extracting modules described in [6];
+
+A3: Our algorithm for extracting modules (Algorithm 1), based
+
+on syntactic locality.
+
+As a test suite, we have collected a set of well-known ontologies
+
+available on the Web, which can be divided into two groups:
+Simple.
+In this group, we have included the National Cancer In-
+stitute (NCI) Ontology,4 the SUMO Upper Ontology,5 the Gene
+Ontology (GO),6 and the SNOMED Ontology7. These ontologies
+use a simple ontology language and are of a simple structure; in
+particular, they do not contain GCIs, but only deﬁnitions.
+Complex. This group contains the well-known GALEN ontology
+(GALEN-Full),8 the DOLCE upper ontology (DOLCE-Lite),9 and
+3http://sourceforge.net/projects/owlapi
+4http://www.mindswap.org/2003/CancerOntology/nciOncology.owl
+5http://ontology.teknowledge.com/
+6http://www.geneontology.org
+7http://www.snomed.org
+8http://www.openclinical.org/prj galen.html
+9http://www.loa-cnr.it/DOLCE.html
+
+WWW 2007 / Track: Semantic WebSession: Ontologies724(a) Modularization of NCI
+(a) Modularization of NCI
+
+(b) Modularization of GALEN-Small
+(b) Modularization of GALEN-Small
+
+(c) Modularization of SNOMED
+(c) Modularization of SNOMED
+
+(d) Modularization of GALEN-Full
+(d) Modularization of GALEN-Full
+
+(e) Small modules of GALEN-Full
+(e) Small modules of GALEN-Full
+
+(f) Large modules of GALEN-Full
+(f) Large modules of GALEN-Full
+
+Figure 3: Distribution for the sizes of syntactic locality-based modules for atomic concepts: the X-Axis gives the number of concepts in the
+modules and the Y-Axis the number of modules for each size range.
+
+NASA’s Semantic Web for Earth and Environmental Terminology
+(SWEET)10. These ontologies are complex since they use many
+constructors from OWL DL and/or include a signiﬁcant number of
+GCIs. In the case of GALEN, we have also considered a version
+GALEN-Small that has commonly been used as a benchmark for
+OWL reasoners. This ontology is almost 10 times smaller than the
+original GALEN-Full ontology, yet similar in structure.
+
+For each of these ontologies, and for each atomic concept in
+their signature, we have extracted the corresponding modules us-
+ing algorithms A1-A3 and measured their size. We use modules
+for single atomic concepts to get an idea of the typical size of
+locality-based modules compared to the size of the whole ontology.
+Also, modules for atomic concepts are especially interesting for op-
+timized classiﬁcation of ontologies, as discussed in Section 4.3.
+
+The results we have obtained are summarized in Table 2. The
+table provides the size of the largest module and the average size
+of the modules obtained using each of these algorithms. In the ta-
+ble, we can clearly see that locality-based modules are signiﬁcantly
+smaller than the ones obtained using the other methods; in partic-
+ular, in the case of SUMO, DOLCE, GALEN and SNOMED, the
+algorithms A1 and A2 retrieve the whole ontology as the module
+for each atomic concept. In contrast, the modules we obtain using
+
+10http://sweet.jpl.nasa.gov/ontology/
+
+our algorithm are signiﬁcantly smaller than the size of the input on-
+tology. In fact, our modules are not only smaller, but are also strict
+subsets of the respective modules computed using A1 and A2.
+For NCI, SNOMED, GO and SUMO, we have obtained very small
+locality-based modules. This can be explained by the fact that these
+ontologies, even if large, are simple in structure and logical expres-
+sivity. For example, in SNOMED, the largest locality-based mod-
+ule obtained is approximately 1/10000 of the size of the ontology,
+and the average size of the modules is 1/10 of the size of the largest
+module. In fact, most of the modules we have obtained for these
+ontologies contain less than 40 atomic concepts.
+For GALEN, SWEET and DOLCE,
+the locality-based modules are
+larger.
+Indeed, the largest module in GALEN-Small is 1/10 of
+the size of the ontology, as opposed to 1/10000 in the case of
+SNOMED. For DOLCE, the modules are even bigger—1/3 of the
+size of the ontology—which indicates that the dependencies be-
+tween the different concepts in the ontology are very strong and
+complicated. The SWEET ontology is an exception: even though
+the ontology uses most of the constructors available in OWL, the
+ontology is heavily underspeciﬁed, which yields small modules.
+
+In Figure 3, we have presented a more detailed analysis of the
+modules for NCI, SNOMED, GALEN-Small and GALEN-Full.
+Here, the X-axis represents the size ranges of the obtained mod-
+
+WWW 2007 / Track: Semantic WebSession: Ontologies7257. CONCLUSION
+
+In this paper, we have proposed a deﬁnition of a module for a
+given vocabulary within an ontology to be reused. Based on this
+deﬁnition, we have formulated three reasoning problems concern-
+ing the extraction of minimal modules and shown that none of them
+is algorithmically solvable, even for simple fragments of OWL DL.
+We have introduced locality-based modules as an approximation
+to minimal modules and have empirically demonstrated that such
+modules are reasonably small for many real-world ontologies.
+
+For the future work, we would like to study other approxima-
+tions which can produce small modules in complex ontologies like
+GALEN, and exploit modules for optimizing ontology reasoning.
+
+8. REFERENCES
+[1] F. Baader, S. Brandt, and C. Lutz. Pushing the EL envelope.
+
+In Proc. IJCAI-2005, pages 364–370, 2005.
+
+[2] F. Baader, D. Calvanese, D. L. McGuinness, D. Nardi, and
+
+P. F. Patel-Schneider, editors. The Description Logic
+Handbook: Theory, Implementation, and Applications.
+Cambridge University Press, 2003.
+
+[3] B. Cuenca Grau, I. Horrocks, Y. Kazakov, and U. Sattler.
+Extracting modules from ontologies: Theory and practice.
+Technical report, University of Manchester, 2007. Available
+from: http://www.cs.man.ac.uk/∼bcg/Publications.html.
+
+[4] B. Cuenca Grau, I. Horrocks, Y. Kazakov, and U. Sattler. A
+
+logical framework for modularity of ontologies. In Proc.
+IJCAI-2007, pages 298–304, 2007.
+
+(a) DNA Structure in NCI
+
+(b) Synt. Locality-based Module
+for DNA Structure in NCI
+Figure 4: The Module Extraction Functionality in Swoop
+
+ules and the Y-axis the number of modules whose size is within the
+given range. The plots thus give an idea of the distribution for the
+sizes of the different modules.
+
+For SNOMED, NCI and GALEN-Small, we can observe that the
+size of the modules follows a smooth distribution. In contrast, for
+GALEN-Full, we have obtained a large number of small modules
+and a signiﬁcant number of very big ones, but no medium-sized
+modules in-between. This abrupt distribution indicates the pres-
+ence of a big cycle of dependencies in the ontology, which involves
+all the concepts with large modules. The presence of this cycle
+can be spotted more clearly in Figure 3(f); the ﬁgure shows that
+there is a large number of modules of size in between 6515 and
+6535 concepts. This cycle does not occur in the simpliﬁed version
+of GALEN and thus we have the smooth distribution for that case.
+In contrast, in Figure 3(e) we can see that the distribution for the
+“small” modules in GALEN-Full is smooth and much more similar
+to the one for the simpliﬁed version of GALEN.
+
+In order to explore the use of our results for ontology design and
+analysis, we have integrated our algorithm for extracting modules
+in the ontology editor SWOOP [9]. The user interface of SWOOP
+allows for the selection of an input signature and the retrieval of the
+corresponding module.
+
+As an illustration, consider in Figure 4 the locality-based mod-
+ule for the atomic concept DNA Structure in the NCI ontology, as
+obtained in SWOOP. Recall that, according to Case 2 of Propo-
+sition 9, the locality-based module Oloc{A} for every atomic con-
+cept A ∈ Sig(O) contains all necessary axioms for, at least, all
+the (entailed) super-concepts of A in O. Thus Oloc{A} can be seen
+as the “upper ontology” for A.
+In fact, Figure 4 shows that the
+locality-based module for DNA Structure contains only the con-
+cepts in the “path” from DNA Structure to the top level concept
+Anatomy Kind. This suggests that the knowledge in NCI about
+the particular concept DNA Structure is very shallow in the sense
+that NCI only “knows” that a DNA Structure is a macromolecular
+structure, etc. which, in the end, is an anatomic structure.
+
+[5] B. Cuenca Grau, I. Horrocks, O. Kutz, and U. Sattler. Will
+
+my Ontologies Fit Together? In Proc. DL-2006, 2006.
+[6] B. Cuenca Grau, B. Parsia, E. Sirin, and A. Kalyanpur.
+
+Modularity and Web Ontologies. In Proc. KR-2006, pages
+198–209, 2006.
+
+[7] S. Ghilardi, C. Lutz, and F. Wolter. Did I Damage my
+
+Ontology? A Case for Conservative Extensions in
+Description Logics. In Proc. KR-2006, pages 187–197, 2006.
+[8] I. Horrocks, P. F. Patel-Schneider, and F. van Harmelen.
+From SHIQ and RDF to OWL: The making of a web
+ontology language. J. of Web Semantics, 1(1):7–26, 2003.
+
+[9] A. Kalyanpur, B. Parsia, E.Sirin, B. Cuenca Grau, and
+J. Hendler. SWOOP: A web editing browser. Elsevier’s
+Journal Of Web Semantics, 4(2):144–153, 2006.
+
+[10] C. Lutz, D. Walther, and F. Wolter. Conservative extensions
+
+in expressive description logics. In Proc. of IJCAI-2007,
+pages 453–459, 2007.
+
+[11] N. Noy and M. Musen. The PROMPT suite: Interactive tools
+
+for ontology mapping and merging. Int. Journal of
+Human-Computer Studies, 6(59), 2003.
+
+[12] P. Patel-Schneider, P. Hayes, and I. Horrocks. Web ontology
+
+language OWL Abstract Syntax and Semantics. W3C
+Recommendation, 2004.
+
+[13] A. Rector and J. Rogers. Ontological issues in using a
+
+description logic to represent medical concepts: Experience
+from GALEN. In Proc. of IMIA WG6 Workshop, 1999.
+[14] M. Schmidt-Schauß and G. Smolka. Attributive concept
+descriptions with complements. Artif. Intell., 48(1):1–26,
+1991.
+
+[15] J. Seidenberg and A. Rector. Web ontology segmentation:
+
+Analysis, classiﬁcation and use. In Proc. WWW-2006, 2006.
+
+[16] H. Stuckenschmidt and M. Klein. Structure-based
+
+partitioning of large class hierarchies. In Proc. ISWC-2004,
+pages 289–303, 2004.
+
+WWW 2007 / Track: Semantic WebSession: Ontologies726

@@ -1,0 +1,1663 @@
+SafeVchat: Detecting Obscene Content and Misbehaving
+
+Users in Online Video Chat Services
+
+Xinyu Xing1, Yu-Li Liang1, Hanqiang Cheng2, Jianxun Dang2, Sui Huang3,
+
+Richard Han1, Xue Liu2, Qin Lv1, Shivakant Mishra1
+
+1University of Colorado at Boulder, 2McGill University, 3Ohio State University
+xingx@colorado.edu, yu-li.liang@colorado.edu (co-ﬁrst authors)
+
+ABSTRACT
+Online video chat services such as Chatroulette, Omegle,
+and vChatter that randomly match pairs of users in video
+chat sessions are fast becoming very popular, with over a
+million users per month in the case of Chatroulette. A key
+problem encountered in such systems is the presence of ﬂash-
+ers and obscene content. This problem is especially acute
+given the presence of underage minors in such systems. This
+paper presents SafeVchat, a novel solution to the problem
+of ﬂasher detection that employs an array of image detec-
+tion algorithms. A key contribution of the paper concerns
+how the results of the individual detectors are fused together
+into an overall decision classifying the user as misbehaving
+or not, based on Dempster-Shafer Theory. The paper in-
+troduces a novel, motion-based skin detection method that
+achieves signiﬁcantly higher recall and better precision. The
+proposed methods have been evaluated over real-world data
+and image traces obtained from Chatroulette.com.
+
+Categories and Subject Descriptors
+K.4.1 [Computers and Society]: Public Policy Issues—
+abuse and crime involving computers; K.4.2 [Computers
+and Society]: Public Policy Issues—human safety, abuse
+and crime involving computers
+
+General Terms
+Security, Design, Experimentation, Algorithms
+
+1.
+
+INTRODUCTION
+
+Online video chat services have become increasingly popu-
+lar, and include such systems as Chatroulette [9], BlurryPeo-
+ple [5], RandomDorm [34], Omegle [31], vChatter [24], etc.
+While most of these services have been introduced only re-
+cently (less than one year ago), statistics show that member-
+ship in for example Chatroulette has grown by 500% since
+the beginning of 2010. Furthermore, tens of thousands of
+users are online in Chatroulette at any point of time, 24
+hours a day.
+In July 2010, 1.3 million US users [22] and
+6.3 million users in total [39] are estimated to have visited
+Chatroulette.
+
+A common feature of such online video chat services is that
+they randomly match pairs of users via video connections.
+In the most popular cases, users are anonymous from each
+other, and need not supply any overt information to the
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2011, March 28–April 1, 2011, Hyderabad, India.
+ACM 978-1-4503-0632-4/11/03.
+
+system or other users that may identify them, such as their
+name or proﬁle. Users of such systems can quickly move on
+to the next random pairing by clicking “Next”. In addition,
+such services are typically oﬀered for free, and are easy to
+use, which enhances their popularity.
+
+A key problem encountered in such anonymous video chat
+systems is that many of the users may engage in sexually
+explicit behavior such as ﬂashing/revealing themselves with
+full frontal nudity. This misbehavior drives away other users
+that are not interested in viewing such obscene content, thus
+limiting such systems from achieving their full popularity. In
+addition, ﬂasher-type misbehavior has potential legal rami-
+ﬁcations since many of the viewers attracted to such video
+chat systems are minors [14]. Our observations on a typical
+Saturday night indicate that as many as 20-30% of Cha-
+troulette users are minors. Even though users must conﬁrm
+that they are at least 16 years old and agree not to broadcast
+obscene, oﬀending or pornographic material, it is nearly im-
+possible to enforce this due to the lack of login or registration
+requirements of such anonymous systems.
+
+One approach to deal with misbehavior is to de-anonymize
+users, on the hypothesis that requiring users to reveal their
+identities will then force users to behave. For example,
+vchatter uses such an approach on Facebook, where only
+Facebook users may participate in its Facebook applica-
+tion, and the Facebook name of users in the video chat
+are displayed during each video pairing session. This ap-
+proach of using de-anonymization to address misbehaving
+users has several drawbacks. First, it undercuts one of the
+primary motivations that attracts users to the most popular
+roulette-type video services, namely that people can partici-
+pate anonymously for fun. Second, ﬂashers can circumvent
+this approach by registering false/dummy proﬁles.
+
+An alternative approach to dealing with misbehavior is
+to analyze the video sessions to detect obscene content, and
+thus ﬂag misbehaving users. Some video chat sites have
+taken manual crowd-sourcing to detect misbehaving users,
+i.e. images/screen captures are sent to real humans who are
+paid to manually identify whether the user is a ﬂasher or
+not [9]. Such approaches incur a high economic cost and
+thus are not scalable. Moreover, such approaches are not
+necessarily applied uniformly, i.e. only images that are ”re-
+ported” (Chatroulette for example has a ”Report” button to
+ﬂag misbehaving users) are actually inspected. Our analysis
+indicates that not all misbehaving users are reported, and
+some users who are not misbehaving are still reported as
+such by pranksters.
+
+A more promising and scalable approach is automated
+detection of misbehaving users, by employing image recog-
+nition algorithms. In particular, we investigate a novel solu-
+
+WWW 2011 – Session: Information CredibilityMarch 28–April 1, 2011, Hyderabad, India685tion to the problem of ﬂasher detection that fuses together
+an array of evidences that image recognition algorithms re-
+ﬁne. To the best of our knowledge, this is the ﬁrst work
+investigating this problem space. This paper claims the fol-
+lowing key contributions:
+
+• we identify and analyze the issues introduced by on-
+line video chat systems, present statistical studies of
+its users, and demonstrate that existing pornography
+detection algorithms don’t work well in this problem
+space.
+
+• we describe a holistic solution to detect ﬂashers and
+obscene content that (1) adapts this problem space to
+a set of evidence that image recognition algorithms re-
+ﬁne, including evidence of a face, eyes and nose, etc.,
+(2) introduce our own novel motion-based skin detec-
+tor to supplement classiﬁcation of misbehaving users,
+and (3) we fuse these individual evidences by building
+a probabilistic model using Dempster-Shafer Theory
+(DST) [36] to obtain a joint classiﬁcation of each user
+as misbehaving or not.
+
+• we evaluate the eﬀectiveness of our fused classiﬁer sys-
+tem in terms of its precision and recall by employing
+real world data sets obtained from Chatroulette.com.
+
+The research reported in this work is in close collabora-
+tion with Chatroulette. We thank Andrey Ternovskiy, the
+founder of Chatroulette.com, for providing us with these
+otherwise unobtainable internal data traces. The observa-
+tions, algorithm design and system evaluations are carried
+out based on the dataset. It is worth noting that though we
+use the Chatroulette system as a running example in this pa-
+per, our approach is generally applicable to all roulette-type
+video chat services.
+
+In the following, we describe related work, present a statis-
+tical analysis of users using the Chatroulette dataset, explain
+the limitations of existing techniques, and glean key observa-
+tions from the user data. We then describe the architecture
+of our fused classiﬁer system - SafeVChat, including the de-
+sign requirements, and individual system components. Next,
+we describe our motion-based skin detection algorithm. We
+then detail the probabilistic model used to fuse together
+the results of the individual classiﬁers leveraging Dempster-
+Shafer Theory. Finally, we provide a rigorous evaluation of
+the eﬀectiveness of our joint classiﬁcation system using the
+data traces obtained from within Chatroulette.com.
+
+2. RELATED WORK
+
+Content-based image analysis has been an active research
+area for over a decade (see [12, 28] for some surveys). In par-
+ticular, skin-color modeling and skin detection techniques
+have been successfully used for detecting pornographic con-
+tent with high accuracy in Internet videos [25, 19, 27, 7, 6,
+41, 35, 23, 21]. However, skin appearance may vary signif-
+icantly for diﬀerent illumination, background, camera char-
+acteristics, and ethnicity, which are particularly true in on-
+line video chat images. A recent survey study [26] concludes
+that skin detection methods may only be used as a prepro-
+cessor for obscene content detection, and other content types
+such as text [19] and motion analysis [21] may be incorpo-
+rated to improve accuracy. In this paper, we propose a novel,
+motion-based skin detection method that analyzes several
+consecutive video frames. This method achieves much bet-
+ter recall and precision than PicBlock, a widely-used porno-
+graphic image blocker [32].
+
+Figure 1: Categorization and percentage of diﬀerent
+types of users in the Chatroulette dataset.
+
+Besides skin detection, our work also leverages an array
+of image recognition techniques, including face, nose, eye,
+mouth, and upper body detectors, which are supported in
+the latest version of OpenCV library [20]. An extensive sur-
+vey of these techniques is outside the scope of this paper.
+We focus on adapting these techniques to our online video
+chat images and identifying the strengths and limitations of
+each individual technique. Such information is then utilized
+in the fusion process.
+
+A number of (ensemble) methods have been proposed to
+combine or fuse multiple classiﬁers in order to reach a ﬁ-
+nal classiﬁcation decision. Two representative methods are
+Dempster-Shafer Theory (DST) [36] and AdaBoost [15]. Com-
+pared to AdaBoost, DST supports multi-level decisions, and
+further considers the reliability of the evidence provided by
+each classiﬁer. DST has been applied in a variety of classiﬁ-
+cation settings, such as [29, 3, 10, 30]. The key challenge of
+using DST is to deﬁne the appropriate mass function (or ba-
+sic probability) assignment, which is dependent on speciﬁc
+applications. One of the main contributions of this work is
+how we design mass function and apply DST to detecting
+obscene content in online video chat services.
+
+3. DATA ANALYSIS AND OBSERVATIONS
+In this section, we analyze a real-world dataset obtained
+from Chatroulette. After an initial statistical analysis of this
+dataset, we then investigate a state-of-the-art commercial
+software for pornography detection. We identify the lim-
+itations of this technique and present the key observations
+derived from our dataset with regard to obscene content and
+misbehaving users.
+
+3.1 Dataset and Statistics
+
+We have obtained a real-world dataset, provided by the
+
+founder of Chatroulette Andrey Ternovskiy, containing screen-
+shot images from 20,000 users. Each screenshot image has a
+320 × 240 resolution. Based on our analysis of this dataset,
+we categorized these 20,000 users into two types: oﬀensive
+and normal users. Oﬀensive or misbehaving users are de-
+ﬁned based on the following criteria. If a user broadcasts
+obscene content or behaviors (oﬀensive content), or inten-
+tionally shows his/her naked chest without face in front
+of the webcam (potential oﬀensive content), or broadcasts
+pornographic advertisements (advertisement content), then
+the user is deﬁned as an oﬀensive user. On the contrary, nor-
+mal users are chatters who stay fully clothed. A majority of
+normal users show their faces in front of webcams (we call
+the content that these users broadcast as normal content)
+and some others point their webcams to their clothed chest
+
+WWW 2011 – Session: Information CredibilityMarch 28–April 1, 2011, Hyderabad, India686(we call the content that these users broadcast as potential
+normal content). In addition to these two types of content,
+there is a special type of normal users who completely block
+their webcams, or point their webcams to a static scene (e.g.
+a room corner or ceiling), or broadcast pre-prepared inter-
+esting videos etc.
+(we call the content that these normal
+users broadcast as other content). Figure 1 (original dataset)
+shows the categorization and distribution of diﬀerent types
+of users and content in the Chatroulette dataset. Since Cha-
+troulette took screenshots for all the users at approximately
+the same time and randomly selected 20,000 users as well as
+their screenshot images, we believe the Chatroulette dataset
+is representative of Chatroulette users’ characteristics.
+
+3.2 Limitations of Exisitng Techniques
+
+Existing techniques for detecting objectionable content
+are mostly content-based, which typically utilize both image
+recognition and text analysis techniques to ﬁlter out porno-
+graphic webpages. Diﬀerent from detecting pornographic
+webpages, detecting objectionable content in the context of
+online video chat systems cannot rely on text message anal-
+ysis, since the content communicated between chatters does
+not pass through the central server and obtaining text mes-
+sages that were exchanged is not practical. Furthermore,
+some chatters may have a conversation using audio devices
+instead of typing messages. Consequently, we focus on in-
+vestigating whether state-of-the-art image recognition tech-
+niques, which are used for pornographic website detection,
+can be applied to objectionable content detection in the con-
+text of online video chat systems.
+
+Speciﬁcally, we used PicBlock 4.2.3 (Pornographic Im-
+age Blocker), a state-of-the-art commercial software [32],
+to classify 1,000 user screenshot images which were ran-
+domly selected from the Chatroulette dataset. Surprisingly,
+even though PicBlock usually achieves high accuracy when
+detecting pornographic images on websites,
+it performed
+poorly on the screenshot images of online video chat users
+– the precision and recall for correctly detecting misbehav-
+ing users were only 0.253 and 0.390, respectively. This is
+mainly due to the large diversity in illumination, sensing
+quality of web cameras used by diﬀerent chatters, ethnicity
+(African, Asian, Caucasian and Hispanic groups), and varia-
+tions in individual user characteristics such as age, sex, what
+is prominently displayed in the image, and so on. Other
+factors such as appearances (makeup, hairstyle and glasses
+etc.), backlighting, shadows and motion also have signiﬁcant
+inﬂuence on skin-color appearance. Indeed, these issues have
+also been investigated in a recent survey study [26], which
+concluded that the skin detection methodology can only be
+used as a preprocessor for obscene content detection.
+
+3.3 Key Observations
+
+Using the Chatroulette dataset, we have conducted fur-
+ther analysis and identiﬁed some discriminative characteris-
+tics that are speciﬁc in online video chat services. (1) Misbe-
+having users on online video chat systems usually hide their
+faces because they are not willing to compromise their iden-
+tity privacy. (2) Diﬀerent from regular pornographic images,
+misbehaving users may not completely expose themselves.
+For example, some misbehaving users may only expose their
+genitals in front of the webcam and stay partially clothed.
+(3) Chatters who present their faces in front of webcams are
+mostly normal users because showing both the body trunk
+and the face of a user requires the user placing his/her we-
+bcam far from the user, but chatters who do not show their
+faces may not be ﬂashers. (4) A fair amount of chatters do
+
+(a)
+
+(b)
+
+(c)
+
+Figure 2: A few screenshot images from Chatroulette.
+
+not show their faces clearly. For example, only a partial face
+is presented in front of the webcam. (5) Webcams are usu-
+ally set up in a stable way, i.e., a majority of chatters do not
+keep moving or adjusting their webcams. In the following
+sections, we take advantage of these observations to design
+our obscene content detection system.
+
+4. ARCHITECTURE
+
+The primary goal of our system is to detect users who
+abuse online video chat services, namely those who display
+obscene content. In this section, we ﬁrst discuss the system
+design requirements and assumptions about Chatroulette’s
+capabilities in terms of providing our system with data for
+analysis purposes. Following that, we describe the architec-
+ture of our SafeVchat system.
+
+4.1 Design Requirements
+
+To design our obscene content detection system, there are
+several important requirements. First, in terms of correctly
+classifying a misbehaving user, the precision should be high
+because in a system such as Chatroulette, all users classi-
+ﬁed as misbehaving will be subject to further costly review
+by crowdsourcing. We therefore want to be precise in only
+classifying users as misbehaving who are truly misbehaving,
+as any false positives incur an additional economic cost. We
+also want our recall to be high, since if we miss a misbehav-
+ing user via a false negative, these users will appear in the
+chat system. The resulting cost is twofold: adult users will
+be put oﬀ by the obscene content and may leave the system;
+further, minors would be subject to inappropriate content.
+In an online video chat system, for system scalability, the
+video stream is transmitted in a peer-to-peer manner after
+a pair of users have been matched by the server. It is pro-
+hibitively expensive to obtain and monitor users’ complete
+video content from a centralized server. To detect oﬀensive
+content, the Chatroulette server is however able to partially
+obtain a user’s video content by periodically taking sequen-
+tial screenshot images from the user. The sequential screen-
+shot images are taken at a predeﬁned ﬁxed time interval.
+Currently, in one period, three screenshot images are taken.
+Therefore, our obscene content detection system is designed
+based on the assumption that systems like Chatroulette are
+capable of providing this capacity.
+
+4.2 System Architecture
+
+Our key approach is to use evidence from multiple clas-
+siﬁers to strengthen the overall classiﬁcation of whether a
+user is misbehaving or not. We consider the following types
+of evidence while designing our detection system, namely
+evidence of the presence of face, eyes, nose and mouth, up-
+per body evidence and skin exposure evidence. Many of the
+individual classiﬁers that we will use are based on detecting
+a human face, since our observations from Section 3 indi-
+cate that misbehaving users hide their faces, while chatters
+who reveal their faces are typically normal users. However,
+
+WWW 2011 – Session: Information CredibilityMarch 28–April 1, 2011, Hyderabad, India687room corner. If yes, a warning notiﬁcation will be sent to the
+user. Otherwise, these screenshot images will be passed to
+the facial detectors, upper body detector and skin exposure
+detector. These detectors use their respective classiﬁers to
+reﬁne evidence from the three screenshot images and pass
+their reﬁned evidences to the fusion component. The fusion
+component harnesses the reﬁned evidences to make a prob-
+abilistic decision and output how likely the user is classiﬁed
+as a misbehaving user.
+
+5. MOTION-BASED SKIN DETECTION
+
+We mentioned earlier that existing color-based skin detec-
+tion techniques do not work well for the screenshot images
+of online video chat users. Speciﬁcally, we tested two ex-
+isting methods: the Adaptive real-time skin detector from
+OpenCV [11, 20], and PicBlock, a commercial software for
+pornography detection. Neither method performed well on
+our video chat dataset (see Section 7 for details). This is
+mainly due to the diversity of skin color appearance (e.g.,
+illumination, webcam characteristics) and skin-color like ob-
+jects/backgrounds (e.g., yellowish sofa or white wall with
+yellowish lighting). As a result, real user skin may not be
+detected, while non-skin objects/backgrounds may be mis-
+classiﬁed as skin leading to low ﬂasher detection accuracy in
+online video chat services.
+
+We also observe that in online video chat sessions, the
+moving parts in images are usually the region of interest
+– e.g., normal users moving their heads and clothed body
+parts, or ﬂashers moving their naked body parts or touch
+naked parts with hand. Users with larger “non-face skin” ex-
+posure in such “target regions” are more likely to be ﬂashers.
+The adaptive skin detector does consider motion in images,
+but its skin color palette does not capture the diversity of
+skin colors in online video chat images. In addition, it uses
+the optical ﬂow method, which assumes only small motion
+in video frames. This assumption may not hold in online
+video chat services with large number of concurrent users
+– capturing high frequency video frames is infeasible and
+screenshots can only be captured with larger time intervals
+(e.g., 10 seconds in our dataset). Therefore, user movement
+between two consecutive screenshots can be signiﬁcant.
+
+In this work, we propose a novel motion-based skin de-
+tection method to detect obscene content and misbehaving
+users in online video chat systems. Our method consists of
+four major components: (1) calculates the target map (which
+contains the target region) via motion in consecutive screen-
+shots; (2) uses a new skin detector with diﬀerent skin color
+palettes to detect “non-face skin” in the target region; (3)
+calculates the skin proportion, which is the ratio of non-face
+skin area to target region; and (4) determines the misbehav-
+ing probability based on the skin proportion.
+
+5.1 Target Map
+
+Given two consecutive screenshots of a user, we deﬁne the
+target map to identify changes (motion). This is achieved
+through image subtraction, i.e., subtracting the pixel values
+at corresponding positions of the two images. For example,
+if a normal user moves his/her hand against the background
+wall, both the hand and the wall are included in the target
+region by image subtraction, and the target region contains
+both skin (i.e. hand) and non-skin (i.e. wall). If a ﬂasher
+touches his/her naked part with hand, the target region con-
+tains mostly skin (i.e. hand and naked parts). Therefore,
+via image subtraction, target map captures the region we
+are interested in for better detection accuracy.
+
+Figure 3: SafeVchat: System architecture for detec-
+ing misbehaving users in online video chat services.
+
+a face detector needs to be augmented by additional facial
+evidences, since many of the following scenarios may occur
+based on our observations:
+
+• In the process of taking a screenshot for a user, the
+user’s face might be blocked by the user’s hands. Thus
+this face evidence alone is not able to be reﬁned by our
+system. (See Figure 2(a)).
+
+• A user may intentionally show his face partially and
+our system can only reﬁne partial facial evidences. For
+example, Figure 2(b) shows that only eyes are present
+in the screenshot image.
+
+• Even though we use the state-of-the-art face detector
+to reﬁne face evidence, there is still the possibility that
+the face cannot be detected (See Figure 2(c)).
+
+Figure 3 shows the architecture of our SafeVchat system.
+The system contains ﬁve main components including a dark-
+ness and static scene ﬁlter, facial detectors, an upper body
+detector, a skin exposure detector (motioned-based skin de-
+tector) and a fusion component. The darkness and static
+scene ﬁlter is used for identifying users who operate their
+webcams in the dark or point their webcams to a room cor-
+ner. The remaining users are subject to fused classiﬁcation.
+Facial detectors contain a set of individual classiﬁers - face,
+eye, nose and mouth classiﬁers. The upper body detector is
+used for identifying whether an upper body is present. The
+classiﬁers that our system uses for facial and upper-body de-
+tection are provided by the OpenCV library and their out-
+puts are all binary values to indicate presence or absence.
+The motion-based skin detector is a motion and skin color
+based classiﬁer which we designed for determining the prob-
+ability that a user is a misbehaving chatter. Finally, the
+fusion component of SafeVchat is used for combining evi-
+dences from facial detectors, the upper body detector and
+the motion-based skin detector to reﬁne and make a ﬁnal
+probabilistic decision. The fusion component is based on
+Dempster-Shafer Theory, and will be discussed in detail in
+Section 6.
+
+The work ﬂow of our system is as follows: When the three
+sequential screenshot images of a user are fed into our de-
+tection system from Chatroulette, the darkness and static
+scene detector ﬁrst determines whether the user is using his
+or her webcam in the dark or point his or her webcam to a
+
+WWW 2011 – Session: Information CredibilityMarch 28–April 1, 2011, Hyderabad, India688Image A
+
+Image B
+
+Target Map T
+
+A + T
+
+B + T
+
+Normal User
+(SP : 0.143)
+
+Misbehaving
+User
+(SP : 0.941)
+
+Figure 4: Example of normal and misbehaving users. For each user, A and B are two screenshot images of the user; T
+is the target map; A + T and B + T are original images overlaid with target region (white), non-face skin (red), and the
+detected face (green). Skin proportion (SP ) are 0.143 and 0.941 respectively, thus a good indicator for diﬀerentiating
+normal and misbehaving users.
+
+To avoid the noise introduced by individual pixels, we
+calculate the diﬀerence between tiles, and each tile is a rect-
+angle containing multiple pixels. Speciﬁcally, each image is
+divided into N × N tiles (N is an integer). For each tile
+Trc (r, c ∈ [1, N ]), let xi(i ∈ [1, n]) be one of the n pixels
+in that tile, we calculate the tile’s average intensity of RGB
+channels as follows:
+
+T rc = Σn
+
+i=1(Rxi + Gxi + Bxi)/(n × 3),
+
+(1)
+
+where Rxi , Gxi , Bxi are the R, G, B color channel intensities
+of pixel xi, respectively. Therefore, the target map of any
+two given images contains N ×N elements, each representing
+the diﬀerence between two corresponding tiles’ average RGB
+intensities. An element is set to 1 if the absolute diﬀerence
+is above the threshold, and 0 otherwise. The threshold (set
+to 9 in our experiemts) is determined based on the average
+diﬀerence of manually picked static images (i.e., no move-
+ment). Target maps are further improved by ﬁlling holes
+and removing glitches via morphological ﬁlter (e.g., erosion
+and dilation operation) [13]. See examples in Figure 4.
+
+For each user, we can obtain multiple screenshots, re-
+sulting in multiple target maps. To select the best target
+map, we consider the size of the target region. Most video
+chat users keep a relatively stable pose and move only part
+of their body, such as head, hand or lower body. Thus a
+good target map should contain a target region that is large
+enough to be a body part while most part of the map is sta-
+ble or static. Let T Amin be the area of the smallest possible
+body part, which is derived from the training data and is set
+to 10% of image size in our experiments. We select the best
+target map for each user as follows: (a) if there are target
+maps with target region bigger than T Amin, select the one
+with the smallest target region; (b) if all target maps’ target
+regions are smaller than T Amin, select the target map with
+the largest target region.
+
+5.2 Skin Detector
+
+Next, we detect exposed skin in the target region. Unlike
+typical pornographic or commercial images, skin color in
+online video chat images varies in a wide range due to diverse
+illumination conditions. Skin color does not always appear
+yellow or orange, and actually falls out of this range most
+of the time. Under diﬀerent lighting, angle, and reﬂection
+from computer screen, skin color could appear pink, brown,
+blue, or even green in video chat images.
+
+To address this problem, we consider three diﬀerent skin
+color palettes. Palette 1 is directly derived from the adap-
+tive real-time skin detector in OpenCV, which could identify
+most yellow and orange skin. Palette 2 adds the “pinkish”
+color to Palette 1 to cover most Caucasian skin colors under
+white lighting. This is achieved by converting RGB images
+to the HSV color space and detecting pixels with a Hue value
+in the range of [0, 60] and [300, 360]. Palette 3 focuses on the
+skin color of ﬂashers, which usually has darker illumination.
+This is derived from a training dataset that contains only
+ﬂashers with manually marked skin area.
+
+Figure 5 shows the skin proportion (SP ) (Section 5.3) of
+normal and misbehaving users under these three skin color
+palettes. An ideal skin palette should result in low SP val-
+ues for normal users and high SP values for misbehaving
+users. As shown in the ﬁgure, Palette 1 performs well for
+normal users (shown in green); Palette 3 performs well for
+misbehaving users (shown in red); and Palette 2’s perfor-
+mance is in the middle. Since no single palette is perfect,
+we propose an approach combining the three palettes, which
+will be discussed in Section 5.4.
+
+5.3 Skin Proportion
+
+To distinguish normal users from misbehaving users, we
+
+deﬁne the Skin Proportion (SP ) as follows:
+
+SP = area of non-face skin/area of target region
+
+(2)
+
+Face skin area is determined using the frontal face detector
+in OpenCV. If no face is detected, all the detected skin is
+non-face skin. If there is a face, then non-face skin refers
+to all the skin below jaw of detected face. For each user,
+we select the best target map (Section 5.1), and compute
+two SP values, one for each original image. Since a larger
+SP value represents higher probability of being a ﬂasher, to
+ensure that we identify all possible ﬂashers, we choose the
+larger SP value as the ﬁnal SP value for each user.
+
+5.4 Misbehaving Probability
+
+Let SP (x) be the skin proportion value of a given user x,
+we need to determine the probability p(x) of user x being a
+misbehaving user. Since a user is either misbehaving or not,
+the distribution is binomial. A standard linear regression
+model which assumes normal distribution of the dependent
+variable is not appropriate. Instead, we use the binary lo-
+gistic regression model, and the probability of success in the
+
+WWW 2011 – Session: Information CredibilityMarch 28–April 1, 2011, Hyderabad, India689Palette 1
+
+x
+e
+d
+n
+i
+ 
+r
+e
+s
+U
+
+400
+
+200
+
+0
+
+0
+
+400
+
+200
+
+0
+
+0
+
+400
+
+200
+
+0
+
+0
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+0.8
+
+0.9
+
+1
+
+Palette 2
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+0.8
+
+0.9
+
+1
+
+Palette 3
+
+0.1
+
+0.2
+
+0.3
+
+0.4
+
+0.5
+
+0.6
+
+0.7
+
+0.8
+
+0.9
+
+1
+
+Skin proportion
+
+Figure 5: Skin proportion of normal (green) and mis-
+behaving (red) users under three diﬀerent skin color
+palettes. Palette 1 performs well for normal users;
+Palette 3 performs well
+for misbehaving users; and
+Palette 2’s performance is in the middle.
+
+outcome (i.e., being a ﬂasher) can be expressed as follows:
+
+log
+
+p(x)
+
+1 − p(x)
+
+= α + β · SP (x)
+
+(3)
+
+As discussed in Section 5.2, we leverage three diﬀerent mea-
+sures (skin color palettes) to capture a user’s skin exposure
+percentage (i.e., skin proportion). Therefore, the theoretical
+model above can be further expressed as
+
+log
+
+p(x)
+
+1 − p(x)
+
+= α+β1 ·SP1(x)+β2 ·SP2(x)+β3 ·SP3(x), (4)
+
+where SP1(x), SP2(x) and SP3(x) represent the skin pro-
+portion of user x in the three diﬀerent measures. Note that
+the three skin color palettes may be highly correlated and
+pose multicollinearity threats to our binary logistic regres-
+sion model. To address this issue, we utilize Principal Com-
+ponent Analysis (PCA) to transfer multiple correlated vari-
+ables into a smaller number of uncorrelated variables. Based
+on our experimental results (Section 7), we extract one com-
+ponent, called the skin exposure component (SKC), to rep-
+resent the three aforementioned measures of skin exposure:
+
+log
+
+p(x)
+
+1 − p(x)
+
+= α + β · SKC(x)
+
+(5)
+
+SKC(x) is a linear function of normalized SP scores ZSPi :
+
+SKC(x) = a · ZSP1 (x) + b · ZSP2 (x) + c · ZSP3 (x)
+
+(6)
+
+where ZSPi (x) = (SPi(x) − avg(SPi(X)))/stdev(SPi(X)).
+Here, avg(SPi(X)) and stdev(SPi(X)) are the average and
+standard deviation of the skin proportions of all users in a
+training dataset using the i-th skin color palette.
+
+6. EVIDENCE FUSION
+
+In addition to motion-based skin detection, we further
+boost system performance by considering diﬀerent facial and
+upper body feature classiﬁers and combine all these classi-
+ﬁers using the Dempster-Shafer Theory of evidence. Accord-
+ing to our observations described in Section 3, most misbe-
+having users do not show their faces. With further investiga-
+tion, we ﬁnd the presence of particular image characteristics
+like the face, eyes, nose, mouth, and upper body are all
+highly correlated with non-oﬀensive content. Since individ-
+ual classiﬁers look for diﬀerent facial features of a face, their
+
+results could be seen as independent evidences of the face
+appearance. With our proposed classiﬁer (i.e. motion-based
+skin detector) and all facial (i.e face, eye, nose, mouth) and
+upper body classiﬁers , we model these characteristics as a
+set of evidences that are used for obscene content detection.
+Each classiﬁer is responsible for reﬁning an individual evi-
+dence. In the following section, we will show how we harness
+these evidences to predict the likelihood of obscene content
+based on a few sequential screenshot images of a chatter.
+
+6.1 Modeling in Dempster-Shafer Theory
+
+Dempster-Shafer theory provides a representation of hy-
+potheses through the deﬁnition of Belief function (Bel). The
+belief function is derived from a mass function, also called
+basic probability assignment (m). Assume that Θ represents
+all possible hypotheses and the basic probability assignment
+(m) is deﬁned for every element A of 2Θ (A is also called
+the focal element), where 2Θ is the set of all subsets of Θ.
+The value of the mass function m(A) ∈ [0, 1] and
+
+(cid:1)
+
+(7)
+
+m(∅) = 0
+
+(cid:2)A∈2Θ m(A) = 1
+
+where ∅ is the empty set. To illustrate this, we consider the
+example of misbehaving user detection. Assume a classiﬁer
+is used for reﬁning the evidence and the hypothesis space
+contains two hypotheses - a user is a ﬂasher chatter (HF )
+and a user is a normal chatter (HN ). We know that 2Θ =
+{∅, {HF }, {HN }, {HF , HN }} and m({HF }) + m({HN }) +
+m(∅) + m({HF , HN }) = 1.
+
+The belief function of hypothesis A, derived from basic
+probability assignment m, is deﬁned as a mapping from 2Θ
+to the values in the interval [0, 1]
+
+Bel(A) = (cid:3)B⊆A
+
+m(B)
+
+(8)
+
+In the Dempster-Shafer theory, the belief value of hypoth-
+esis A is typically interpreted as the conﬁdence level of the
+hypothesis. To illustrate how the belief function works,
+we continue with the misbehaving user detection example
+above. Suppose the evidence that the classiﬁer reﬁnes can
+support hypothesis HF with 0.7 reliability and cannot sup-
+port hypothesis HN , i.e., the mass functions for set {HF }
+and {HN } are m({HF }) = 0.7 and m({HN }) = 0. Fur-
+ther, we can calculate the mass function for set {HF , HN },
+i.e., m({HF , HN }) = 0.3 using Equation 7. To obtain the
+conﬁdence level of hypothesis HF , we use Equation 8, i.e.,
+Bel(HF ) = 0.7.
+
+The deﬁnition of mass functions is dependent upon spe-
+ciﬁc applications and is not provided by the Dempster-Shafer
+Theory. For image processing applications, the most widely
+used mass functions are derived either from probability at
+the pixel level [30] or from the distance to class centers [4].
+In fault diagnosis applications, mass functions are deﬁned
+based on subjective quantiﬁcation [33]. Certainly, these
+quantiﬁcations are imprecise. In our application, we deﬁne
+mass functions as the performance of classiﬁers when the
+outcome of the classiﬁers are binary values; otherwise, mass
+functions are deﬁned as detection probability. Recall that
+we harness some facial classiﬁers and an upper-body classi-
+ﬁer to reﬁne evidences from user’s screenshot images, and
+the outcome of each classiﬁer is a binary value. Since diﬀer-
+ent binary classiﬁers have diﬀerent classiﬁcation precision,
+the reliability of a piece of evidence is signiﬁcantly depen-
+dent upon the classiﬁcation precision of the corresponding
+classiﬁer. For example, binary classiﬁer Ci reﬁnes evidence
+
+WWW 2011 – Session: Information CredibilityMarch 28–April 1, 2011, Hyderabad, India690ei and evidence ei supports hypothesis Hj. If evidence ei is
+100% reliable and is present, hypothesis Hj is true. How-
+ever, binary classiﬁer Ci may make mistakes when reﬁning
+evidence ei, i.e., the precision is not equal to 1.0 when a bi-
+nary classiﬁer determines whether the evidence is present or
+not. Consequently, we use the precision of a binary classi-
+ﬁer to deﬁne the corresponding mass functions. Our system
+also uses the motion-based skin detector and its outcomes
+are the probability that a user is a ﬂasher as well as the
+probability that a user is a normal chatter. Therefore, we
+use these probabilities to deﬁne mass functions instead of
+using the classiﬁcation precision.
+
+In this application, obscene content detection is a binary
+classiﬁcation; therefore, our hypothesis space only contains
+two hypotheses - a user is a normal chatter, and a user is
+a misbehaving chatter. Here we formulate these two hy-
+potheses as HN and HF respectively. Furthermore, diﬀerent
+evidences are used to support diﬀerent hypotheses. Facial
+evidences (including the presence/absence of face, eyes, nose
+and mouth) and the upper-body evidence are only used for
+supporting hypothesis - HN , and these evidences provide
+no supports for the opposite hypothesis - HF . On the other
+hand, the skin exposure evidence can be used for supporting
+both hypothesis HN and hypothesis HF . The main diﬀer-
+ence for these two types of evidences is that the beliefs of
+hypotheses that derive from the former evidences are non-
+additive and the beliefs of evidences that derive from the
+latter are additive because the motion-based skin detector
+is built upon probability theory while the other detectors
+are based on evidence theory [17].
+
+The following illustration gives an easy-to-understand in-
+troduction to the calculation of mass functions based on
+two diﬀerent kinds of evidence - face evidence and skin evi-
+dence - which support two diﬀerent hypotheses. Assume the
+face classiﬁer’s precision for correctly detecting the face ev-
+idence is 0.95 (i.e., when the face classiﬁer identiﬁes a face
+in a screenshot image, there is actually a face present in
+the image), and its precision for falsely detecting the face
+evidence is 0.32 (i.e., when the face classiﬁer does not iden-
+tify a face in a screenshot image, there is actually a face
+present in the image). Based on the deﬁnition of mass
+functions, we can calculate the mass functions based on
+face evidence as follows.
+(a) when the face classiﬁer de-
+tects a face: mf =1({HN }) = 0.95, mf =1({HF }) = 0, and
+mf =1({HN , HF }) = 0.05; (b) when the classiﬁer does not
+detect a face: mf =0({HN }) = 0.32, mf =0({HF }) = 0, and
+mf =0({HN , HF }) = 0.68.
+
+Diﬀerent from the mass function based on face evidence,
+the mass functions based on skin evidence are deﬁned as
+follows. Assume the motion-based skin detector identiﬁes
+a user as a normal chatter with 0.87 probability and as a
+misbehaving chatter with 0.13 probability. Then the mass
+functions based on skin exposure evidence are ms({HN }) =
+0.87, ms({HF }) = 0.13 and ms({HN , HF }) = 0.
+
+Based on the mass functions above, we further calculate
+the belief functions for hypothesis HN and HF , and get the
+following results. When a face is detected by the face de-
+tector, the belief that a user is a normal chatter is 0.95
+and the belief that a user is a misbehaving chatter is 0,
+i.e., Bel(HN ) = 0.95 and Bel(HF ) = 0. Conversely, the
+belief that a user is a normal chatter is 0.32 and the be-
+lief that a user is a misbehaving user is 0 when the face
+detector does not detect a face, i.e., Bel(HN ) = 0.32 and
+Bel(HF ) = 0. Apparently, these belief functions are non-
+additive (i.e., Bel(HN ) + Bel(HF ) < 1). On the other hand,
+when the skin detector indicates a user is a normal chatter
+
+Table 1: An example of evidence fusion.
+
+mf =1(HN ) = 0.95
+mf =1(HN , HF ) = 0.05
+
+ms(HN ) = 0.87 ms(HF ) = 0.13
+{HN } → 0.8265
+{HN } → 0.0435
+
+∅ → 0.1235
+{HF } → 0.0065
+
+Figure 6: Sequential screenshot images of a user.
+
+with 0.87 probability and the user is a misbehaving chat-
+ter with 0.13 probability, the belief that a user is a normal
+chatter and the belief that a user is a misbehaving chat-
+ter are 0.87 and 0.13 respectively, i.e., Bel(HN ) = 0.87 and
+Bel(HF ) = 0.13. Notice that the belief functions are addi-
+tive in this case.
+
+6.2 Fusion and Decision Making
+
+In this application, two hypotheses are supported by mul-
+tiple evidences. Therefore, multiple evidences need to be
+combined in an eﬀective way. The example in Section 6.1
+indicates that hypothesis HN is supported by face evidence
+and skin exposure evidence. In order to obtain the belief of
+hypothesis HN from multiple evidences, we utilize a rule of
+combination that Shafer suggested [36], which allows mass
+functions to be combined in the following way:
+
+mi1j(H) = (cid:2)A (cid:1) B=H(cid:3)=∅ mi(A) · mj(B)
+1 −(cid:2)A (cid:1) B=∅ mi(A) · mj(B)
+
+(9)
+
+where A, B, H ∈ 2Θ and A (cid:9)= B (cid:9)= H, mi and mj denote the
+mass functions based on evidence i and evidence j respec-
+tively. i 1 j and mi1j represent the new combined evidence
+and the corresponding mass function based on the new ev-
+idence, respectively. To illustrate this, we continue the ex-
+ample introduced in Section 6.1 and assume that the face
+classiﬁer identiﬁes that a face is presented in a screenshot
+image. The combination results are summarized in Table 1.
+For each cell, we take the corresponding focal elements, in-
+tersect them and multiply their corresponding basic proba-
+bility assignment. In the combined evidence, there are two
+focal elements - {HN } and {HF }. The combined mass func-
+tions are calculated as follows:
+
+m(f =1)1s({HN }) =
+
+0.8265 + 0.0435
+
+1 − 0.1235
+
+= 0.9926
+
+m(f =1)1s({HF }) =
+
+0.0065
+
+1 − 0.1235
+
+= 0.0074
+
+Based on the new combined evidence (f = 1) 1 s, we
+further calculate the belief of hypothesis HN and the be-
+lief of hypothesis HF , which are Bel(HN ) = 0.9926 and
+Bel(HF ) = 0.0074. Thus, the user is more likely to be a
+normal chatter according to the combined evidence.
+
+As introduced in Section 4, the system has the capacity of
+taking multiple screenshots for any user with a 10-second in-
+terval. This capacity allows our software to reﬁne evidences
+in a more reliable way. In the current implementation, our
+software uses a sequence of three screenshot images from
+a user to make a decision. One of the advantages is that
+three sequential screenshot images of a user can reduce de-
+cision errors. Figure 6 shows three sequential screenshot
+images of a user. Our experiment indicates that the face
+
+WWW 2011 – Session: Information CredibilityMarch 28–April 1, 2011, Hyderabad, India691detector cannot reﬁne facial evidence from the ﬁrst screen-
+shot image because of the smoke, and the mouth detector
+cannot reﬁne mouth evidence from the ﬁrst two screenshot
+images because of the hand with a cigarette. However, the
+user’s facial evidences are present in the third screenshot
+image. To address this issue, the decision making of our
+software uses the rule of maximum belief. Assume the be-
+lief values of hypothesis HN , derived from three screenshot
+images, are Bel1(HN ), Bel2(HN ) and Bel3(HN ). The be-
+lief value of hypothesis HN for the user then is Bel(HN ) =
+max{Bel1(HN ), Bel2(HN ), Bel3(HN )}. Here, we use the
+maximum belief of hypothesis HN because it can greatly re-
+duce the false positive rate and keep the false negative rate
+at a reasonable level.
+
+7. EVALUATIONS
+
+In this section, we evaluate the proposed solution for de-
+tecting obscene content and misbehaving users in online
+video chat services. We ﬁrst describe the experimental setup
+and present the results of individual binary classiﬁers. We
+then focus on evaluating the performance of our motion-
+based skin detector and DST-based fusion technique.
+
+7.1 Experimental Setup
+
+As described in Section 3, screenshot images from 20,000
+Chatroulette users are used in our experiments. We ﬁrst ﬁl-
+ter out images that are dark or contain static scenes. Due to
+the limited space, details of this ﬁltering process are omitted,
+and we refer interested readers to [2]. The categorization of
+the remaining 15,000 users are shown in Figure 1 (ﬁltered
+dataset). These images are then randomly split into two
+subsets of equal size – one for training and the other one for
+testing. Since the binary classiﬁers (i.e., facial detectors and
+upper body detector) have already been well trained in the
+OpenCV library, we only use the training dataset to reﬁne
+the reliabilities of these classiﬁers’ evidences (the mass func-
+tions of these classiﬁers’ evidences). Both the motion-based
+skin detector and DST-based fusion system are trained and
+tested using the training and testing datasets, respectively.
+
+7.2 Binary Classiﬁers
+
+Our system utilizes a number of binary classiﬁers from
+the OpenCV library to reﬁne evidences. As described in
+Section 6, these classiﬁers do not give accurate detection,
+and a reliability value has to be assigned to each evidence
+that the corresponding classiﬁer reﬁnes. Recall that we de-
+ﬁne the reliability value as the precision of the corresponding
+binary classiﬁer. Intuition suggests that the performance of
+our fusion system is greatly dependent upon the reliabil-
+ity value assignment. Therefore, we randomly select 1,000
+users’ screenshot images from the training dataset to re-
+ﬁne the reliability of each classiﬁer, and place the selected
+screenshot images back to the training dataset (i.e., random
+selection with replacement). We repeat this operation K
+times (K = 10) and use the mean value as the reliability
+value for the corresponding evidence. As shown in Table 2,
+the standard deviations of these evidences are fairly small,
+
+Table 2: Mass Functions for Facial and Upper Body
+Evidences
+
+mx=1(HN ) mx=0(HN )
+
+x
+
+face
+eye
+nose
+mouth
+
+upper body
+
+0.984
+0.773
+0.802
+0.711
+0.821
+
+0.327
+0.434
+0.455
+0.219
+0.491
+
+stdevx=1
+
+stdevx=0
+
+0.017
+0.018
+0.029
+0.016
+0.030
+
+0.018
+0.020
+0.030
+0.020
+0.025
+
+Table 3: Correlations among 3 Predictors
+
+SP1
+SP2
+SP3
+** Correlation is signiﬁcant at the 0.01 level (2-tailed).
+
+SP3
+0.765∗∗
+0.855∗∗
+1
+
+SP1
+1
+0.900∗∗
+0.765∗∗
+
+SP2
+0.900∗∗
+1
+0.855∗∗
+
+thus the mass functions which are used for the combination
+of facial and upper body evidences are relatively stable.
+
+7.3 Motion-based Skin Detector
+
+As described in Section 5, we consider three diﬀerent skin
+color palettes and calculate the corresponding skin propor-
+tion SP measures using motion-based target maps. The SP
+measures are then combined in our binary logistic regression
+model to calculate the probability of a user being a ﬂasher.
+
+Correlation Analysis and PCA. Recall that we use PCA
+to transfer the three correlated SP variables into one uncor-
+related variable. Using the screenshot images in the training
+dataset, we ﬁrst apply the method (described in Section 5)
+to calculate users’ skin proportion SP in three diﬀerent mea-
+sures and then performed a correlation analysis of the three
+SP measures for each user. As shown in Table 3, the cor-
+relations are signiﬁcant, and PCA is indeed needed in order
+to avoid multicollinearity threats to our regression model.
+
+We used the PCA procedure in PASW18.0 (SPSS) [37] to
+transform the three measures of skin exposure. Kaiser Cri-
+terion (Eigenvalue > 1) was followed when selecting compo-
+nents and a scree plot (Figure 8) was used to conﬁrm the
+dimensions identiﬁed. We extracted one component (skin
+exposure component SKC) to represent the three SP mea-
+sures according to the Eigenvalues and the elbow point iden-
+tiﬁed in the scree plot. When subsequently building our bi-
+nary logistic regression model, we only needed to consider
+SKC, which is a linear function of the normalized SP scores:
+
+SKC(x) = 0.362 · ZSP1 (x) + 0.384 · ZSP2 (x) + 0.349 · ZSP3 (x)
+(10)
+
+Model Construction. Since the training process of motion-
+based skin detector can be performed oﬄine, we used the
+binary logistic regression procedure in the statistical pack-
+age SYSTAT 13 [38]. Maximum Likelihood Estimation with
+EM algorithm was utilized in estimating the proposed model
+coeﬃcients. The resulting regression model is as follows:
+
+log
+
+p(x)
+
+1 − p(x)
+
+= −0.775 + 1.114 · SKC(x)
+
+(11)
+
+Consider the Hosmer Lemeshow test [18], which is a test
+of goodness of ﬁt for logistic regression model with contin-
+
+l
+
+e
+u
+a
+v
+n
+e
+g
+E
+
+i
+
+ 3
+
+ 2.5
+
+ 2
+
+ 1.5
+
+ 1
+
+ 0.5
+
+ 0
+
+ 0
+
+ 1
+
+ 2
+
+ 3
+
+ 4
+
+Component Number
+
+Figure 8: Scree plot: Eigenvalues of extracted prin-
+cipal components.
+
+WWW 2011 – Session: Information CredibilityMarch 28–April 1, 2011, Hyderabad, India692i
+
+i
+
+n
+o
+s
+c
+e
+r
+P
+
+ 1
+
+ 0.95
+
+ 0.9
+
+ 0.85
+
+ 0.8
+
+ 0.75
+
+ 0.7
+
+ 0.65
+
+ 0.6
+
+ 0.55
+
+MSED w/ PCA
+MSED w/o PCA
+SafeVchat
+PicBlock
+
+i
+
+i
+
+n
+o
+s
+c
+e
+r
+P
+
+ 1
+
+ 0.9
+
+ 0.8
+
+ 0.7
+
+ 0.6
+
+ 0.5
+
+ 0.4
+
+ 0.3
+
+MSED w/ PCA
+MSED w/o PCA
+
+SafeVchat
+PicBlock
+
+ 0
+
+ 0.1  0.2  0.3  0.4  0.5  0.6  0.7  0.8  0.9
+
+ 1
+
+ 0
+
+ 0.1  0.2  0.3  0.4  0.5  0.6  0.7  0.8  0.9
+
+ 1
+
+Recall
+
+Recall
+
+(a) Classiﬁcation for normal users
+
+(b) Classiﬁcation for misbehaving users
+
+Figure 7: Performance comparison of obscene content detection. Our motion-based skin exposure detector (MSED)
+outperforms PicBlock, and our DST fusion based solution (SafeVchat) has the best performance.
+
+uous predictors, and a statistically non-signiﬁcant test re-
+sult (χ2) indicates a good ﬁt of the model. Our proposed
+model provided a signiﬁcantly good ﬁt to the training data
+(χ2 = 12.318, df = 8, p = 0.138)1 (p < 0.05). Speciﬁcally,
+our skin exposure composite is a statistically signiﬁcant pre-
+dictor for the probability of a user being a ﬂasher. This
+was tested with Wald’s test [40], which is a statistical test
+of signiﬁcance for individual variable. The test statistics
+(W ald = 43.108, df = 1, p = 0.000) indicated that the inﬂu-
+ence of SKC is statistically signiﬁcant (p < 0.05).
+
+Model Performance. Using the model constructed above,
+we then evaluated the model’s performance in terms cor-
+rectly classifying normal and misbehaving users. Figure 7
+shows the precision-recall curves of diﬀerent methods. As
+shown in Figure 7(a), when we only consider an individual
+skin color measure (no PCA), the performance for classify-
+ing normal users is slightly worse than that of the combi-
+nation of three skin color measures using PCA. In contrast,
+Figure 7(b) shows that the performance for classifying mis-
+behaving users remains approximately the same no matter
+whether PCA is used or not. To understand the reason be-
+hind this, we review the example in Figure 5. When we con-
+sider skin color in a small space, many misbehaving users
+are mixed with normal users. As the skin color space in-
+creases, a majority of misbehaving users are detected with
+more skin exposures and meanwhile a smaller number of
+normal users are also falsely detected. In Figure 5, there is
+an interesting observation – the normal users become identi-
+cal and misbehaving users are still mixed with normal users
+when skin color space is enlarged. Therefore, a straight-
+forward phenomenon shown in Figure 7 is that considering
+three measures improves the classiﬁcation performance for
+normal users but not for misbehaving users.
+
+7.4 Performance of SafeVchat
+
+We now evaluate the performance of overall system, which
+uses DST to fuse the evidences of facial, upper body, and
+motion-based skin exposure detectors. The overall system
+is evaluated using the testing dataset, and the precision-
+recall curves for correctly classifying normal and misbehav-
+ing users are plotted in Figure 7. We can see that SafeVchat
+improves signiﬁcantly in both precision and recall over other
+techniques.
+
+We ﬁrst compare SafeVchat with a state-of-the-art com-
+mercial software for detecting pornographic content – Porno-
+
+1df and p denote degree of freedom and p-value, respectively.
+
+graphic Image Blocker (PicBlock 4.2.3). To the best of our
+knowledge, it uses both skin-color detection and text analy-
+sis techniques to determine whether an image on a website is
+objectionable. Its output is a binary value, i.e., either oﬀen-
+sive or normal content. We used the same testing dataset
+to compare our system with PicBlock 4.2.3. As shown in
+Figure 7, the classiﬁcation performance of PicBlock is much
+worse than our motion-based skin exposure detector and our
+DST-based fusion system. There are several reasons behind
+this. (1) There is no text information that can be used in
+online video chat systems. Therefore, the function of text
+analysis in PicBlock cannot help. (2) PicBlock does not con-
+sider motion between images, and may falsely identify some
+background as objectionable content. (3) Some misbehaving
+users do not show their entire body trunk. Instead, only a
+small proportion of skin region can be detected, which may
+bypass PicBlock’s detection.
+
+The fused system also outperforms our motion-based skin
+exposure detector. The reasons are the following. To reduce
+skin exposure detection errors, the skin exposure detector
+uses the face detector provided in the OpenCV library to
+crop the skin region on a face. However, the face detector
+cannot be operated in a perfect condition (e.g. a partial or
+side face cannot be detected). Therefore, some facial skin
+regions that cannot be identiﬁed by the face detector may be
+considered as large skin exposure, increasing the detection
+error in this condition. Using DST-based fusion, when the
+skin exposure detector mis-classiﬁes a face-presented user,
+facial and upper body evidences, to some extent, can correct
+the classiﬁcation errors and thus boost the performance of
+overall system.
+
+We also observe in Figure 7 that the precision for classify-
+ing normal users remains high (almost 1.0) until the recall is
+above 0.75. The reason is that when there are positive facial
+or upper body evidences, the user is very likely to be a nor-
+mal user (e.g., users who show their faces are very likely to
+be normal). However, when no such positive evidences are
+identiﬁed, more classiﬁcation errors are possible (e.g., users
+who do not show their faces can be either normal or misbe-
+having), and the classiﬁcation precision of the overall sys-
+tem approaches that of the skin exposure detector. On the
+other hand, the precision for classifying misbehaving users
+remains fairly stable (approximately 0.7) when the recall is
+in the range of [0.5, 1.0]. The reason is that when skin color
+space increases, more misbehaving users will be identiﬁed,
+meanwhile normal users who wear cloth with similar color
+to the skin color space may be misclassiﬁed as ﬂashers. As
+
+WWW 2011 – Session: Information CredibilityMarch 28–April 1, 2011, Hyderabad, India693we mentioned in Section 6, facial and upper body evidences
+can, to some extent, reduce the number of these misclas-
+siﬁed users. Therefore, the classiﬁcation precision remains
+relatively stable when the recall increases from 0.5 to 1.0.
+
+8. CONCLUSIONS AND FUTURE WORK
+
+This paper describes a system for detecting obscene con-
+tent and identifying misbehaving users in online video chat
+services such as Chatroulette. A novel, motion-based skin
+detection method has been introduced. The results of indi-
+vidual binary classiﬁers such as face, eye, and nose detectors
+as well as our probabilistic motion-based skin detector are
+fused together into an overall decision classifying the user as
+misbehaving or not, based on Dempster-Shafer Theory. By
+using Chatroulette’s real-world dataset, we have conducted
+a series of experiments, and evaluated our system perfor-
+mance. Compared to the current state-of-the-art software,
+PicBlock 4.2.3, our system achieves signiﬁcantly higher clas-
+siﬁcation precision and recall.
+
+While our system has been speciﬁcally designed in the
+context of Chatroulette online video chat services, it can
+be extended to other webcam based online video chat sys-
+tems. Our preliminary observations of several webcam based
+online chat rooms (such as Chat for Free [8], Goth Chat
+City [16] and iWebcam [1] etc.) show that the content trans-
+mitted and user behaviors in these online chat rooms are
+similar to Chatroulette. One diﬀerence is that the obscene
+content and behaviors are more common in such online chat
+rooms. We plan to experimentally explore how well our sys-
+tem performs in the context of online video chat rooms. A
+software demo video is available in our project website [2].
+
+9. ACKNOWLEDGMENTS
+
+We thank Andrey Ternovskiy and Kirill Gura for much
+
+help with the deploying of SafeVchat.
+
+10. REFERENCES
+[1] iwebcam. http://iwebcam.com/.
+[2] Safevchat project website. https:
+
+//csel.cs.colorado.edu/~xingx/project/privacy.html.
+
+[3] O. Basir and X. Yuan. Engine fault diagnosis based on
+
+multi-sensor information fusion using dempster-shafer
+evidence theory. Information Fusion, 8(4):379 – 386, 2007.
+[4] I. Bloch. Some aspects of dempster-shafer evidence theory
+for classiﬁcation of multi-modality medical images taking
+partial volume eﬀect into account. Pattern Recognition
+Letters, pages 905–919, 1996.
+
+[5] Blurrypeople web site. http://www.blurrypeople.com/.
+[6] A. Bosson, G. C. Cawley, Y. Chan, and R. Harvey.
+
+Non-retrieval: blocking pornographic images. In
+Proceedings International Conference on the Challenge of
+Image and Video Retrieval, 2002.
+
+[7] Y. Chan, R. Harvey, and D. Smith. Building systems to
+block pornography. In In Challenge of Image Retrieval,
+pages 34–40, 1999.
+
+[8] Chat for free. http://www.chatforfree.org/.
+[9] Chatroulette web site. http://www.chatroulette.com/.
+[10] T. M. Chen and V. Venkataramanan. Dempster-shafer
+
+theory for intrusion detection in ad hoc networks. IEEE
+Internet Computing, 9:35–41, 2005.
+
+[11] F. Dadgostar and A. Sarrafzadeh. An adaptive real-time
+
+skin detector based on Hue thresholding: A comparison on
+two motion tracking methods. Pattern Recognition Letters,
+27(12):1342–1352, 2006.
+
+[12] R. Datta, D. Joshi, J. Li, and J. Z. Wang. Image retrieval:
+
+Ideas, inﬂuences, and trends of the new age. ACM
+Computing Surveys, 2008.
+
+[13] Mathmatical morphology. http:
+
+//en.wikipedia.org/wiki/Mathematical_morphology.
+
+[14] Chatroulette, a dangerous website for kids and adults alike.
+
+Examiner News. March 2, 2010.
+http://www.examiner.com/crime-prevention-in-
+national/chatroulette-a-dangerous-website-for-kids-and-
+adults-alike.
+
+[15] Y. Freund and R. E. Schapire. A decision-theoretic
+
+generalization of on-line learning and an application to
+boosting, 1995.
+
+[16] Goth chat city. http://www.gothchatcity.com/.
+[17] J. W. Guan and D. A. Bell. Evidence Theory and its
+
+Applications. Elsevier Science Inc., 1992.
+
+[18] D. W. Hosmer and S. Lemeshow. Applied Logistic
+
+Regression, 2nd Edition. Wiley-Interscience Publication,
+2000.
+
+[19] W. Hu, O. Wu, Z. Chen, Z. Fu, and S. Maybank.
+
+Recognition of pornographic web pages by classifying texts
+and images. IEEE Transactions on Pattern Analysis and
+Machine Intelligence, pages 1019–1034, 2007.
+
+[20] Intel. Open computer vision library (opencv), April 2010.
+
+http://opencv.willowgarage.com/wiki/.
+
+[21] C. Jansohn, A. Ulges, and T. M. Breuel. Detecting
+
+Pornographic Video Content by Combining Image Features
+with Motion Information. In Proceeding of the seventeen
+ACM international conference on Multimedia, 2009.
+
+[22] T. W. S. J. Jennifer Valentino-DeVries. The decline and fall
+of chatroulette, 2010. http://blogs.wsj.com/digits/2010/
+08/30/the-decline-and-fall-of-chatroulette/.
+
+[23] F. Jiao, W. Gao, L. Duan, and G. Cui. Detecting Adult
+
+Image using Multiple Features. In Proceeding of
+International Conferences on Info-tech and Info-net, 2001.
+[24] C. John D Sutter. vchatter: The not-so-naked chatroulette,
+2010. http://www.cnn.com/2010/TECH/innovation/10/01/
+vchatter.facebook/index.html?hpt=Sbin.
+
+[25] M. J. Jones and J. M. Rehg. Statistical color models with
+application to skin detection. In International Journal of
+Computer Vision, pages 274–280, 1999.
+
+[26] P. Kakumanu, S. Makrogiannis, and N. Bourbakis. A
+survey of skin-color modeling and detection methods.
+Pattern Recognition, 2007.
+
+[27] J.-S. Lee, Y.-M. Kuo, P.-C. Chung, and E.-L. Chen. Naked
+image detection based on adaptive and extensible skin color
+model. Pattern Recognition, 2007.
+
+[28] Y. Liu, D. Zhang, G. Lu, and W.-Y. Ma. A survey of
+
+content-based image retrieval with high-level semantics.
+Pattern Recognition., 40(1):262–282, 2007.
+
+[29] J. Malpica, M. Alonso, and M. Sanz. Dempster-shafer
+
+theory in geographic information systems: A survey. Expert
+Systems with Applications, 32(1):47 – 55, 2007.
+
+[30] R. R. Murphy. Dempster-shafer theory for sensor fusion in
+
+autonomous mobile robots. IEEE Transactions on Robotics
+and Automation, pages 197–206, 1998.
+
+[31] Omegle web site. http://www.omegle.com/.
+[32] PicBlock. http://www.cinchworks.com/.
+[33] U. K. RAKOWSKY and V. K. GmbH. Fundamentals of the
+
+dempster-shafer theory and its applications to reliability
+modeling. International Journal of Reliability, Quality and
+Safety Engineering (IJRQSE), pages 579–601, 2007.
+
+[34] Randomdorm web site. http://randomdorm.com/.
+[35] H. A. Rowley, Y. Jing, and S. Baluja. Large scale
+
+image-based adult-content ﬁltering, 2006.
+
+[36] G. Shafer. A Mathematical Theory of Evidence. Princeton
+
+University Press, 1976.
+
+[37] SPSS. http://www.spss.com/.
+[38] SYSTAT. http://www.systat.com/SystatProducts.aspx.
+[39] Can Chatroulette get it up again? TechCrunch. August 23,
+
+2010.
+http://techcrunch.com/2010/08/23/chatroulette-up-again/.
+
+[40] Wald test. http://en.wikipedia.org/wiki/Wald_test.
+[41] H. Zheng, M. Daoudi, and B. Jedynak. Blocking adult
+
+images based on statistical skin detection. In Electronic
+Letters on Computer Vision and Image Analysis, 2004.
+
+WWW 2011 – Session: Information CredibilityMarch 28–April 1, 2011, Hyderabad, India694

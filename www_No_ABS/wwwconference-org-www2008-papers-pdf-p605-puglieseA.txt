@@ -1,0 +1,696 @@
+RDF ( Resource Description Framework ) is a growing semantic web standard from the World Wide Web Consortium Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+Distribution of these papers is limited to classroom use, and personal use by others.
+that has support from many companies.
+Large databases of RDF data that we are aware of include a 20.5 million triple database on activities by the US congress1 and a 5 million plus database of triples about violent events.
+RDF primarily speci es the creation of triples (s, p, o) where s is a subject, p is a property, and o is an object (or a value) that the property p has for a given subject.
+Some triples have no temporal extent (e.g., Mary is always the mother of John).
+However, some triples can have a temporal extent attached to them.
+For instance, the USA (subject) may have Bill Clinton (object) as the value of its President property throughout the entire time frame 1992-2000.
+We call triples that are valid continuously during a time interval determinate triples.
+Likewise, some triples may only be known to occur at certain time points during an interval, rather than be true continuously throughout the interval.
+For example, company A (subject) may have a supplier (property) relationship with company B (object) at some points of time during the time interval 10  20.
+We call such triples indeterminate triples.
+Past work on temporal RDF is relatively sparse.
+In early related work, Buraga et al. [3] present an RDF-based model for representing spatio-temporal relations between websites.
+They de ne the TRSL language that uses XML to express a number of di erent operators for the Interval Temporal Logic.
+Guti errez et al.
+[5, 6] are the  rst to provide a syntax and semantics for temporal RDF with determinate triples, as well as a query language; however, they do not provide query processing algorithms or an evaluation of the language.
+Note that all past work in temporal RDF has the following limitations.
+(i) No work on indexing temporal RDF exists to date.
+(ii) No work on temporal RDF to date handles indeterminate triples.
+(iii) Though some algorithms have been given for query processing in temporal RDF [5, 6], they are all main memory based and do not include any implementation or experimental details.
+Past work on RDF indexing is also relatively sparse.
+Liu and Hu [10] and Matono et al.
+[12] propose two di er-ent indexing schemes for RDF path queries on cycle-free RDF databases.
+Since modern RDF query languages such as SPARQL rely on graph pattern queries, we focus on SPARQL-like queries in this paper.
+While we are not aware of any RDF index designed especially for such queries, most RDF storage systems to date such as Jena, Sesame, RDF-Broker, 3store make use of a relational database backend to store RDF and employ relational indexes to speed up query processing.
+For instance, Jena2 uses a normalized 1http://www.govtrack.org.
+ment table with columns for the triple s subject, property and object.
+Lexical-order relational indexes can be de ned on any of the columns (or combinations of them) to make data access more e cient.
+Sesame can also use a relational back-end to store triples, but they use native indexing in the form of a B-tree on the (subject, property, object) of a triple   the order of these can be changed by the user.
+The system also allows additional indexes to be de ned on parts of the triple.
+The common issue with all of the above approaches is that the translation of RDF graph queries into SQL tends to produce queries too complex for the relational indexing techniques employed.
+On the other hand, tGRIN is especially designed to reduce the complexity of graph pattern queries.
+Graph indexing also relates to RDF, since the latter can naturally be represented as a graph in which RDF resources are vertices and RDF triples are edges.
+Graph indexing techniques generally fall into the following two categories.
+Graph database indexing   an example of which is the work by Yan et al. [16]  , is concerned with e ciently retrieving supergraphs of a given query from a set of graphs (the database).
+Indexing large graphs for reachability and navigation is relevant to web and telecommunication tra c analysis.
+Abello and Kotidis [2] propose e cient storage methods for large graph navigation based on hierarchical decompositions of the edge set.
+Tri l and Leser [14] provide fast indexing methods for large graphs in the context of reachability queries.
+None of these works on RDF and graph indexing addresses the problem of answering general graph pattern queries.
+In [15] we proposed the  rst RDF indexing technique speci cally targeted to this kind of queries.
+In this paper, we start by extending the past work of [5,
+ as a particularly novel contribution.
+We then propose the novel concept of a normalized tRDF database and provide a normalization algorithm.
+We present a formal de nition of tRDF queries and answers.
+We then present the tGRIN2 index structure suitable for graph pattern queries.
+The tGRIN index structure is a tree whose root implicitly represents the entire space of vertices in a tRDF database.
+As in the case of RDF, every tRDF database can be thought of as a graph   Figure 1 shows an example.
+Each node in a tGRIN index implicitly represents a set of vertices in this graph.
+Each node m has a  center  vertex Cm and a  radius  Rm labeling it.
+Node m implicitly represents all vertices in the tRDF graph that are within distance Rm of the vertex Cm.
+The RDF indexing technique proposed in this paper differs from our work in [15] in several critical ways: (i) the presence of temporal annotations on the triples changes the semantics of queries and distance measures in the tRDF graph; (ii) the index structure is a nary tree instead of a binary tree, thus a ecting the way the index is built and (iii) the tGRIN index is implemented on disk, whereas our previous GRIN index was in-memory.
+We have also built the  rst experimental temporal RDF prototype DBMS that we are aware of.
+We compared our tGRIN based implementation with three commercial (non-temporal) RDF datastores.
+Jena2 from HP is one of the best known industry systems.
+Sesame from OpenRDF.org and 3Store from the University of Southampton are also well known RDF DBMSs.
+All these RDF stores, including
+ ours, use a standard relational DBMS for storage so that years of advances in concurrency control, crash and error recovery, etc.
+can be easily leveraged.
+We extended Jena2, Sesame, and 3Store with some of the best known methods to index temporal data.
+In particular, we extended them with R+-trees, SR-trees, ST-index and MAP-21   compared in detail in the survey by Salzberg and Tsotras [13].
+For each of Jena2, Sesame and 3Store, we chose the index that worked best (of these 4 indexes) and compared the results with tGRIN.
+We found that tGRIN took only 66% of the time required by them (or less) to build the index and uses a comparable amount of memory to store the index.
+Most importantly, however, tGRIN can answer queries three to six times faster for relatively simple query patterns, and six to ten times faster for complex queries.
+In this section, we overview the syntax and semantics of determinate temporal RDF provided by Guti errez et al. [5,
+ case of indeterminate triples.
+A Temporal RDF (or tRDF for short) database consists of a set of temporally annotated RDF triples3 of the form (subject, property: annotation, object) where:   The subject is an entity denoted by an URI reference from a set U.
+  The property is an entity denoted by an URI reference from a set P.
+  The object is either an entity from U or a constant from the set of literals L. URI references and literals form the set of resources R = U   L.
+The structure of the  annotation  will be described shortly.
+In addition to these, a tRDF database may also contain triples of the form (p1, rdf s : subP ropertyOf, p2) which denote the fact that for any triple with property p1 we can infer an identical triple with property p2.4 Throughout this paper, we use Tp to denote the set of all time points and T to denote the set of all possible time intervals.
+lowing forms (n is a natural number and T   T ): The annotation of a tRDF triple can take one of the fol-
+tionship p between s and v that holds at every time point in T (e.g.,  Senate Joint Resolution 37 (sj37) was under discussed in the Senate Finance Committee throughout May 2002) .
+p between s and v that holds at least at n distinct time points in T (e.g.,  The politician with identi er people/B000711 campaigned for at least 8 months in
+
+ p between s and v that holds at most at n distinct
+ quadruples, the term  RDF triple  is so widespread in the literature that we will continue using triple.
+of RDF (such as blank nodes, rei cation or collections) and
+
+ Local congress/ committees/ Government SenateFinance inCommittee:{1/1999, 2/1999} congress/committees/ SenateEnvironmentand PublicWorks subject congress/ 106/bills/ s1990 inCommittee: subject {05/2002} congress/ 107/bills/ sj37 member:{1995-2006} sponsor:{01/1999} chairperson:{2007} supported:{05/2002} congress/committees/ SenateCommerceSci-enceAndTransportation people/
+ member:{1995-2007} campaign/
+
+ campaign: <8: 2004> role:{1987-1988} role:{1989-1990} role:{1993-1997} role:{1998-2010} office contributed:[2: 2004] congress/ house/100/ ca congress/ house/101/ ca congress/ senate/ca B., Carol congress/ 106/bills/ s1990 supported {01/1999} people/
+ (chairperson, rdfs:subPropertyOf, member) (supported, rdfs:subPropertyOf, sponsor} (a) (supported, rdfs:subPropertyOf, sponsor} (c) congress/committees/ SenateCommerceSci-enceAndTransportation member {1996-?v2} ?v3 supported <1: 1998-2005> ?v1 supported: <1, 2000-2005> congress/ 107/bills/ sj37 subject State and Local Government role {1996-2002} congress/ senate/ca (b) inCommittee: <1, 2000-2005> congress/ committees/ SenateFinance people/
+ campaign/
+
+ sponsor {01/1999} role:{1993-1997} role:{1998-2010} role: {1993-2010} contributed: contributed: [2: 2004] [1: 2004] congress/ senate/ca B., Carol campaign: <8: 2004> people/
+ campaign: {01/2004-
+campaign/
+
+ (d) Figure 1: (a) Example tRDF database; (b) Example tRDF query; (c) Normalization   generation example; (d) Normalization   pruning example.
+time points in T (e.g.,  Carol B. contributed to the campaign of politician people/B000711 at most two times in 2004 ).
+Example 2.1.
+Figure 1(a) contains a graphical depiction of a tRDF database where (i) the time granularity is one month, (ii) triples without temporal annotations are considered true at all time points, and (iii) triples annotated only with year-based intervals are assumed to start in January of the starting year and end in December of the ending year.
+The example is based on a subset of the Gov-Track dataset5.
+The full names for the identi ers (e.g., congress/106/bills/s1990) used in this example are available in the dataset.
+To de ne the semantics of tRDF, [5, 6] de ne an in: Tp   U   P   R terpretation I as a function I that associates a set of RDF triples with every time-point.
+Clearly, not all interpretations make sense for a given tRDF database.
+instance, an interpretation I the database in Example 2.1 that has (people/B000711, role, congress/house/101/ca) (cid:6)  I(1989) does not match the database.
+We therefore de ne the concept of a satisfying interpretation.
+For for Definition 2.1 a tRDF interpretation.
+I satis es a tRDF triple e (denoted by I |= e) under the following conditions: (tRDF satisfaction).
+Let be
+ n.
+n.
+  (s, sp, v)   I(t), (s, p, v)   I(t).
+I satis es a tRDF database D (denoted by I |= D) i   e   D, I |= e. Database D is consistent i   I s.t.
+I |= D.
+  consists of over 20.5 million triples.
+Definition 2.2 (Entailment).
+A tRDF database D entails a tRDF triple e, denoted D |= e, i  for each tRDF interpretation I such that I |= D, it is also the case that I |= e.
+supported Example 2.2.
+The database in Figure 1(a) entails {01/1999}, the triple (people/B000711, a congress/106/bills/s1990) it does subproperty {1985   not entail
+ can construct a satisfying interpretation for D that does not satisfy this triple.
+of (people/B0007111, congress/house/100/ca) role because we supported.
+sponsored However, since : : is
+
+ In this section, we propose the concept of a normalized tRDF database.
+In a normalized tRDF database D, any tRDF-triple t that is entailed by D must be entailed by a single tRDF-triple in D. In general, tRDF databases may not be normalized.
+For instance, consider the query: what was the role of people/B000711 between 1996 and 2003?
+on the database in Figure 1(a).
+To answer this query, we must analyze the subset of D containing the two triples on the property role between people/B000711 and congress/senate/ca.
+Even though there is a single continuous period 1993 2010, it is represented in two di erent triples that both intersect the interval in the query ([1997, 2003]).
+In general, in the worst case we would need to look at all possible subsets of triples (an exponential search space) even for the simplest queries.
+In this section, we show how to normalize a tRDF database   later, in Section 6, we will show experimentally that normalization plays a big part in evaluating queries ef- ciently at the expense of a small increase in the storage space.
+Definition 3.1 tRDF (cid:1) database D, a normalization of D is a tRDF database D such that D |= e i   e (Normalization).
+Given (cid:1)   D (cid:1)} |= e.
+such that {e a (cid:1) Note that a normalization of D can actually be smaller if D = {(s, p : {10   in size than D. For example,
+ that the triple (s, p, o) is valid throughout both the intervals [10, 20] and [20, 30]: hence, they can be merged into one triple (s, p : {10   30}, o).
+The normalization avoids the requirement that we compute all triples entailed by D as this can lead to an exponential blow up.
+For instance, the triple (people/B000711, role{1993   1997}, congress/senate/ca) taken at a time granularity of one day, would entail 5  365 = 1865 triples, one for each day in the interval 1993 1997.
+However, under De nition 3.1 we only need space for one triple in D We use two operations to normalize a tRDF database.
+The  rst is the generation of new triples   for instance, by coalescing identical triples which are annotated with connecting time intervals.
+.
+(cid:1) Proposition 3.1.
+Suppose s   U, p, sp   P, v   R, n (cid:1)   T .
+The following and m are natural numbers, and T, T relationships hold:
+ T(cid:4), 2.
+{(s, :
+ (cid:1)}, v)} |= (s, p : {T   (s, p : {T}, v).
+: subP ropertyOf, p)} |= (s, p : (cid:3)n : T(cid:4), v).
+(cid:1)}, v).
+(sp, rdf s (cid:3)n v), sp
+ : Figure 1(c) shows example applications of Cases 1 and 3 of Proposition 3.1.
+Generated triples are depicted with dashed lines.
+The second operation consists in pruning redundant triples.
+Proposition 3.2.
+Let s   U, p   P, v   R be resources, (cid:1)   T .
+The let n and m be natural numbers, and let T, T following relationships hold: (cid:1) , then {(s, p : {T (cid:1)}, v)} |= (s, p : {T}, v).
+(s, p : (cid:3)m : T
+
+ (cid:1)(cid:4), v).
+(s, p : [n : T ], v).
+(cid:1)(cid:4), v).
+, then {(s, p : (cid:3)n : T(cid:4), v)} |= (cid:1) , then {(s, p : [m : T ], v)} |= (cid:1)|   n, then {(s, p : {T}, v)} |= (s, p : (cid:3)n :
+ (cid:1) (cid:1) Figure 1(d) shows example applications of Cases 3 and
+ represented by dashed lines.
+Finally, Figure 2 shows the tc algorithm that normalizes a tRDF database D.
+In the algorithm, we denote by subprop(D) the set of rdf s : subP ropertyOf triples in D. We assume there are no cycles in subprop(D) (otherwise all properties involved in a cycle are equivalent) and subprop(D) is sorted in topological order.
+Furthermore, group(D) is an ordered set containing the same triples as D and such that the triples having the same subject, property and value are consecutive.
+Proposition 3.3.
+Given a tRDF database D, the following statements hold:
+
+
+ Algorithm tc(D) Input: tRDF database D Output: Normalization of D
+ for all e   R \ subprop(R) (cid:1)   R \ subprop(R) \ {e} for all e if {e} |= e (cid:1) (cid:1) remove e according to Proposition 3.2 from R end if end for end for for all e   R \ subprop(R) (cid:1)   subprop(R) for all e if {e, e (cid:1)} |= e (cid:1)(cid:1) (cid:1)(cid:1) to R add e according to cases 1 or 2 of Prop.
+3.1 end if end for end for B   group(R)
+ repeat pick the  rst e   B (cid:1)   B \ {e} for all e (cid:1)} |= e if {e, e (cid:1)(cid:1) according to case 3 of Prop.
+3.1 (cid:1) remove e and e e   e (cid:1)(cid:1) from B end if end for add e to R remove e from B until B =   return R
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Figure 2: Normalization of a tRDF database.
+Unlike RDF, which is essentially free of inconsistencies with the exception of data type mismatches, under our tRDF model we could represent inconsistent databases.
+Proposition 3.4.
+A tRDF database D is inconsistent i  at least one of the following conditions holds:
+ (cid:1)
+ and n > m.
+], v), T   T (cid:1) , (cid:1)| > ], v), and |T   T (cid:1) n.
+Figure 3 contains examples for the two cases in which inconsistencies can occur.
+campaign/
+
+ campaign/
+
+ contributed:[2: 2004] contributed:<3: 2004> contributed:[2: 2004] contributed:{01/2004-05/2004} B., Carol B., Carol Figure 3: Examples of tRDF inconsistencies.
+The consistency of a tRDF database D can be checked by  rst computing its normalization D (whose size is polynomial in the size of D), then checking the conditions of Proposition 3.4 on D .
+(cid:1) (cid:1) Proposition 3.5.
+The problem of checking the consistency of a tRDF database D has a worst-case time complexity of O(|D|4).
+A tRDF query is essentially a conjunctive SPARQL6 query that is augmented with temporal annotations on the edges (either variable or constant).
+Most RDF databases have interfaces that support the SPARQL language, which allows us to better evaluate our implementation w.r.t.
+existing systems.
+Definition 4.1 (tRDF query).
+A tRDF query is a 5-tuple (N, E, V,  n,  t) where:   N is a set of vertices.
+  V is a set of variables.
+  E   N   N   (V   P) is a set of edges.
+   n : N   R   V is a vertex labeling function.
+   t is an edge labeling function that associates with every edge in E, an expression of the form {T}, (cid:3)n : T(cid:4) or [n : T ], where T is either a constant time interval or a variable and n is a natural number.
+We refer to each edge in the query graph pattern as a query atom.
+Example 4.1.
+Figure 1(b) shows a graphical depiction of a tRDF query.
+The query can be easily translated into a SPARQL graph pattern, if we removed the temporal annotation.
+To provide an answer to a tRDF query over a database D, we are looking for all possible substitutions for the query variables in V such as the query graph after the proper substitutions is entailed by D.
+Definition 4.2 (tRDF query answer).
+The answer to a tRDF query q = (N, E, V,  n,  t) w.r.t.
+a database D, denoted ansq(D), is a set of variable substitutions { 1, .
+.
+.
+,  k}, with  i : V   R Tp such that the following conditions hold:
+ qj   q, D |= qj  i, where qj  i denotes the application of the substitution  i to query atom qj .
+qj   for all query atoms qj , there is a substitution  j   ansq(D) that is more general than  .7 Note that the query operations we speci ed are akin to relational selection.
+We have not de ned anything that is equivalent to projection over tRDF databases (i.e., we do not select a subset of variables we are interested in).
+Experimentally, we have determined that unlike the relational case, projection does not help much with the query running time (which is dominated by searching for subgraphs matching the query).
+Projection can be therefore applied after  nding ansq(D) in linear time in the size of the answer.
+Example 4.2.
+The query in Figure 1(b) has two possi-In both cases, ble answers in the dataset in Figure 1(a).
+?v1   people/B000711 and ?v2   2007.
+The  rst answer has ?v3   congress/106/bills/s1990, whereas the second answer has ?v3   congress/107/bills/sj37.
+stitution  , an application of a substitution qj  , and what it means for one substitution to be more general than an-other[11].
+A naive algorithm for answering tRDF query q on a database D can be given as follows: substitutions where D entails qj  j.
+select those elements ( 1, .
+.
+.
+,  n) for which all substitutions  i with i   [1, n] are compatible (i.e., do not assign di erent values to the same variable).
+The clear disadvantage of this algorithm is that it has to compute a Cartesian product (essentially a join of n relations), which is prohibitively expensive for complex queries.
+In fact, we show experimentally in Section 6 that some of the leading RDF database systems we considered cannot handle queries with graph patterns that go beyond 15 vertices, half of which are variables.
+Instead, let us look at Example 4.2 again.
+The entire GovTrack dataset this example is extracted from contains over 20 million triples, and yet the answer to our query can be found in a very small portion of the entire database, which we have seen in practice to be true of the large majority of queries.
+Therefore, a better strategy is to (i) identify the smallest portion of the database that is guaranteed to contain the answer and (ii) perform subgraph matching on that portion.
+To accomplish this, we de ne the tGRIN index structure for temporal RDF.
+tGRIN is based on the idea that vertices that are  close  together in the tRDF graph are more likely to appear together in a query answer, and therefore should be stored on the same page (in the same index node).
+Unfortunately, in tRDF,  close together  can have two meanings: temporally close together, or close together in terms of distance in the tRDF graph.
+For instance, congress/house/100/ca and campaign/2004/S2CA00286 in our example are close together in our example tRDF graph, but are temporally far apart.The tGRIN index structure must take both notions of closeness into account.
+We  rst de ne distance metrics on temporal intervals alone, and then show how they can be used to induce combined graphical-temporal distance mea-sures.8
+ Graph distance metric.
+We can use either the shortest or the longest path in the undirected RDF graph as the graph distance metric dG( , ).
+We observed empirically that the shortest path gives better performance for queries and therefore omit the longest path from the rest of the discussion.
+Temporal distance metric.
+The temporal distance metrics combine the distance between consecutive temporal intervals on a path between two resources.
+First, we need to
+ tree like structure by thinking of graph based features and temporal features as two dimensions.
+Unfortunately, there seems to be no ordering on the resources in a tRDF graph that correlates well with graph query patterns.
+We could for instance give a lexical ordering based on resource names, but we determined experimentally that such an ordering was very ine cient.
+However, since we can de ne meaningful distance measures in both these dimensions,  circles  are the ideal way to represent inner index nodes in tGRIN.
+?v1
+ ?p: {1,3}
+
+ ?v2 ?v3 (c) ?v1
+ ?v2
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ?p: {3,5} ?p: {4,6}
+
+
+
+
+
+
+
+
+
+
+ ?v3 (a) (b) (d) Figure 4: (a) Synthetic tRDF database; (b) Example tGRIN index; (c), (d) Example tRDF query patterns.
+characterize the distance,  (Ti, Tj), between two temporal intervals Ti and Tj .
+We require that   satis es the following axioms (where T.s and T.e denote the start and end points of T , and we assume T.s   T.e):
+
+
+ where T (cid:14) T (cid:1) i (cid:14) Ti, Ti (cid:14) Tj , and Tj (cid:14) T (cid:1) (cid:1) (cid:1) i , T j) if T i  T.e   T (cid:1) .s.
+(cid:1) j , If Ti and Tj are temporal intervals, any of the following are acceptable   functions: Ti.e Ti.s   Tj .e Tj .s
+
+ (cid:0)
+ (cid:0)
+
+ if Ti (cid:14) Tj, otherwise  (Ti, Tj) = |Tj.s Ti.e| (leftmost and rightmost point).
+(interval centers).
+(cid:0) (cid:0) (cid:0)
+ Given a  , we can then de ne a temporal distance metric as follows.
+Definition 5.1 (Temporal distance metric).
+Let D be a tRDF database, x, y   R, p = (e1, .
+.
+.
+, en) be a path between x and y in the undirected tRDF graph, and Tj be the time interval If p n = 1, then we de ne d T (x, y) = 0.
+Otherwise, we de ne T (x, y) = j [2,n]  (Tj, Tj 1).
+the temporal d distance between x and y is the minimum over all the possible paths dT (x, y) = minp(d labeling the edge ej.
+Finally, p T (x, y)).
+p tGRIN distance metric.
+Since both dG( ,  ) and dT ( ,  ) are metrics, we can use a norm function to produce a single metric d( , ).
+For tGRIN , we use the k-norm d(x, y) = [(dG(x, y))k + (dT (x, y))k]
+ k .
+Example 5.1.
+Consider the graph in Figure 4(a).
+Let   be de ned as the distance between interval center points, dG be the shortest path distance and k = 1.
+Clearly, dG(B, F ) = 3.
+There are two di erent paths between B and F : {B, D, E, F} and {B, C, H, F}.
+On the  rst path, dT (B, F ) = 2 and on the second dT (B, F ) = 3.
+We take the minimum and obtain d(B, F ) = 4.
+A tGRIN index is a (balanced) tree such that:   Each leaf node (cid:4) contains a set N(cid:1)   R of resources s.t.
+(cid:1) (cid:6)= (cid:4), N(cid:1) N(cid:1)(cid:1) =  , and  (cid:1) LN(cid:1) = R.
+for all leaf nodes (cid:4)   Each non-leaf node t contains a pair (c, r), with c   R and r   IN .
+Intuitively, this is a very succinct representation of the set of resources in the graph at distance at most r of the resource c according to the metric d.
+We write this set as Nt = {c   For any nodes x, y in the tree such that x is a parent of y, Nx   Ny.
+(cid:1)   R|d(c, c (cid:1) )   r}.
+One of the important parameters of the index determined by the physical storage format is the maximum number of children of each index node, denoted by M .
+Intuitively, the higher M is, the smaller the  circles  represented by index nodes, which means we have a higher probability of identifying smaller parts of the tRDF database to match against the query.
+However, large values of M also imply the index, and hence the search space is larger.
+We will evaluate the impact of M on the index performance in Section 6.
+Building the tGRIN index is a three-step process based on a modi ed Hierarchical Agglomerative Clustering [9] algorithm (HAC for short).
+In the  rst step, HAC starts by having each vertex of the tRDF database in a separate cluster.
+At each iteration, the standard version of the algorithm merges the two clusters with the smallest inter-cluster dis-tance9 until all vertices are in the same cluster.
+We modi ed this algorithm such that at each step, it will merge the M clusters that are closest in terms of the inter-cluster distance.
+At the end of this  rst step, HAC will produce a dendrogram   a tree in which each leaf node is a vertex in the tRDF database and each inner node is a cluster.
+Furthermore, each node in the dendrogram has at most M children.
+The second step of the index building process consists of traversing the dendrogram tree and  nding centroids for all the inner nodes in the tree.
+A centroid for a set of vertices S is the vertex c that has the minimum average distance to all the other vertices in S: avgy S(d(c, y)) = minz(avgy S(d(z, y))).
+For each cluster, we also determine the maximum distance from c to any other node: r = maxx S(d(c, x)).
+At the end of this step, we will have a  circle  representation (c, r) for any cluster in the tree.
+Note that this step in ates the dendrogram clusters to circles, which may cause overlap between sibling index nodes.
+mum or the maximum distance between a vertex in the  rst and second cluster respectively.
+maintaining the requirements of the tGRIN structure.
+Note that unless the number of vertices in the tRDF database is a power of M , we are unlikely to obtain a balanced tree from the HAC step.
+We found this step helpful in practice, although it is optional for the correctness of the algorithms.
+Example 5.2.
+The structure in Figure 4(b) is a tGRIN index for the database in Figure 4(a).
+Here, we used the interval center distance for  , k = 1 and M = 2.
+The following theorem characterizes the worst-case time complexity of building the tGRIN index.
+Theorem 1.
+The tGRIN build algorithm runs in time O(|R|3 logm |R|), where |R| is the number of resources in the database.
+Proof.
+(Sketch) The HAC algorithm runs in time O(|R|3) since: (i) computing the minimal distance between any two resources in the database is O(|R|3) and (ii) the number of operations in computing the dendrogram is O(|R|), each operation taking O(|R|2) to compute the inter-cluster distance.
+The tGRIN index has a height of at most logm |R|, therefore at most |R|   logm|R| nodes.
+Computing the center of each node is O(|R|2), therefore the overall complexity is O(|R|3 logm |R|).
+In this section, we show how to evaluate a tRDF query q = (N, V, E,  n,  t) against the tGRIN structure.
+We start by showing how to derive a set of inequality constraints cons(q) from the query.
+The constraints will be evaluated against the nodes of the tGRIN index.
+This is done to identify the smallest subgraph that contains answers to q.
+For any path connecting a resource c and a variable v in the undirected graph (i.e. ignoring directionality of edges) corresponding to q, we compute dq(c, v) using the same method as the tGRIN distance metric d. We then add the constraint d(c, v)   dq(c, v) to cons(q).
+Note that we can only do this for paths with non-variable temporal annotations to ensure the soundness of the constraints.
+Example 5.3.
+Consider the example query in Figure 4(c).
+The query leads to the following set of constraints: d(?v1, B)   2), d(?v2, B)   1, d(?v3, B)   1.
+For the query in Figure 4(d), we can deduce the following (not a complete list): d(?v1, E)   1, d(?v2, J)   1 and d(?v3, J)   3.
+In the next step, we use the constraints generated from the query to identify nodes in the tGRIN structure that could contain answers to the query.
+On any tGRIN node, we have the option of accepting the node (which means it may contain answers to the query) or rejecting the node (which means it is guaranteed not to contain answers to the query).
+Consider a tGRIN node corresponding to the circle (c, r).
+We will de ne two rules to decide whether (c, r) should be rejected.
+(R1).
+The  rst rule is straightforward: for any constant (resource) x in q, reject (c, r) if d(c, x) > z.
+Intuitively, we are rejecting the circle represented by the tGRIN node if any constant factors in the query are outside it.
+(R2).
+Let us consider the case of a constraint d(x, v)   l involving variable v and constant resource x.
+Since d is a metric, d(c, v)   d(c, x) + d(x, v)   d(c, x) + l. Since d(c, x) is a constant, if d(c, x) + l   z, we are sure that v is inside the circle (c, r).
+In order to  nd answers to a query q in the subgraph represented by the current tGRIN index node (c, r), then all node variables v in the query must be inside the circle.
+Therefore, rule (R2) states that we reject (c, r) unless all variable nodes in the query are provably inside (c, r).
+tRDF database D, Algorithm query tGRIN(D, G, q, nI ) tGRIN index G and query q = Input: (N, V, E,  n,  t), tGRIN node nI (initially the root of the index).
+subgraphMatch is a subgraph matching method that  nds an iso-morphism between the query graph q and a graph H and returns a set of substitutions   for the variables in q.
+Output: The set of answers  .
+if nI is a leaf node H   the subgraph of D containing the resources in NnI return subgraphMatch(q,H) else if nI is not rejected by checking rules (R1), (R2) against cons(q)      n children(nI )query tGRIN (D, G, q, n) if   =   H   the subgraph of D containing the resources in NnI return subgraphMatch(q,H) else return   else return  
+
+
+
+
+
+
+
+
+
+
+ Figure 5: Answering queries over tGRIN.
+The query answering algorithm (Figure 5) uses the sub-graph matching algorithm by Cordella et al. [4].
+We chose this algorithm empirically because it generally yielded the best query answer times.
+If the invocation of query tGRIN is currently at a leaf node, we simply match the query graph with a subgraph of D containing the resources represented in nI (lines 2 4).
+Otherwise, if nI is a potential candidate (line 5 checks (R1), (R2)), we attempt a recursive call on the children of nI (line 6).
+If one of the recursive calls returns a nonempty answer, we return it.
+Otherwise, we return the result of the subgraph matching on nI itself (line 8 9).
+The following theorem states the correctness of Algorithm query tGRIN and characterizes its worst-case time complexity.
+Theorem 2.
+The following statements hold:
+
+ correct answer.
+time query tGRIN is O(|R|!
+).
+complexity of Algorithm Proof.
+(Sketch) We prove the statements in turn:
+ ner node nI , if one of the recursive calls returns a nonempty answer, then there exists a descendant (c, r) of nI that satis es both rules (R1) and (R2), and all the answers to the query are guaranteed to be inside the circle identi ed by (c, r).
+Thus, the answer can be found by just matching against (c, r).
+Only if none of the descendants contains an answer we must look at nI itself.
+(R1) and (R2) only depends on the size of the query q, since there can be at most |q|2 constraints extracted from the query.
+The complexity of depth rst search is O(M logm |R| ), therefore the worst time complexity of locating the smallest circle containing the answer is O(M logm |R|   |q|2).
+The worst-case time complexity
+ is the total number of vertices in the graphs to be matched [4].
+This operation thus dominates the index traversal, since it can have a worst-time complexity of
+ As the experimental results will show, the worst-case time complexity stated above is a rather conservative measure, as the tGRIN index is able to identify very small subgraphs containing the answer to the query.
+Example 5.4.
+We will now show how query tGRIN works on the synthetic example database and queries from Figure 4.
+For the query in Figure 4(c), we start at the root node and recursively call query tGRIN on the child index nodes until we reach (B, 2).
+From cons(q) we already know that d(?v1, B)   2), d(?v2, B)   1 and d(?v3, B)   1, hence all variables are in the circle centered in B of radius 2.
+By running the subgraph matching algorithm on this portion of the graph (which contains vertices {A, B, C, D, G}, we obtain the answer to the query: ?v1   A, ?v2   D, ?v3   C and ?p   P .
+The processing of the query in Figure 4(d) is similar   once we recursively reach the analysis for the node (F, 4), we see that none of the children satis es the constraints for all the variables.
+From d(?v1, E)   1 and d(E, F ) = 1 we have d(?v1, F )   2, from d(?v2, J)   1 and d(F, J) = 1 we deduce that d(?v2, F )   2 and from d(?v3, J)   3 and d(J, F ) = 1 we obtain that d(?v3, F )   4.
+Since ?v1, ?v2, ?v3 are all in (F, 4), we can apply the subgraph matching step of the algorithm on (F, 4) and obtain ?v1   F , ?v2   H, ?v3   K and ?p   P .
+tGRIN was implemented in approximately 3650 lines of Java code and evaluated against three well known RDF DBMSs: Jena2, Sesame and 3store.
+All RDF dDBMSs to date store RDF in a relational DBMS and rely on the translation of RDF queries into SQL queries.
+However, the underlying relational schemas vary in order to optimize speci c characteristics of RDF queries, possibly in the presence of a given RDF schema.
+We chose these three systems since their results are the best of their respective schema type groups10.
+Our systems appears to be the  rst implementation of Temporal RDF   none of these three systems is tailored for temporal queries.
+However, all three systems allow various user-de ned indexing schemes.
+We used PostgreSQL
+ lines of Java code to allow these systems to use existing temporal indexes such as R+-trees, SR-trees, the ST-index and MAP21.
+We chose these as the most promising representatives of the di erent classes of  valid-time  temporal indexing methods described in the survey by Salzberg and Tsotras [13] - we also tested the case where temporal annotations of RDF triples were expressed using rei cation.
+We denoted each variant by the corresponding index.
+For instance, Sesame R+-tree stands for the Sesame system using R+-trees.
+see http://jena.sourceforge.net/DB/layout.html for Jena2, http://www.openrdf.org/doc/sesame/users/ch04.html for Sesame and [7] for 3store.
+We performed the evaluation on two datasets: the Gov-Track dataset consists over 20.5M triples of public record information about the US Congress, including campaigns and contributions, votes, the actions taken on each bill, etc.
+We manually created 20 query graph patterns of increasing sizes (from 5 to 35 nodes).
+For each pattern, we varied the ratio of variables to constants in the queries from 0.2 to 1.5.
+We also randomly generated synthetic datasets ranging in size from 2 to 26 million triples in increments of 3 million.
+The triples were generated using a uniform random distribution.
+The temporal intervals were randomly generated as follows: (i)  rst, a center for the interval was chosen uniformly at random in the range 1   1000; (ii) then, we generated the size of the interval from a Gaussian distribution.
+We varied the mean and the standard deviation between di erent versions for the same dataset size.
+We selected the same number of query patterns as for the GovTrack dataset with the same characteristics.
+The tRDF data was stored in a single relation (subject, property, object, annotation) in a PostgreSQL 8.0 database and the tGRIN index was stored separately on disk.
+It should be noted that tGRIN is independent of the relational storage model, thus more e cient storage models such as the one in [1] can be easily coupled with the index structure.
+Experiments were performed on a Pentium IV 3 GHz machine with 2 GB of RAM running openSuse 10.2.
+The results reported include I/O access times are averaged over  ve independent runs.
+In our experimental evaluation, we  rst looked at determining the optimal tGRIN parameters, such as k,   and M and their correlation to the dataset characteristics.
+To measure index performance, we looked at index building time, memory consumption, disk space and query running time.
+Third, we compared the index performance indicators with Jena2, Sesame and 3store.
+First, we evaluated the tGRIN version with and without normalization on both the GovTrack and synthetic datasets.
+The memory consumption and disk space for the normalized version were approximately 10% higher for the Gov-Track dataset and 13.5% higher on average for the synthetic datasets.
+On average, answering a query was approximately
+ running time between the normalized and default version increases from .2% for 5 node queries graphs with a .2 ratio of variables to constants to 39.5% for 35 node queries with a 1.5 ratio of variables to constants.
+The database was normalized in 78.3 seconds for the GovTrack dataset.
+In addition, we measured that computing the normalized database incrementally after insertions takes 5 ms per triple on average.
+For the rest of the experimental results, we used only normalized version of all the databases.
+Second, we looked at the other tGRIN parameters    , k and N .
+We found no statistically signi cant di erence (all statistical signi cance tests were at the 1% level) between any of the   variations for either the GovTrack dataset of the synthetic datasets, even when we generated temporal interval sizes uniformly and not from a Gaussian.
+We continued our experimental evaluation by using the distance between interval centers as our   function.
+We also varied k between 1 and 5 for a  xed value of M = 5 (we obtained similar dependencies for higher values of M ).
+The results for the GovTrack dataset are summarized
+ Disk k Build Mem.
+154.51s 144.23s 157.47s 149.61s 161.55s
+
+
+
+
+
+
+
+
+
+ Query Overl.
+Cover.
+26.41s
+
+ 14.65s
+ 17.03s
+ 28.71s 35.34s
+ Table 2: Index performance for values of M .
+Disk M Build Mem.
+121.51s 134.26s 159.22s 198.61s 245.55s
+
+
+
+
+
+
+
+
+
+ Query Overl.
+Cover.
+31.71s
+ 14.76s 13.78s
+
+ 28.53s 37.94s
+ in Table 1.
+The query times are for 15-node query patterns with a ratio of variable to constants of .5.
+Note that we only measure disk space for the tGRIN index nodes and not the leaf nodes which contain the actual data.
+The index build time, memory and disk space does not vary greatly with k, but the query time is clearly much smaller for k = 2 and k = 3.
+In fact, we found that these values of k also produce small overlap and large coverage values.
+In our case, we measure overlap as the percentage of tRDF resources that are covered by more than one index node at mid-level in the tGRIN tree.
+The coverage in this case is the percentage of triples that are completely covered by any index node at mid-level in the tGRIN tree (remember that tGRIN index nodes are designed to cover resources, not triples   we can have triples with one end in one index node and the other end in a di erent index node).
+We obtained similar results for the synthetic datasets, the only di erence being that k = 3 did slightly better (about a 1% improvement) in terms of query time than k = 2.
+We computed the same indicators for di erent query pattern sizes and variable to instance ratios and obtained the same results   k = 2 and k = 3 provide the best query running times because they produce high coverage and low overlap.
+Finally, we looked at the maximum number, M , of children per index node when k = 2.
+As M increases, overlap and coverage both decrease.
+We expected that the query running times would be large for very low values of M as having larger index nodes means that the probability of doing subgraph matching on the smallest possible subset of the database decreases.
+On the other hand, high values of M means an increase in the depth rst traversal time.
+The data for the GovTrack dataset shown in Table 2 con rms this hypothesis.
+We used the same query pattern as in Table 1.
+Note that the index build time, memory and disk space correlate positively with M (if we take into account all values M from 2 to 10, the correlation factors are .973, .994 and .979 respectively).
+We chose M = 5 as the best compromise; note that M = 4 to M = 6 yields the lowest query running times, whereas the index build time starts a sharper increase for M > 6   we determined that this is primarily due to the clustering algorithm.
+The rest of the experimental evaluation was performed with k = 2 and
+
+ We compared tGRIN with Jena2, Sesame and 3store enhanced with the corresponding temporal indexes.
+For each system and each indicator, we chose the index that performed the best w.r.t.
+that indicator and compared it against tGRIN.
+For instance, Jena R+-tree did best in terms of disk space on the synthetic dataset, but Jena rei ed did better in terms of memory usage.
+The results are shown in Figure 6.
+First, we observed that the MAP21 index had relatively bad performance on all three system.
+On average, MAP21 traversed 35-40% of the index was traversed during each query; we therefore ommitted the MAP21 results from the presentation.
+We can easily see that tGRIN takes much less to build than any of the other indexes   approximately
+ disk space than Sesame and 3store, at comparable memory usage.
+However, the greatest improvements are in terms of query running time.
+tGRIN performs 3   6 times faster on the average types of queries in Figure 6(d).
+Jena2 runs out of memory for datasets larger than 13 million tuples.
+Sesame and 3store are able to answer queries with a sharp time penalty for large datasets.
+The translation of RDF queries into SQL typically contains many joins, which are increasingly di cult to compute as the dataset grows.
+On the other hand, tGRIN does not compare the query pattern against the actual triples of the database until the smallest index nodes that contain the answer to the query have been identi ed.
+The very small increase in running time for tGRIN is due to the increase in the size of the tGRIN tree.
+These results led us to suspect that the performance gains in tGRIN would increase as the queries grow more and more complex.
+For relational representations, a larger query translates into more SQL joins, whereas for tGRIN it translates primarily into larger sets of constraints.
+For the GovTrack dataset, we varied the size of the query pattern from 5 to 35 nodes with a  xed variable/constant ratio of .5 and measured the query running time.
+In a second experiment, we kept the query pattern size at 15, but varied the variable/constant ratio from .2 to 1.5.
+In this latter case, we normalized the query time by the number of answers returned.
+We could not use Jena2 in this experiment due to out-of-memory errors.
+The results are shown in Figure 6(e) and (f) respectively.
+On complex queries, tGRIN takes only
+ 6  th to 1
+ this is due to the fact that higher query complexity does not immediately translate into higher SQL query complexity.
+The small query time increase is due to the subgraph matching operation, which is in most cases localized to a very small portion of the database.
+RDF is a growing web standard supported by the W3C.
+It is clear that temporally annotated RDF datasets will grow as well because properties are relationships represented in RDF will vary with time in many applications.
+Examples such as the GovTrack data set show that large scale tRDF databases are being built and will need e cient querying and indexing mechanisms.
+Important contributions toward de ning temporal RDF have been made by researchers such as [3, 5, 6, 8].
+However, three important aspects of a DBMS are not covered by these past works.
+(i) No indexing mechanism for temporal RDF exists to date, (ii) No scalable algorithms for processing complex queries on large disk-resident temporal RDF databases has been proposed to date, and (iii) no implementation or experimental results have been provided to date.
+In this pa-
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+] s [ e m i t d l i u
+ ] s [ e m i t g n i n n u
+ Index Building Time Peak memory usage Disk space t-GRIN Jena-SR-tree Sesame-reified
+ t-GRIN Jena-reified Sesame-R+-tree
+ ]
+
+ [ d e s u y r o m e
+
+
+
+
+
+
+
+
+ t-GRIN Jena-R+-tree Sesame-R+-tree
+ ]
+
+ [ e c a p s k s i
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Dataset size [milion triples] Dataset size [milion triples] (b) Memory usage Dataset size [milion triples] (c) Disk space (a) Index building time Query time for 15 node-pattern, variables/constants=.5 t-GRIN Jena-R+-tree Sesame-R+-tree
+ Query running time variables/constants=.5 Query time graph pattern size = 15 nodes
+ t-GRIN
+ Sesame-R+-tree
+ ] s [ e m i t g n i n n u
+
+
+
+
+
+ t-GRIN Sesame-R+-tree
+ ] s [ d e n r u t e r r e w s n a r e p e m i t g n i n n u
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Dataset size [milion triples] (d) Query time Query pattern size [no nodes] Ratio of variables/constants (e) Increasing query pattern size (f) Increasing variable/constant ratio Figure 6: Comparison between tGRIN, Jena2, Sesame and 3store.
+(a)-(d) are over the synthetic dataset; (e), (f ) are on the GovTrack dataset.
+per, we provide, for the  rst time, a solution that addresses all these three points and that is demonstrated to show ef- cient performance on a real data set containing over 20 million triples, as well as on synthetic data sets.
+Our index structure is shown to be a better match for tRDF queries than the use of standard indexes for temporal data - the reason is that the latter do not account for the graph based nature of tRDF data and tRDF queries, while our tGRIN index structure accounts neatly for both.
+A small additional point is that we also handle indeterminate time in tRDF which is not done in past work.

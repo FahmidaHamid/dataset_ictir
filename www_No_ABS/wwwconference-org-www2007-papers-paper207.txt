@@ -1,0 +1,351 @@
+Online auctions have been thriving as a business over the past decade.
+People from all over the world trade goods worth millions of dollars every day using these virtual marketplaces.
+EBay1, the world s largest auction site, reported a third quarter revenue of $1,449 billion, with over 212 million registered users [6].
+These  gures represent a 31% growth in revenue and 26% growth in the number of registered users over the previous year.
+Unfortunately, rapid commercial success has made auction sites a lucrative medium for committing fraud.
+For more than half a decade, auction fraud has been the most prevalent Internet crime.
+Auction fraud represented 63% of the complaints received by the Federal Internet Crime Complaint Center last year.
+Among all the monetary losses reported, auction fraud accounted for 41%, with an average loss of $385 [10].
+Despite the prevalence of auction frauds, auctions sites have not come up with systematic approaches to expose fraudsters.
+Typically, auction sites use a reputation based framework for aiding users to assess the trustworthiness of each other.
+However, it is not di cult for a fraudster to 1http://www.ebay.com lem of auction fraud has continued to worsen over the past few years, causing serious concern to auction site users and owners alike.
+We therefore ask ourselves the following research questions - given a large online auction network of auction users and their histories of transactions, how do we spot fraudsters?
+How should we design a system that will carry out fraud detection on auction sites in a fast and accurate manner?
+In this paper, we propose NetProbe a system for fraud detection in online auction sites (Figure 1).
+NetProbe is a system that systematically analyzes transactions within users of auction sites to identify suspicious networks of fraudsters.
+NetProbe allows users of an online auction site to query the trustworthiness of any other user, and o ers an interface to visually explains the query results.
+In particular, we make the following contributions through NetProbe:   First, we propose data models and algorithms based on Markov Random Fields and belief propagation to uncover suspicious networks hidden within an auction site.
+We also propose an incremental version of Net-Probe which performs almost twice as fast in dynamic environments, with negligible loss in accuracy.
+  Second, we demonstrate that NetProbe is fast, accurate, and scalable, with experiments on large synthetic and real datasets.
+Our synthetic datasets contained as many as 7,000 users with over 30,000 transactions, while the real dataset (crawled from eBay) contains over 66,000 users and nearly 800,000 transactions.
+  Lastly, we share the nontrivial design and implementation decisions that we made while developing Net-Probe.
+In particular, we discuss the following contributions: (a) a parallelizable crawler that can e -ciently crawl data from auction sites, (b) a centralized queuing mechanism that avoids redundant crawling, (c) fast, e cient data structures to speed up our fraud detection algorithm, and (d) a user interface that visually demonstrates the suspicious behavior of potential fraudsters to the end user.
+The rest of this paper is organized as follows.
+We begin by reviewing related work in Section 2.
+Then, we describe the algorithm underlying NetProbe in Section 3 and explain how it uncovers dubious associations among fraudsters.
+We also discuss the incremental variant of NetProbe in this section.
+Next, in Section 4, we report experiments that evaluate Net-Probe (as well as its incremental variant) on large real and synthetic datasets, demonstrating NetProbe s e ectiveness and scalability.
+In Section 5, we describe NetProbe s full system design and implementation details.
+Finally, we summarize our contributions in Section 6 and outline directions for future work.
+In this section, we survey related approaches for fraud detection in auction sites, as well as the literature on reputation systems that auction sites typically use to prevent fraud.
+We also look at related work on trust and authority propagation, and graph mining, which could be applied to the context of auction fraud detection.
+E orts from the Mass.
+In the past, attempts have been made to help people identify potential fraudsters.
+However, most of them are  common sense  approaches, recommended by a variety of authorities such as newspapers articles [20], law enforcement agencies [8], or even from auction sites themselves [7].
+These approaches usually suggest that people be cautious at their end and perform background checks of sellers that they wish to transact with.
+Such suggestions however, require users to maintain constant vigilance and spend a considerable amount of time and e ort in investigating potential dealers before carrying out a transaction.
+To overcome this di culty, self-organized vigilante organizations are formed, usually by auction fraud victims themselves, to expose fraudsters and report them to law enforcement agencies [1].
+Unfortunately, such grassroot e orts are insu cient for regulating large-scale auction fraud, motivating the need for a more systematic approach to solve the auction fraud problem.
+Auction Fraud and Reputation Systems.
+Reputation systems are used extensively by auction sites to prevent fraud.
+But they are usually very simple and can be easily foiled.
+In an overview, Resnick et al. [17] summarized that modern reputation systems face many challenges which include the di culty to elicit honest feedback and to show faithful representations of users  reputation.
+Despite their limitations, reputation systems have had a signi cant e ect on how people buy and sell.
+Melnik et al. [13] and Resnick et al. [18] conducted empirical studies which showed that selling prices of goods are positively a ected by the seller s reputation, implying people feel more con dent to buy from trustworthy sources.
+In summary, reputation systems might not be an e ective mechanism to prevent fraud because fraudsters can easily trick these systems to manipulating their own reputation.
+Chua et al. [5] have categorized auction fraud into di er-ent types, but they did not formulate methods to combat them.
+They suggest that an e ective approach to  ght auction fraud is to allow law enforcement and auction sites to join forces, which unfortunately can be costly from both monetary and managerial perspectives.
+In our previous work, we explored a classi cation-based fraud detection scheme [3].
+We extracted features from auction data to capture  uctuations in sellers  behaviors (e.g., selling numerous expensive items after selling very few cheap items).
+This method, though promising, warranted further enhancement because it did not take into account the patterns of interaction employed by fraudsters while dealing with other auction users.
+To this end, we suggested a fraud detection algorithm by identifying suspicious networks amongst auction site users [4].
+However, the experiments were reported over a tiny dataset, while here we report an in-depth evaluation over large synthetic and real datasets, along with fast, incremental computation techniques.
+Trust and Authority Propagation.
+Authority propagation, an area closely related to fraud detection, has been studied extensively in the context of Web search.
+PageR-ank [2] and HITS [11] treat a Web page as  important  if other  important  pages point to it.
+In e ect, they propagate the importance of pages over hyperlinks connecting them.
+Trust propagation was used by TrustRank [9] to detect Web spam.
+Here, the goal was to distinguish between  good  and  bad  sites (e.g, phishers, sites with adult con-15], which aggregates features across nodes in a graph for classi cation of movie and stock databases.
+None of these techniques however, explicitly focuses on fraud detection.
+Graph Mining: Remotely related is the work on graph mining, with (fascinating) discoveries about the Web graph topology [12], Internet topology [19], and fast algorithms to search and mine for speci c, or frequent graph patterns (e.g., gSpan [22], the GraphMiner system [21] and related algorithms [16, 23, 25]).
+None of these techniques focuses on a systematic way to do large-scale, online auction fraud detection, which is the focus of our work.
+In this section, we present NetProbe s algorithm for detecting networks of fraudsters in online auctions.
+The key idea is to infer properties for a user based on properties of other related users.
+In particular, given a graph representing interactions between auction users, the likelihood of a user being a fraudster is inferred by looking at the behavior of its immediate neighbors .
+This mechanism is e ective at capturing fraudulent behavioral patterns, and a ords a fast, scalable implementation (see Section 4).
+We begin by describing the Markov Random Field (MRF) model, which is a powerful way to model the auction data in graphical form.
+We then describe the Belief Propagation algorithm, and present how NetProbe uses it for fraud detection.
+Finally, we present an incremental version of NetProbe which is a quick and accurate way to update beliefs when the graph topology changes.
+MRFs are a class of graphical models particularly suited for solving inference problems with uncertainty in observed data.
+MRFs are widely used in image restoration problems wherein the observed variables are the intensities of each pixel in the image, while the inference problem is to identify high-level details such as objects or shapes.
+A MRF consists of an undirected graph, each node of which can be in any of a  nite number of states.
+The state of a node is assumed to statistically depend only upon each of its neighbors, and independent of any other node in the graph 2.
+The dependency between a node and its neighbors is represented by a Propagation Matrix ( ), where  (i, j) equals the probability of a node being in state j given that it has a neighbor in state i.
+Given a particular assignment of states to the nodes in a MRF, a likelihood of observing this assignment can be computed using the propagation matrix.
+Typically, the problem is to infer the maximum likelihood assignment of states to nodes, where the correct states for some of the nodes are possibly known before hand.
+Naive computation through enumeration of all possible state assignments is exponential in time.
+Further, there is no method known which can be theoretically proved to solve this problem for a general MRF.
+Therefore, in practice, the above problem is solved through heuristic techniques.
+One particularly powerful method is the iterative message passing scheme of belief propagation.
+This method, although provably correct only for a restricted class of MRFs, has been shown to perform extremely well for
+ cussed here.
+For a more comprehensive discussion, see [24].
+Symbol De nition
+ bi( )  (i, j) mij set of possible states belief of node i in state   (i, j)th entry of the Propagation Matrix message sent by node i to node j Table 1: Symbols and de nitions general MRFs occurring in a wide variety of disciplines (e.g., error correcting codes, image restoration, factor graphs, and particle physics 3).
+Next, we describe how belief propagation solves the above inference problem for general MRFs.
+As mentioned before, belief propagation is an algorithm used to infer the maximum likelihood state probabilities of nodes in a MRF, given a propagation matrix and possibly a prior state assignment for some of the nodes.
+In this section, we describe how the algorithm operates over general MRFs.
+We denote vectors in bold font, and scalars in normal font.
+For any vector v, v(k) denotes its kth component.
+The set of possible states a node can be in is represented by S. For a node n, the probability of n being in state   is called the belief of n in state  , and is denoted by bn( ).
+Table 1 lists the symbols and their de nitions used in this section.
+Belief propagation functions via iterative message passing between nodes in the network.
+Let mij denote the message that node i passes to node j. mij represents i s opinion about the belief of j.
+At every iteration, each node i computes its belief based on messages received from its neighbors, and uses the propagation matrix to transform its belief into messages for its neighbors.
+Mathematically, mij( )   X  ( ,  ) Y mni( )   n N(i)\j bi( )   k Y mji( ) j N(i) (1) (2) where mij N (i) k is the message vector sent by node i to j is the set of nodes neighboring i is a normalization constant Starting with a suitable prior on the beliefs of the nodes, belief propagation proceeds by iteratively passing messages between nodes based on previous beliefs, and updating beliefs based on the passed messages 4.
+The iteration is stopped when the beliefs converge (within some threshold), or a maximum limit for the number of iterations is exceeded.
+Although convergence is not guaranteed theoretically, in practice the algorithm has been observed to converge quickly to reasonably accurate solutions.
+We now describe how NetProbe utilizes the MRF modeling to solve the fraud detection problem.
+generalizations to various problems, see [24].
+initialized to an unbiased state (i.e., it is equally likely to be in any of the possible states), and the initial messages are computed by multiplying the propagation matrix with these initial, unbiased beliefs.
+accomplices, white ellipses represent honest nodes, while gray rounded rectangles represent unbiased nodes.
+Transactions between users are modeled as a graph, with a node for each user and an edge for one (or more) transactions between two users.
+As is the case with hyperlinks on the Web (where PageRank [2] posits that a hyperlink confers authority from the source page to the target page), an edge between two nodes in an auction network can be assigned a de nite semantics, and can be used to propagate properties from one node to its neighbors.
+For instance, an edge can be interpreted as an indication of similarity in behavior   honest users will interact more often with other honest users, while fraudsters will interact in small cliques of their own (to mutually boost their credibility).
+This semantics is very similar in spirit to that used by TrustRank [9], a variant of PageRank used to combat Web spam.
+Under this semantics, honesty/fraudulence can be propagated across edges and consequently, fraudsters can be detected by identifying relatively small and densely connected subgraphs (near cliques).
+However, our previous work [4] suggests that fraudsters do not form such cliques.
+There are several reasons why this might be so:   Auction sites probably use techniques similar to the one outlined above to detect probable fraudsters and void their accounts.
+  Once a fraud is committed, an auction site can easily identify and void the accounts of other fraudsters involved in the clique, destroying the  infrastructure  that the fraudster had invested in for carrying out the fraud.
+To carry out another fraud, the fraudster will have to reinvest e orts in building a new clique.
+Instead, we uncovered a di erent modus operandi for fraudsters in auction networks, which leads to the formation of near bipartite cores.
+Fraudsters create two types of identities and arbitrarily split them into two categories   fraud and accomplice.
+The fraud identities are the ones used eventually to carry out the actual fraud, while the accomplices exist only to help the fraudsters carry out their job by boosting their feedback rating.
+Accomplices themselves behave like perfectly legitimate users and interact with other honest users to achieve high feedback ratings.
+On the other hand, they also interact with the fraud identities to form near bipartite cores, which helps the fraud identities gain a high feedback rating.
+Once the fraud is carried out, the fraud identities get voided by the auction site, but the accomplice identities linger around and can be reused to facilitate the next fraud.
+We model the auction users and their mutual transactions as a MRF.
+A node in the MRF represents a user, while an edge between two nodes denotes that the corresponding users have transacted at least once.
+Each node can be in any of 3 states   fraud, accomplice, and honest.
+To completely de ne the MRF, we need to instantiate the propagation matrix.
+Recall that an entry in the propagation matrix  ( ,  ) gives the likelihood of a node being in state   given that it has a neighbor in state  .
+A sample instantiation of the propagation matrix is shown in Table 2.
+This instantiation is based on the following intuition: a fraudster tends to heavily link to accomplices but avoids linking to other bad nodes; an accomplice tends to link to both fraudsters and honest nodes, with a higher a nity for Neighbor state Fraud Accomplice Honest Fraud Accomplice Honest  p
+  p 1   2 p 2 p (1    p)/2  p 0.5   2 p (1    p)/2 Table 2: Instantiation of the propagation matrix for fraud detection.
+Entry (i, j) denotes the probability of a node being in state j given that it has a neighbor in state i.
+fraudsters; a honest node links with other honest nodes as well as accomplices (since an accomplice e ectively appears to be honest to the innocent user.)
+In our experiments, we set  p to 0.05.
+Automatically learning the correct value of  p as well as the form of the propagation matrix itself would be valuable future work.
+In this section, we present a running example of how Net-Probe detects bipartite cores using the propagation matrix in Table 2.
+Consider the graph shown in Figure 2.
+The graph consists of a bipartite core (nodes 7, 8, .
+.
+.
+, 14) mingled within a larger network.
+Each node is encoded to depict its state   red triangles indicate fraudsters, yellow diamonds indicate accomplices, white ellipses indicate honest nodes, while gray rounded rectangles indicate unbiased nodes (i.e., nodes equally likely to be in any state.)
+Each node is initialized to be unbiased, i.e., it is equally likely to be fraud, accomplice or honest.
+The nodes then iteratively pass messages and a ect each other s beliefs.
+Notice that the particular form of the propagation matrix we use assigns a higher chance of being an accomplice to every node in the graph at the end of the  rst iteration.
+These accomplices then force their neighbors to be fraudsters or honest depending on the structure of the graph.
+In case of bipartite cores, one half of the core is pushed towards the fraud state, leading to a stable equilibrium.
+In the remaining graph, a more favorable equilibrium is achieved by labeling some of the nodes as honest.
+At the end of execution, the nodes in the bipartite core are neatly labeled as fraudsters and accomplices.
+The key idea is the manner in which accomplices force their partners to be fraudsters in bipartite cores, thus providing a good mechanism for their detection.
+In a real deployment of NetProbe, the underlying graph corresponding to transactions between auction site users, would be extremely dynamic in nature, with new nodes (i.e., users) and edges (i.e., transactions) being added to it frequently.
+In such a setting, if one expects an exact answer from the system, NetProbe would have to propagate beliefs over the entire graph for every new node/edge that gets added to the graph.
+This would be infeasible in systems with large graphs, and especially for online auction sites where users expect interactive response times.
+Intuitively, addition of a few edges should not perturb the remaining graph by a lot (especially disconnected components.)
+To avoid wasteful recomputation of node beliefs from scratch, we developed a mechanism called Incremental NetProbe, which incrementally update beliefs of nodes upon small changes in the graph structure, Figure 3: An example of Incremental NetProbe.
+Red triangles represent fraudsters, yellow diamonds represent accomplices, white ellipses represent honest nodes, while gray rounded rectangles represent unbiased nodes.
+An edge (shown as a dotted blue line) is added between nodes 9 and 10 of the graph on the left hand side.
+Normal propagation of beliefs in the 3-vicinity of node 10 (shown on the right hand side) leads to incorrect inference, and so nodes on the boundary of the 3-vicinity (i.e. node 6) should retain their beliefs.
+The motivation behind Incremental NetProbe is that addition of a new edge will at worst result in minor changes in the immediate neighborhood of the edge, while the e ect will not be strong enough to propagate to the rest of the graph.
+Whenever a new edge gets added to the graph, the algorithm proceeds by performing a breadth rst search of the graph from one of the end points (call it n) of the new edge, up to a  xed number of hops h, so as to retrieve a small subgraph, which we refer to as the h-vicinity of n. It is assumed that only the beliefs of nodes within the h-vicinity are a ected by addition of the new edge.
+Then,  normal  belief propagation is performed only over the h-vicinity, with one key di erence.
+While passing messages between nodes, beliefs of the nodes on the boundary of the h-vicinity are kept  xed to their original values.
+This ensures that the belief propagation takes into account the global properties of the graph, in addition to the local properties of the h-vicinity.
+The motivation underlying Incremental NetProbe s algorithm is exempli ed in Figure 3.
+The initial graph is shown on the left hand side, to which an edge is added between nodes 9 and 10.
+The 3-vicinity of node 10 is shown on the right hand side.
+The nodes on the right hand side are colored according to their inferred states based on propagating beliefs only in the subgraph without  xing the belief of node
+ ture the fact that node 6 is a part of a bipartite core.
+Hence the beliefs inferred are in uenced only by the local structure of the 3-vicinity and are  out of sync  with the remaining graph.
+In order to make sure that Incremental NetProbe retains global properties of the graph, it is essential to  x
+
+
+
+
+
+ Recall Precision ) s m ( e m i t
+
+
+
+
+
+
+
+
+
+
+
+
+ #nodes
+
+
+
+
+ #edges Figure 4: Accuracy of NetProbe over synthetic graphs with injected bipartite cores Figure 6: Scalability of NetProbe over synthetic graphs the beliefs of nodes at the boundary of the 3-vicinity to their original values.
+We evaluated the performance of NetProbe over synthetic as well as real datasets.
+Overall, NetProbe was e ective   it detected bipartite cores with very high accuracy   as well as e cient   it had fast execution times.
+We also conducted preliminary experiments with Incremental Net-Probe, which indicate that Incremental NetProbe results in signi cant speedup of execution time with negligible loss of accuracy.
+In this section, we describe the performance of NetProbe over synthetic graphs generated to be representative of real-world networks.
+Typical (non-fraudulent) interactions between people lead to graphs with certain expected properties, which can be captured via synthetic graph generation procedures.
+In our experiments, we used the Barabasi-Albert graph generation algorithm to model real-world networks of people.
+Additionally, we injected random sized bipartite cores into these graphs.
+These cores represent the manner in which fraudsters form their sub-networks within typical online networks.
+Thus, the overall graph is representative of fraudsters interspersed within networks of normal, honest people.
+Accuracy of NetProbe.
+We ran NetProbe over synthetic graphs of varying sizes.
+and measured the accuracy of Net-Probe in detecting bipartite cores via precision and recall.
+In our context, precision is the fraction of nodes labeled by NetProbe as fraudsters who belonged to a bipartite core, while recall is the fraction of nodes belonging to a bipartite core that were labeled by NetProbe as fraudsters.
+The results are are plotted in Figure 4.
+In all cases, recall is very close to 1, which implies that NetProbe detects almost all bipartite cores.
+Precision is almost always above 0.9, which indicates that NetProbe generates very few false alarms.
+NetProbe thus robustly detects bipartite cores with high accuracy independent of the size of the graph.
+Scalability of NetProbe.
+There are two aspects to testing the scalability of Net-Probe, (a) the time required for execution, and (b) the amount of memory consumed.
+The running time of a single iteration of belief propagation grows linearly with the number of edges in the graph.
+Consequently, if the number of iterations required for convergence is reasonably small, the running time of the entire algorithm will be linear in the number of edges in the graph, and hence, the algorithm will be scalable to extremely large graphs.
+To observe the trend in the growth of NetProbe s execution time, we generated synthetic graphs of varying sizes, and recorded the execution times of NetProbe for each graph.
+The results are shown in Figure 6.
+It can be observed that NetProbe s execution time grows almost linearly with the number of edges in the graph, which implies that NetProbe typically converges in a reasonable number of iterations.
+The memory consumed by NetProbe also grows linearly with the number of edges in the graph.
+In Section 5.1, we explain in detail the e cient data structures that Net-Probe uses to achieve this purpose.
+In short, a special adjacency list representation of the graph is su cient for an e cient implementation (i.e., to perform each iteration of belief propagation in linear time.)
+Both the time and space requirements of NetProbe are proportional to the number of edges in the graph, and therefore, NetProbe can be expected to scale to graphs of massive sizes.
+To evaluate the performance of NetProbe in a real-world setting, we conducted an experiment over real auction data collected from eBay.
+As mentioned before, eBay is the world s most popular auction site with over 200 million registered users, and is representative of other sites o ering similar services.
+Our experiment indicates that NetProbe is highly ef- cient and e ective at unearthing suspicious bipartite cores in massive real-world auction graphs.
+Data Collection.
+We crawled the Web site of eBay to collect information about users and their transactions.
+Details of the crawler implementation are provided in Section 5.1.
+The data crawled lead to a graph with 66,130 nodes and 795,320 edges.
+E ciency.
+We ran NetProbe on a modest workstation, with a 3.00GHz Pentium 4 processor, 1 GB memory and
+ took a total of 380 seconds (  6 minutes) to execute.
+E ectiveness.
+Since our problem involves predicting which Fraud Accomplice Honest
+
+
+ Table 3: Fraction of negative feedback received by di erent categories of users users are likely fraudsters, it is not easy to design a quantitative metric to measure e ectiveness.
+A user who looks honest presently might in reality be a fraudster, and it is impossible to judge the ground truth correctly.
+Therefore, we relied on a subjective evaluation of NetProbe s e ectiveness.
+Through manual investigation (Web site browsing, newspaper reports, etc.)
+we located 10 users who were guaranteed fraudsters.
+NetProbe correctly labeled each of these users as fraudsters.
+Moreover, it also labeled the neighbors of these fraudsters appropriately so as to reveal hidden bipartite cores.
+Some of the detected cores are shown in Figure 5.
+Each core contains a con rmed fraudster represented by a node shaded with red color.
+This evidence heavily supports our hypothesis that fraudsters hide behind bipartite cores to carry out their fraudulent activities.
+Since we could not manually verify the correctness of every fraudster detected by NetProbe, we performed the following heuristic evaluation.
+For each user, we calculated the fraction of his last 20 feedbacks on eBay which were negative.
+A fraudster who has already committed fraudulent activities should have a large number of recent negative feedbacks.
+The average bad feedback ratios for nodes labeled by Net-Probe are shown in Table 3.
+Nodes labeled by NetProbe as fraud have a higher bad feedback ratio on average, indicating that NetProbe is reasonably accurate at detecting prevalent fraudsters.
+Note that this evaluation metric does not capture NetProbe s ability to detect users likely to commit frauds in the future via unearthing their bipartite core structured networks with other fraudsters.
+Overall, NetProbe promises to be a very e ective mechanism for unearthing hidden bipartite networks of fraudsters.
+A more exhaustive and objective evaluation of its e ective-ness is required, with the accuracy of its labeling measured against a manual labeling of eBay users (e.g., by viewing their feedbacks and pro les, collaboration with eBay, etc.)
+Such an evaluation would be valuable future work.
+% Accuracy % Time
+
+
+
+ #nodes
+
+
+ Figure 7: Performance of NetProbe over synthetic graphs with incremental edge additions
+ To evaluate the performance of Incremental NetProbe, we designed the following experiment.
+We generated synthetic graphs of varying sizes, and added edges incrementally to them.
+The value of h (see Sec 3.5) was chosen to be 2.
+At each step, we also carried out belief propagation over the entire graph and compared the ratio of the execution times and the accuracies with the incremental version.
+The results are shown in Figure 7.
+Incremental Net-Probe can be seen to be not only extremely accurate but also nearly twice as fast compared to standalone NetProbe.
+Observe that for larger graphs, the ratio of execution times favors Incremental NetProbe, since it touches an almost constant number of nodes, independent of the size of the graph.
+Therefore, in real-world auction sites, with graphs containing over a million nodes and edges, Incremental NetProbe can be expected to result in huge savings of computation, with negligible loss of accuracy.
+In this section, we describe the challenges faced while designing and implementing NetProbe.
+We also propose a user interface, which we believe is appropriate for visualizing the fraudulent networks detected by NetProbe.
+Figure 8: A sample eBay page listing the recent feedbacks for a user
+ Currently, we have implemented NetProbe as a third party service, which need not be regulated by the auction site itself (since we do not have collaborations with any online auction site.)
+A critical challenge in such a setting is to crawl data about users and transactions from the auction site.
+In this section, we describe the implementation details of our crawler, as well as some nontrivial data structures used by NetProbe for space and time e ciency.
+Crawler Implementation.
+EBay provides a listing of feedbacks received by a user, including details of the person who left the feedback, the date when feedback was left, and the item id involved in the corresponding transaction.
+A snapshot of such a page is shown in Figure 8.
+The username of each person leaving a feedback is hyperlinked to his own feedback listing, thus enabling us to construct the graph of transactions between these users by crawling these hyperlinks.
+We crawled user data in a breadth rst fashion.
+A queue data structure was used to store the list of pending users which have been seen but not crawled.
+Initially, a seed set of ten users was inserted into the queue.
+Then at each step, the  rst entry of the queue was popped, all feedbacks for that user were crawled, and every user who had left a feedback (and was not yet seen) was enqueued.
+Once all his feedbacks were crawled, a user was marked as visited, and stored in a separate queue.
+In order to crawl the data as quickly as possible, we enhanced the naive breadth rst strategy to make it paralleliz-able.
+The queue is stored at a central machine, called the master, while the crawling of Web pages is distributed across several machines, called the agents.
+Each agent requests the master for the next available user to crawl, and returns the crawled feedback data for this user to the master.
+The master maintains global consistency of the queue, and ensures that a user is crawled only once.
+To ensure consistency and scalability of the queue data Adjacency Lists Messages Array Figure 9: Data structures used by NetProbe s.
+The graph is stored as a set of adjacency lists, while messages are stored in a  at array indexed by edge iden-ti ers.
+Note that the message sent from node i to j is always adjacent to the message sent from j to i.
+structure, we decided to use a MySQL database as the platform for the master.
+This architecture allows us to add new agents without su ering any downtime or con guration issues, while maintaining a proportional increase in performance.
+Further, each agent itself can open arbitrary number of HTTP connections, and run several di erent crawler threads.
+Thus, the crawler architecture allows for two tiers of parallelism   the master can control several agents in parallel, while each agent itself can utilize multiple threads for crawling.
+The crawler was written in Java, and amounted to about
+ MySQL 5.0.24 database with the following schema: User (uid, username, date joined, location, feedback score, is registered user, is crawled) (feedback id, user from, user to, item, Feedback buyer, score, time) Queue We started the crawl on October 10, and stopped it on (uid, time added to queue) November 2.
+In this duration, we managed to collect 54,282,664 feedback entries, visiting a total of 11,716,588 users, 66,130 of which were completely crawled.
+Data Structures for NetProbe.
+We implemented elaborate data structures and optimizations to ensure that Net-Probe runs in time proportional to the number of edges in the graph.
+NetProbe starts with graphical representation of users and transactions within them, and then at each iteration, passes messages as per the rules given in Equation 2.
+While edges are undirected, messages are always directed from a source node to a target node.
+Therefore, we treat an undirected edge as a pair of two directed edges pointing in opposite store the graph in memory.
+Each (directed) edge is assigned a numeric identi er and the corresponding message is stored in an array indexed by this identi er (as shown in Figure 9).
+Coming back to Equation 2, the second rule in this equation computes the belief of a node i in the graph by multiplying the messages that i receives from each of its neighbors.
+Executing this rule thus requires a simple enumeration of the neighbors of node i.
+The  rst rule however, is more complicated.
+It computes the message to be sent from node i to node j, by multiplying the messages that node i receives from all its neighbors except j.
+Naive implementation of this rule would enumerate over all the neighbors of i while computing the message from i to any of its neighbors, hence making the computation nonlinear in the number of edges.
+However, if for each node i, the messages from all its neighbors are multiplied and stored beforehand (let us call this message as i s token), then for each neighbor j, the message to be sent from i to j can be obtained by dividing i s token by the last message sent from j to i.
+Thus, if the last message sent from j to i is easily accessible while sending a new message from i to j, the whole computation would end up being e cient.
+In order to make this possible, we assign edge identi ers in a way such that each pair of directed edges corresponding to a single undirected edge in the original graph get consecutive edge identi ers.
+For example (as shown in Figure 9), if the graph contains an edge between nodes 1 and 3, and the edge directed from 1 to 3 is assigned the identi er 0 (i.e., the messages sent from 1 to 3 are stored at o set 0 in the messages array), then the edge directed from 3 to 1 will be assigned the identi er 1, and the messages sent from 3 to 1 will be stored at o set 1.
+As a result, when the message to be sent from node 1 to its neighbor 3 is to be computed, the last message sent from 3 to 1 can be quickly looked up.
+NetProbe s fraud detection algorithm was implemented using these data structures in C++, with nearly 5000 lines of code.
+A critical component of a deployed fraud detection system would be its user interface, i.e., the  window  through which the user interacts with the underlying algorithms.
+For our scheme of detecting fraudsters via unearthing the suspicious network patterns they create, we propose a user interface based on visualization of the graph neighborhood for a user whose reputation is being queried.
+A screenshot of the same is shown in Figure 10.
+We believe that a simple and intuitive visualization tool is essential for users understand the results that the system produces.
+The detected bipartite cores, when shown visually, readily explain to the user why a certain person is being labeled as a fraudster, and also increase general awareness about the manner in which fraudsters operate.
+Users could  nally combine the system s suggestions with their own judgment to assess the trustworthiness of an auction site user.
+We have implemented the above interface to run as a Java applet in the user s browser.
+The user can simply input an username/email (whatever the auction site uses for authentication) into the applet and hit  Go .
+The tool then queries the system s backend and fetches a representation of the user s neighborhood (possibly containing bipartite core) in Figure 10: Proposed user interface for NetProbe XML format.
+Such bipartite information could be pre-built so that a query from the user will most of the time lead to a simple download of an XML  le, minimizing chances of real-time computation of the bipartite core information.
+In summary, the user interface that we propose above provides a rich set of operations and visualizations at an interactive speed to the end user.
+We believe that displaying the characteristic patterns of a fraudster will be essential for the success of a fraud detection system.
+In this paper, we have described the design and implementation of NetProbe, the  rst system (to the best of our knowledge) to systematically tackle the problem of fraud detection in large scale online auction networks.
+We have unveiled an ingenious scheme used by fraudsters to hide themselves within online auction networks.
+Fraudsters make use of accomplices, who behave like honest users, except that they interact heavily with a small set of fraudsters in order to boost their reputation.
+Such interactions lead to the formation of near bipartite cores, one half of which consists of fraudsters, and the other is made up of accomplices.
+Net-Probe detects fraudsters by using a belief propagation mechanism to discover these suspicious networks that fraudsters form.
+The key advantage of NetProbe is its ability to not only spot prevalent fraudsters, but also predict which users are likely to commit frauds in the future.
+Our main contributions are summarized in this section, along with directions for future work.
+Node state Fraud Honest Fraud Honest 1         1     Table 4: A sample instantiation of the propagation matrix for detecting cliques of fraudsters (     ) Data Modeling and Algorithms.
+We have proposed a novel way to model users and transactions on an auction site as a Markov Random Field.
+We have also shown how to tune the well-known belief propagation algorithm so as to identify suspicious patterns such as bipartite cores.
+We have designed data structures and algorithms to make NetProbe scalable to large datasets.
+Lastly, we have also proposed a valuable incremental propagation algorithm to improve the performance of NetProbe in real-world settings.
+Evaluation.
+We have performed extensive experiments on real and synthetic datasets to evaluate the e ciency and e ectiveness of NetProbe.
+Our synthetic graphs contain as many as 7000 nodes and 30000 edges, while the real dataset is a graph of eBay users with approximately 66,000 nodes and 800,000 edges.
+Our experiments allow us to conclude the following:   NetProbe detects fraudsters with very high accuracy   NetProbe is scalable to extremely large datasets   In real-world deployments, NetProbe can be run in an incremental fashion, with signi cant speed up in execution time and negligible loss of accuracy.
+System Design.
+We have developed a prototype implementation of NetProbe, which is highly e cient and scalable in nature.
+In particular, the prototype includes a crawler designed to be highly parallelizable, while avoiding redundant crawling, and an implementation of the belief propagation algorithm with e cient graph data structures.
+We have also proposed a user-friendly interface for looking up the trustworthiness of a auction site user, based on visualization of the graph neighborhood of the user.
+The interface is designed to be simple to use, intuitive to understand and operate with interactive response times.
+The entire system was coded using nearly 6000 lines of Java/C++ code.
+Directions for Future Work.
+From the algorithmic point of view, it would be interesting to see if NetProbe is able to spot patterns other than bipartite cores.
+Ideally, we should be able to formulate an instantiation of the propagation matrix to detect a desired patterns.
+For example, the matrix shown in Table 4 associates a high probability for a fraudster to connect to another fraudster, and should result in detection of cliques.
+Systematically analyzing the behavior of NetProbe for di erent patterns would be valuable future work.
+Another challenging problem is to learn the propagation matrix automatically from available data.
+Solving this problem entails development of appropriate machine learning techniques to use training data for learning both the form of the propagation matrix (i.e., the dimension of the matrix), and the value of all the entries.

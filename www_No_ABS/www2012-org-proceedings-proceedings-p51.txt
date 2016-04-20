@@ -1,0 +1,727 @@
+Cellular systems operate under restrictive constraints of resources including radio channel capacity, network processing capability, and handset energy consumption.
+A major U.S. carrier reported a growth of 5000% of its data traf c over 3 years [12], and Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+Distribution of these papers is limited to classroom use, and personal use by others.
+all U.S. carriers are expected to spend $40.3 billion on cellular infrastructures in 2011 [1].
+To ef ciently utilize the limited resources and balance their incurred tradeoffs, cellular networks employ a resource management policy distinguishing them from wired and WiFi networks.
+In particular, there exists a radio resource control (RRC) state machine [17] that determines radio resource usage based on application traf c patterns, affecting device energy consumption and user experience.
+A lack of understanding of such an important cellular resource control mechanism potentially leads to cellular-unfriendly (i.e., resource-inef cient) mobile applications due to the poor interaction between their traf c pattern and the state machine.
+Equivalent resource control mechanisms with similar tradeoff considerations are deployed by different types of cellular networks such as UMTS [17], EvDO [11] and 4G LTE networks [20].
+This paper presents the  rst network-wide, large-scale measurement of a popular type of mobile application traf c pattern called periodic transfers during which a handset (i.e., a mobile device) periodically exchanges some data with a remote server.
+Our study is motivated by the following two key observations.
+First, periodic transfers can be extremely resource-inef cient as they are small in size and short in duration relative to the periodicity.
+This is explained by the aforementioned cellular-speci c resource management policy: unlike WiFi and wired networks, in cellular networks, the release of radio resources (i.e., demoting a handset from a high to a low-power state) is controlled by inactivity timers.
+The timeout value itself, also known as the tail time [10, 18], can last up to 17 seconds.
+Therefore, even for sending a tiny data burst containing one packet, a handset has to occupy the radio channel for at least 17 seconds due to the tail effect, thus wasting scarce radio resources and handset energy.
+Transferring such small bursts periodically (e.g., every one minute) leads to even more serious resource inef ciencies.
+Second, periodic transfers are typically delay-tolerant in that each periodic transfer instance is not initiated by a user.
+The typical way of generating them is to use a software timer with a  xed periodicity (e.g., java.util.Timer.scheduleAtFixedRate() for Android).
+Therefore, there exists some leeway for smartphone applications to more intelligently reshape their traf c patterns to better match the characteristics of the network s radio resource management and thereby reduce their resource impact.
+Examples of such reshaping include adjusting the timing of each periodic transfer instance to overlap with user-triggered data transfers.
+Our analysis shows that by effectively applying traf c shaping techniques for periodic transfers, the network-wide resource impact of Facebook and Pandora can be reduced by up to 30% with very little impact on user experiences.
+Cellular periodic transfers have been reported by pervious works [19, tremely resource inef cient.
+In this paper, we perform a more in-depth and comprehensive study to quantitatively understand the following important characteristics:   Their network-wide prevalence in today s cellular traf c;   Their impact on radio resources and handset battery life for commercial cellular networks;   Their application-level semantics;   Opportunities to make them more resource-ef cient.
+None of the four aspects was addressed by previous work, and we investigate all of them in this measurement study.
+They are important to study because the  ndings will provide insights on how to fundamentally eliminate resource inef ciency caused by suboptimally scheduled traf c patterns, beyond periodic transfers.
+We detail our contributions as follows.
+I.
+The  rst measurement of cellular periodic data transfer behavior in the wild ( 4).
+Based on our measurement data consisting of 1.5 billion packets of UMTS (Universal Mobile Telecommunications System) traf c involving millions of users, we performed a detailed characterization of periodic transfers using a lightweight and robust periodicity detection algorithm.
+Our  ndings indicate that (i) periodic transfers are very prevalent in today s smartphone traf c as they occur in at least 20% of sessions longer than 1 minute within the dataset, (ii) periodic transfers are small and short with the median transfer size of 1.1KB and 90% of transfers shorter than 7 seconds, and (iii) the value of 60 seconds dominates the periodicity, which is likely to be set by developers in an ad-hoc manner.
+None of the above  ndings were previously known.
+II.
+Exploration of the origins for periodic transfers ( 5).
+This is a prerequisite for determining how to optimize such transfers without impacting any application semantic.
+By locally collecting and analyzing smartphone application traces, we found periodic transfers are caused by multiple factors such as polling, keep-alive messages for push-based services, advertisement transfers, and user-behavior measurement.
+In particular, we found popular applications that either unnecessarily (e.g., Facebook) or aggressively (e.g., Pandora and Textfree) issue periodic transfers, leading to signi cant waste of radio resources and handset energy.
+III.
+Quantitative analysis of network-wide resource impact of periodic transfers ( 6).
+Using the large dataset, we found that for popular applications such as Facebook and Pandora, periodic transfers account for less than 1.7% of traf c volume while their resource impact is as high as 30%.
+Even at the scope of all cellular data traf c for all applications, their radio energy impact (8%) is 20 times of their traf c volume contribution (0.4%).
+We have informed Pandora and Facebook of the problem caused by periodic transfers, and the responses were encouragingly positive [2].
+IV.
+Detailed study of the effectiveness of optimization strategies on periodic transfers ( 7).
+There exist various data scheduling, traf c shaping, and radio resource control algorithms for reducing resource consumption in cellular networks [9, 10, 15,
+ complex yet important tradeoffs, which, although qualitatively known, are not quantitatively explored.
+To fully understand such tradeoffs, we quantify the effectiveness of various optimization strategies on periodic transfers (e.g., scheduling them  exibly by overlapping them with non-periodic transfers).
+Our results indicate that jointly using multiple strategies with moderate aggressiveness can eliminate almost all energy impact (30%) of periodic transfers for Facebook and Pandora applications while incurring fewer side effects than aggressively employing one single strategy does.
+Such an approach greatly improves the battery life for end users and
+ High Bandwidth
+
+
+ o r
+
+ a t a
+
+
+ h a t e r e s > h o l d
+ Low Bandwidth
+ Promotion Demotion
+ d l e
+ s Send/ Recv Any Data Idle 2s
+
+ No Radio Resource < 10 mW Figure 1: RRC State Machine of a large UMTS carrier in the U.S.
+The radio power consumption was measured by a Monsoon power monitor [3] on a Google Nexus One (HTC Passion) smartphone.
+More details can be found in [17].
+could lead to tremendous savings for cellular companies that invest billions of dollars each year on cellular network infrastructures [1].
+Paper organization.
+ 2 summarizes related work.
+ 3 provides the background.
+We characterize cellular periodic transfers and their origins using a large dataset from a commercial UMTS carrier in  4 and  5.
+We identify the resource impact of periodic transfers in  6 and show the resource improvement brought by various optimization strategies in  7 before concluding the paper in  8.
+Cellular periodic transfers were reported by the ARO (mobile Application Resource Optimizer) tool [19] that provides a platform for analyzing interactions between radio resource management and mobile applications.
+In [19], as a case study of a typical usage scenario, we used ARO to analyze locally collected Pandora traces to discover its periodic transfer behavior and resource inef ciency.
+We found from three Pandora traces that periodic data transfers only carry 0.2% of total bytes, but they account for 46% of total radio energy consumption and 40% of radio resource usage.
+Recent work by Kononen et al. [15] also identi ed the potential resource inef ciency of periodic transfers (without quantifying it) and proposed scheduling algorithms that reduce their energy consumption by up to 50%.
+Our study goes beyond previous works by systematically investigating the network-wide prevalence, application semantics, resource impact, and optimization of cellular periodic transfers.
+Our study builds on previous work in measuring and optimizing cellular resource consumption.
+Previous work [17] characterizes the resource impact of the RRC state machine by analyzing a different dataset collected from a commercial UMTS network.
+Further, there exist various traf c shaping (e.g., piggyback, batching, TailEnder [10], Intentional Networking [14], Time Alignment [15]) and radio resource control algorithms (e.g., fast dormancy [6] and TOP [18]) for reducing resource consumption for cellular data transfers.
+We detail most of them in  7.1.
+In this study, we quantify the tradeoffs incurred by these techniques to maximize their ef cacy on traf c patterns of periodic transfers.
+Here we provide suf cient background, focusing on the popular
+
+ To ef ciently utilize the limited radio resources, the UMTS radio resource control (RRC) protocol introduces a state machine associated with each handset.
+Typically there are three RRC states: IDLE (the default state when a handset is turned on, with no radio resource allocated), DCH (the high-power state enabling high-
+l ) e u o
+ ( y g r e n
+
+
+ G P r o m o
+
+ a t a ( A )
+
+ a t a ( B )
+
+
+
+ a il
+
+
+
+ a il
+ W i F i D a t a ( A ) W i F i D a t a ( B ) W i F i T a il Figure 2: Radio energy breakdown for transmitting a small burst.
+A and B are two small HTTP objects of 1KB and 9KB, respectively.
+speed data transmission), and FACH (the low-power state allowing only low-speed data transmission).
+Figure 1 shows the RRC state machine of one large commercial U.S. 3G UMTS carrier whose state transition model was inferred by previous work [17].
+As illustrated, state promotions (going from a low-power to a high-power state) are triggered by user data transmission in either direction.
+State demotions (going in the reverse direction) are triggered by two inactivity timers con gured by the RAN (Radio Access Network).
+At the DCH state, the RAN resets the DCH FACH timer to a constant threshold T =5 seconds whenever it observes any data frame.
+If there is no user data transmission for T seconds, the DCH FACH timer expires and the state is demoted to FACH.
+The FACH IDLE timer uses a similar scheme.
+Promotion Delays and Tail Times distinguish cellular networks from other types of access networks.
+An RRC state promotion incurs a long latency (up to 3 seconds) during which tens of control messages are exchanged between a handset and the RAN for resource allocation.
+A large number of state promotions increase signaling overhead at the RAN and worsen user experience [7].
+In contrast, state demotions take negligible time, but they incur tail times that cause signi cant waste of resources [10, 18].
+A tail is the idle time period matching the inactivity timer value before a state demotion.
+During the tail time, a handset still occupies transmission channels and WCDMA codes, and its radio power consumption is kept at the corresponding level of the state.
+Due to the tail time, transmitting very small amount of data can cause signi cant radio energy and radio resource consumption ( 3.2).
+Other Types of Radio Access Networks.
+Promotion delays and tail times also exist in other types of cellular RAN including GPRS/EDGE [5], EvDO [11], and 4G LTE networks [20].
+For example, in 4G LTE networks, there are two RRC states: RRC_IDLE and RRC_CONNECTED (the low-power state is eliminated) [8].
+We measured the inactivity timer from RRC_CONNECTED to RRC_IDLE to be 11.6s for a large LTE carrier in the U.S.
+We compare radio energy overhead of small data transfer for 3G and WiFi to reveal the resource inef ciency of cellular periodic transfers, which consist of evenly spaced small data bursts.
+For
+ a burst.
+Therefore the total radio energy consists of four parts: EPromo (the IDLE DCH promotion energy), E3G-Data (the energy for transferring the actual data), EDCH-Tail (the DCH tail energy), and EFACH-Tail (the FACH tail energy).
+For WiFi, the radio energy consists of EWiFi-Data and EWiFi-Tail, which are the energy for the data and the short tail, respectively.
+We measured radio energy consumption for small data transfers by performing controlled local experiments.
+We set up an HTTP server hosting two small objects A and B, whose sizes are 1KB and 9KB, respectively (the median size of periodic transfers is
+ One phone to fetch both objects for 20 times, making sure no caching takes place.
+Meanwhile, we recorded both power traces (using a Monsoon power monitor [3] with a sampling rate of 5,000 Hz) and packet traces (using tcpdump) whose timestamps were synchronized beforehand.
+We then correlated power traces with packet traces so that the energy consumption of each component (promotion, data and tail) could be accurately computed.
+All experiments were performed when the signal strength was good and stable.
+To determine the 3G radio power, we tried to keep other device components consuming constant power (e.g., keeping the screen at the same brightness level).
+Then the 3G radio power, which contributes to 1/3 to 1/2 of the total handset power [19], can be approximated by subtracting the constant power baseline at the IDLE state (420 mW) from the overall handset power consumption reported by the power monitor.
+Figure 2 plots the energy breakdown.
+Clearly the state promotion and tail time incur signi cant energy overhead for transmitting a small burst.
+For transferring Object A (B), 97.0% (94.3%) of radio energy belongs to EPromo, EFACH-Tail, or EDCH-Tail.
+The WiFi energy consumption is signi cantly less than that for 3G, because (i) WiFi has smaller RTT and higher data rate than 3G, thus the data transfer time for WiFi is much shorter, (ii) the WiFi radio power (300 mW) is also smaller than 3G (650 mW), and (iii) WiFi has a much shorter tail time (250 ms) and negligible state promotion delay.
+In our experiments, E3G-Data is 22 (31) times of EWiFi-Data for transferring Object A (B).
+When promotion and tail energy are taken into account, the disparity is even as high as 140 times.
+Implications on periodic transfers.
+Periodic transfers are usually short in duration and small in size.
+This is not an issue for wired or WiFi networks.
+For cellular networks, however, as demonstrated by our local experiment, due to their promotion delays and tail times, periodic transfers may incur signi cant resource inef ciency.
+This section characterizes cellular periodic transfers using packet traces collected from a large UMTS carrier in the U.S.
+We analyzed a large packet header trace collected from a large
+ The collection point is one GGSN (Gateway GPRS Support Node), and traf c from/to a subset of SGSNs (Serving GPRS Support Node) served by the GGSN are captured without any user, protocol, or  ow-based sampling.
+The trace contains 1.5 billion packets continuously captured between 15:49 EST and 17:04 EST.
+We only recorded IP and transport-layer headers and a 64-bit timestamp for each packet, without any subscriber IDs or phone numbers, due to concerns of user privacy.
+The major limitation of the dataset is its  nite duration of 1.25 hours due to the storage limitation (1 Terabytes) although to our knowledge this is so far the cellular packet trace with the largest traf c volume.
+As recently reported by [23] using an aggregated one-week cellular dataset involving 600K subscribers and 22K smartphone apps, during daytime (9am to 5pm), traf c volume of most application categories remains stable (except for sports apps).
+We therefore expect our trace provides a largely representative snapshot of smartphone traf c patterns.
+Also note that the trace duration is much longer than the periodicities under investigation.
+Subsequently, we extracted sessions from the trace, with each session consisting of all packets transferred by the same handset identi ed through the private client IP address present in the trace1.
+interval of tens of minutes.
+packet belonging to the target IP Cond2: No marked slots between consecutive periodic transfers Periodic Transfer 1 Non-periodic Transfer 2 Slot len:   sec t: the detected periodicity A marked slot Transfers are separated by at least   seconds of idle time Cond1: Observe at least   marked slots spaced by a fixed number of t slots (e.g.,   = 3) (a) (b) Figure 3: Periodicity detection algorithm (a) and identifying periodic transfers and their associated packets (b).
+Arrows are detected periodic seeds.
+h t i i w s n o s s e
+ g n o
+   = 0.2s   = 0.5s   = 0.75s   = 1s
+
+
+
+ s r e f s n a r
+ c d o i r e
+ i
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+   = 0.2s   = 0.5s   = 0.75s   = 1s
+
+ Periodicity (sec)
+
+
+
+
+
+
+
+
+
+   = 3   = 4   = 5   = 6
+
+ Periodicity (sec) Figure 4: Percentage of long sessions (> 1min) with periodic transfers (change  ,  ).
+Figure 5: Distribution of detected periodicities (  = 4, change  ).
+Figure 6: Distribution of detected periodicities (  = 750ms, change  ).
+Multiple TCP or UDP  ows may be mixed in one session.
+But we did not separate them as RRC state transitions are determined by the aggregated traf c of all applications on each handset.
+We used a threshold of 5 minutes of idle time to approximate the termination of a session.
+Changing this value to 3 or 6 minutes does not qualitatively affect the analysis results.
+We extracted about 2.8 million sessions from the dataset.
+Performing periodic transfers with periodicity t means communicating with a particular server for every t seconds.
+Our periodicity detection algorithm takes a session ( 4.1) as input, then focuses on each single server IP at a time to detect the periodicity of contacting that IP.
+For simplicity, we do not consider periodically contacting different server IPs (e.g., contacting IP1 at t=0, IP2 at t=30s, IP3 at t=60s, etc.)
+as such cases are rare based on our observations of periodic DNS lookups ( 5).
+But the algorithm does consider a case where a handset periodically contacts IP1 for a while, then switches to IP2.
+We also allow one session to have multiple periodicities.
+This happens when, for example, two TCP connections carrying periodic transfers coexist.
+Why not use previous approaches?
+There are several existing techniques for such a common task of  nding periodicities.
+Previous study [16] directly examines the frequency domain to extract the  TCP  ow clock  (i.e., regular spacing between  ights of packets) by applying DFT on the packet time series then identifying peaks in the frequency spectrum.
+Previous work [21] employs auto-correlation to estimate RTT, which they assume causes equal spacing between bursts of packets.
+We found that neither method works well in our scenario because our interested periodicities (e.g., 0.05Hz 0.003Hz) have much fewer samples than RTTs (5Hz 1Hz) do due to  nite duration of sessions.
+ARO [19], which only analyzes short locally collected trace samples, uses a very simple approach by enumerating all n(n   1)/2 intervals in a time-series of n packets, incurring unacceptable complexity for our large dataset involving millions of long-lived sessions.
+We instead propose a simple heuristic-based approach to effectively detect such  macroscopic  periodicities by exhaustive search.
+For each server IP i presented in the input session, we perform three steps to  nd the periodicity and periodic transfers associated with i (if exist).
+(i) Convert the continuous timestamps into discrete time slots to reduce noises and to speed up the search process.
+(ii) Search for repetitions of slots (containing packets of server i) spaced by a  xed timing gap t. Each of such detected slots is a  periodic seed  and t is the periodicity.
+(iii) Extract periodic transfers based on the periodic seeds.
+We now detail the three steps illustrated in Figure 3.
+in which each slot has a  xed length of   seconds.
+In other words, the k-th slot is marked if and only if there is at least one packet of i arrived within [ k,  k +  )2.
+Discretizing packet time series effectively tolerates noises caused by the network delay and reduces the computational overhead.
+searches for a periodicity of t slots, which is detected if and only if two conditions hold.
+First, we observe at least   marked slots spaced by a  xed number of t slots i.e.,  a such that slot a, a + t, ..., a + (    1)t are all marked.
+Second, there is no marked slot between consecutive periodic transfers i.e.,  0   p <  ,  0 < b   q   t   b : slot a + pt + q should not be marked.
+b is a parameter tolerating the duration of a periodic transfer, which may occupy several slots from a + pt   b to a + pt + b.
+We empirically choose b = t/4 but changing b to t/5 or t/3 has negligible impact on detection results.
+If both conditions hold, we mark slots a, a + t, ..., a + (    1)t as  periodic seeds  as indicated by arrows in Figure 3.
+for server i.
+A transfer consists of a succession of packets.
+In order to be periodic, a transfer must cover at least one periodic seed.
+Quantitatively, as shown in Figure 3b, we  rst cluster packets of i into transfers that are separated by at least   seconds of idle time.
+Subsequently, a transfer of i is considered to be periodic if and only if at least one of its slots is a periodic seed.
+The algorithm involves three key parameters:   (the slot length),   (the minimal repetitions to be observed before declaring a periodicity), and   (the threshold for separating two transfers).
+Gen-
+a periodicity due to the round-off error caused by discretization.
+more conservative and more con dent in reporting periodicities.
+Increasing   potentially makes identi ed (periodic) transfers larger in size and longer in duration.
+For example, we assume   = 2  in Figure 3b.
+Increasing   to 3  makes Transfer 2 further cover the rightmost slot.
+We investigate all above tradeoffs in  4.3.
+Evaluation of the detection algorithm is challenging due to the lack of ground truth although the algorithm itself is intuitive.
+To validate our results, we built a program that visualizes the detected periodicities like Figure 3a.
+Then we manually inspected 100 randomly sampled sessions with at least one periodicity and 100 sessions with no periodicity detected (we used   = 750ms and   = 4 as justi ed in  4.3).
+The overall false negative rate is 3%.
+Here a  false negative  means a server IP in a session has obvious periodic transfer behavior identi ed by manual inspection but the algorithm missed it.
+One limitation of such a manual approach is that it is dif cult to evaluate the false positive rate, which however is expected to be low due to discovered dominating periodicities (more than 90%) of 1 minute, 30 seconds, and 2 minutes ( 4.3).
+We apply the periodicity detection algorithm to the 2.8 million sessions of our dataset, and describe our  ndings.
+How popular are periodic transfers?
+Figure 4 plots the percentage of sessions with at least one periodicity among all long sessions, whose durations are de ned to be at least one minute, for different ( ,  ) pairs.
+Such long sessions account for only 35% of total sessions while they contribute to 98% of the traf c volume.
+Figure 4 indicates that the detection algorithm is more sensitive to   than to  .
+Given that 4 is a reasonable (yet still conservative) value of   (justi ed later), we estimate periodic transfers occur in about 20% of long sessions.
+On the other hand, these 20% of long sessions contain almost 100% of detected periodicities.
+Which periodicity values are commonly used?
+Figure 5 plots the CDF of detected periodicities for   = 4 and four   values.
+Figure 6 plots the same distribution for   = 750ms and four   values.
+The key observation is that a particular value of 60 seconds dominates the periodicities.
+Such a one-minute value is likely to be set by smartphone application developers in an ad-hoc manner.
+We also notice small clusters of 20 seconds, 30 seconds, and 2 minutes in Figure 5 and Figure 6.
+We learn from Figure 5 that the slot length   has negligible impact on the periodicity distribution.
+However Figure 6 shows the distribution of   = 3 differs from those of   = 4, 5, 6 due to falsely identi ed small periodicities, most of which can be eliminated by increasing  .
+Doing so however also reduces true positives.
+In particular, the algorithm will miss all periodic transfers with a periodicity of one minute, which dominates the periodicity distribution, occurring in sessions shorter than   minutes.
+We pick   = 4 which yields a reasonably good tradeoff between the accuracy and the coverage, as only about 10% of long sessions are between 3 and 4 minutes.
+What are typical periodic transfer sizes?
+Figure 7 indicates that when  , the idle timing gap threshold for separating consecutive transfers, is greater than 7 seconds, the 25th, 50th, and 75th percentiles of periodic transfer sizes remain very stable, with the values of 0.2KB, 1.1KB, and 1.8KB, respectively.
+Figure 8 con rms that distributions of periodic transfer sizes for   = 5, 7.5, and 10sec are almost identical.
+Therefore, the extracted periodic transfers are insensitive to  .
+We conclude that the vast majority of periodic transfers are small as 97% of periodic transfers are less than 10KB.
+Further, they are short relative to the periodicity in that
+
+
+
+
+ ) s e t y b ( e z
+ i r e f s n a r
+ c d o i r e
+ i
+
+
+
+
+
+   (sec)
+
+
+
+
+
+
+
+
+
+   = 5s   = 7.5s   = 10s
+
+
+
+ Periodic Transfer Size (Bytes) Figure 7: Relationship between   and periodic transfer sizes.
+Figure 8: CDF of periodic transfer sizes for   =5s, 7.5s, 10s.
+Table 1: Applications generating periodic transfers.
+Periodicities listed below account for 46% of all detected periodic transfer instances.
+Content Provider/ % Periodic Transfers Remarks Applications facebook.com andomedia.com medialytics.com
+ Advertisements gmail.com pinger.com Other
+
+
+
+
+
+
+
+ Keep connection alive for pushing Pandora s audience measurement User behavior monitoring DNS lookups Advertisement update Checking emails Polling to fetch updates for SMS e.g., checking weather
+
+ Understanding the origins of periodic transfers is a prerequisite for determining how to optimize such transfers without violating the application semantics.
+We do that in two steps.
+First, we leverage a database containing IP address to content provider name mappings to understand which applications are responsible for periodic transfers.
+The database was generated by the carrier by examining the  Host   eld of HTTP requests for the same set of SGSNs covered by the packet trace at a different time period (1.2 hours) on the same day when the packet trace was collected.
+Using the database, we found  meaningful  content providers, from which we can determine the application information, for IP addresses of 46% of detected periodicities (one session may contain multiple periodicities).
+For the remaining IP addresses, their content provider names (most are host names of CDN servers) are either useless for inferring the application information or not present in the database.
+Table 1 breaks down the origins of these 46% of periodicities.
+Next, we locally collected and analyzed traces for the corresponding Android and iPhone applications to understand why those applications generate periodic transfers, whose intent can be largely classi ed into  ve categories, which are all delay-tolerant except for periodic DNS lookups.
+a TCP connection from being closed by the cellular NAT, whose timeout is much shorter than the TCP timeout (at least 2 hours by default [4]).
+We found when Facebook for iPhone starts, it sends an HTTP request to facebook.com.
+The server however does not send back the response immediately until either (i) a 60-second timeout is reached or (ii) it has a noti cation (e.g., a message from a friend) to be pushed immediately to the client handset.
+In the  rst case, the server sends a keep-alive HTTP response (containing for (;;);{"t":"continue"}) to prevent a TCP connection from being shut down by the cellular NAT.
+When the handset receives the response, it immediately sends the next request and waits for the next response by following the same above procedure.
+In its chatting mode, Facebook uses an even more aggressive periodicity of 20 seconds, which is slightly longer than the total is almost always on the tail, and (ii) an IDLE DCH promotion is triggered by each ping when no concurrent traf c exists, leading to very high signaling overhead.
+Recent work [22] carried out local experiments to study NAT timeout behavior for four large cellular carriers in the U.S.
+Among them, three use a long timeout value of at least 20 minutes.
+The fourth carrier has the shortest timeout of 255 seconds before a TCP RST is sent to a handset.
+In any case, sending a keep-alive message every 60 seconds is too aggressive and incurs unnecessarily high resource overhead.
+We have shared our analysis with developers at Facebook and the reception has been enthusiastic.
+or preferences, and periodically send out collected information.
+For example, Pandora, the top mobile music streaming application, performs various audience measurements (e.g., monitor online listeners  favorite radio stations) and uploads the measurement data to andomedia.com every one minute, which is too frequent as most songs are longer than one minute and Pandora is running in the background for most of the time.
+We have informed Pandora of the problem [2].
+Their response was also positive and they agreed that the periodicity should be increased to at least 2 or 3 minutes based on their domain knowledge.
+For example, Textfree, a popular SMS application, sends an HTTP request to poll.pinger.com every 20 seconds for querying for new short messages, and usually gets a  no-new-update  response.
+Due to its high energy overhead and delayed response, such a polling-based design is clearly worse than the push-based scheme used by, for example, Facebook.
+ment platforms periodically refresh ads embedded in smartphone applications.
+For example, by default, AdMob uses a refresh rate of 60 seconds, while Mobclix aggressively updates the ad for every 15 seconds that is even shorter than the default tail time (17 sec, see Figure 1), making a handset persistently occupy the DCH or FACH state whenever the application containing an ad widget is running.
+described above when persistent TCP connections are not used.
+Although handsets have local DNS caches, some content providers may set DNS TTLs to be small for load balancing (e.g., 30 sec for Facebook).
+However, we observe that IP addresses returned by periodic DNS lookups seldom change for the same host name.
+This suggests that DNS-based load balancing is not frequently performed although content providers have such capabilities.
+We use the large dataset described in  4.1 to study the resource impact of periodic transfers detected in  4.2 on the commercial UMTS network.
+Three metrics are used to quantify the resource impact.
+We leveraged the RRC state machine simulator and the handset power model used by the ARO tool [19] for computing the metrics below.
+The state machine simulator takes a packet trace as the input.
+It infers the RRC states experienced by the handset based on the timing, size, and direction of each packet, according to the state transition model shown in Figure 1.
+  E: the handset radio energy consumption.
+It is calculated by associating each RRC state or state promotion an average power value measured from a particular phone [17, 19]3.
+HTC TyTn II, and HTC Dream.
+They yield similar  E values.
+Here we present the results using parameters of Nexus One (shown in Figure 1).
+Table 2: Impact of periodic transfers at different scopes.
+Study Scope U0: All Sessions U1: Periodic Sessions U2:Facebook Sessions ( =0.5) U3:Pandora Sessions ( =0.5) The contribution of periodic transfers.
+Radio
+ Radio Signaling Energy Overhead Traf c Volume
+ Resources
+ -7.9% -8.9% -6.5%
+ -20.4% -25.3% -15.6%
+ -30.5% -30.4% -30.5%
+ -28.7% -35.0% -20.5%
+  10%  20%  30% t c a p m
+ e c r u o s e
+  40%
+
+
+
+
+
+   (Defining a Pandora Session) Figure 9: Impact of   on Pandora sessions (U3) in terms of  D,  S, and  E.
+A Pandora session is de ned more strictly as   increases.
+  S: the signaling overhead.
+It is quanti ed by the total state promotion delay.
+  D: the radio resource consumption.
+It is estimated by the total DCH occupation time (including the DCH tail time).
+To investigate the impact of periodic transfers at different scopes, we study four session sets U0 to U3 listed in Table 2.
+U0 is the entire dataset; U1 refers to sessions that contain periodic transfers (they may also contain non-periodic transfers); U2 and U3 correspond to Facebook and Pandora sessions, respectively.
+It is trivial to identify sessions belonging to U0 and U1.
+A session (not necessarily containing periodic transfers) is considered to belong to U2 if the fraction of bytes received from or sent to Facebook servers is at least  . Pandora sessions (U3) are de ned in a similar way.
+We pick Facebook and Pandora since they are extremely popular [13] and both heavily use periodic transfers ( 5).
+For each study scope Ui, we quantify the resource impact of periodic transfers by taking the difference of computed metrics for the original trace and for the modi ed trace with all periodic transfers removed.
+Speci cally, the radio energy impact of periodic transfers is computed as  E = (ER   E0)/E0 where E0 and ER correspond to the radio energy consumed by the original and the periodic-transfer-free trace, respectively, across all sessions of Ui.
+ E is negative as removing periodic transfers reduces energy consumption.
+The radio resource impact  D and the signaling impact  S are de ned in similar ways.
+The results are shown in Table 2.
+All results in  6 and  7 were generated using  =750ms,  =4 (de ned in  4.2 and justi ed in  4.3), and  =0.5.
+Clearly, there exists tremendous disparity between the traf c volume and the resource consumption of periodic transfers, indicating that the state-of-art cellular periodic transfers are extremely resource inef cient.
+As an example, periodic transfers are responsible for only 0.5% of Pandora traf c (U3), but their network-wide radio energy ( E), signaling overhead ( S), and radio resources ( D) impact are 40 to 70 times higher.
+Even at the scope of all cellular data traf c (U0), their radio energy impact (8%) is 20 times of their traf c volume contribution (0.4%).
+Figure 9 shows how  , controlling how U3 is generated, affects  D,  S, and  E.
+For both Pandora and (at least 20%) even if   is as low as 0.2.
+Periodic transfers are prevalent but resource-inef cient.
+Fortunately, they have predictable periodicities and they are delay-tolerant in that the application usually has the  exibility over a time window in scheduling each transfer.
+There exist various data scheduling, traf c shaping, and radio resource control algorithms for reducing resource consumption for cellular data transfers (in particular, for delay-tolerant transfers).
+There however, remain several challenges in applying them effectively.
+(i) Depending on the diverse traf c patterns, various optimization strategies may result in different outcomes.
+Thus it is not trivial to select the right strategy for a speci c application.
+(ii) The degree of aggressiveness of an optimization strategy, controlled by its critical parameters, often involves complex tradeoffs among handset radio energy, radio resources, signaling overhead, and user experience.
+Such tradeoffs, although qualitatively known, are not quantitatively and explicitly visible.
+(iii) Multiple strategies can be jointly applied.
+Their interaction can be even more complicated and is not well understood by previous work.
+To address these challenges, we make the aforementioned tradeoffs explicit by:   Evaluating the effectiveness of traf c shaping and radio resource control techniques on periodic transfers.
+  Determining the level of aggressiveness for resource optimization strategies by systematically exploring their parameter spaces.
+  Testing the compatibility of multiple optimization techniques jointly applied to periodic transfers.
+We next describe several representative optimization techniques in  7.1 before showing their optimization results in  7.2.
+Then in  7.3, we examine in detail the interplay between traf c patterns and various optimization techniques by performing case studies of three popular Android applications using locally collected traces.
+We consider four strategies (S2 to S5) below for optimizing periodic transfers.
+They can be applied individually or jointly to the input trace.
+We denote target transfers as our traf c of interest (i.e., periodic transfers) to be optimized.
+The input trace contains both target and non-target transfers but the optimization strategies are applied to only target transfers (except for S4).
+To our knowledge, S2 to S5 are representative and cover most online methods for optimizing (periodic) delay-tolerant transfers.
+They can be implemented in a generic library of a smartphone OS.
+S1: The original trace without modi cation.
+This corresponds to the comparison baseline.
+S2: Piggybacking.
+Target transfers can be shifted earlier, or be postponed till later, so that they can potentially be overlapped with non-target transfers, thus reducing the tail time.
+Clearly, user-triggered transfers cannot be shifted earlier.
+But periodic transfers can be transferred ahead of schedule since applications have complete control on when to initiate them.
+Assume that originally, a target transfer T occurs at time t0, then after piggybacking, T can be transferred at any time between t0     and t0 +   where   is a parameter de ning an  elastic  window.
+If any non-target transfer happens within (t0    , t0 +  ), then T is piggybacked with the earliest non-target transfer.
+Otherwise T is transferred at t0 +  .
+S3: Batching.
+In order to reduce the overall tail time, several periodic transfer instances can be grouped into one single burst.
+Applying batching on periodic transfers essentially increases the
+
+
+
+
+
+
+
+
+
+
+
+ Time
+ DCH-Active DCH-Tail FACH-Active FACH-Tail
+
+ Figure 10: Validating the piggyback optimization S2.
+periodicity4.
+It is performed by (i) creating batching points that are evenly spaced by k seconds from the  rst target transfer (k is a user-speci ed parameter determining the new periodicity), and (ii) scheduling each target transfer at its nearest batching point.
+S4: Fast dormancy is a recently proposed feature in 3GPP Instead of waiting for inactivity timers speci cations [6, 17].
+to expire, a handset can actively request for an immediate state demotion to IDLE by sending a special RRC control message to the radio access network.
+Fast dormancy can dramatically reduce the tail time while the potential penalty is increased signaling load (a positive  S) when it is aggressively used [7].
+We consider the following algorithm for invoking fast dormancy: a handset maintains a fast dormancy timer (shorter than and independent to the RRC inactivity timers) that is reset whenever the handset sends or receives any packet.
+When the timer expires, the handset invokes fast dormancy to transition to IDLE regardless of the current RRC state or RRC timer value.
+Such behavior was observed on some baseband versions of Android smartphones.
+Fast dormancy does not change the traf c pattern.
+It can either be globally applied to all traf c, or be selectively used for only target transfers.
+S5: TailEnder [10] schedules transfers to minimize the energy consumption while meeting user-speci ed deadlines by delaying transfers and transmitting them together.
+It was implemented using the default parameters described in [10].
+It is similar to piggyback while the major difference is that for TailEnder, a transfer can only be delayed but cannot be transferred ahead of schedule.
+We implemented of ine versions of the four optimization strategies, allowing us to systematically exploring the optimization strategies and their parameter spaces using existing traces.
+Let P be the input trace and W be one or more optimization strategies.
+The of ine optimizer computes P1, the modi ed trace of P according to W .
+For validation purpose, we also implemented an online optimizer for S2 and S3 ( 7.1) on a real smartphone (Samsung Galaxy S running Android 2.2).
+It initiates requests according to P .
+The requests are then scheduled and get transferred on the network based on the W , resulting in traf c pattern P2.
+Ideally P1 and P2 should be the same.
+We describe how we evaluate W = {S2}.
+In this example shown in Figure 10, P contains two series of periodic transfers, C1 and C2, with the size of each transfer instance of 2 KB.
+The periodicities of C1 and C2 are 7 sec and 11 sec, respectively.
+alive messages), batching may cause duplicate transfers, which are (conservatively) not removed due to the dif culty of identifying them.
+ 5%  10%  15%  20%  25%  30% t c a p m
+ e c r u o s e
+  35%
+
+
+
+
+
+
+
+
+   (sec)
+  5%  10%  15%  20%  25%  30% t c a p m
+ e c r u o s e
+   S (Facebook)   E (Facebook)   S (Pandora)   E (Pandora)
+  5%  10%  15%  20%  25%  30% t c a p m
+ e c r u o s e
+  35%
+ Periodicity (min)  35%
+
+
+
+
+
+
+
+ Deadline (sec)
+ Figure 11: Impact of piggyback (S2).
+Figure 12: Impact of batching (S3).
+Figure 13: Impact of TailEnder (S5).
+t c a p m
+ e c r u o s e
+ +15% +10% +5%
+  5%  10%  15%  20%  25%
+
+
+
+
+
+
+ Fast Dormancy Timer (sec)
+
+ t c a p m
+ e c r u o s e
+ +200% +150% +100% +50%
+  50%
+   S (Facebook)   E (Facebook)   S (Pandora)   E (Pandora) t c a p m
+ e c r u o s e
+
+  5%  10%  15%  20%  25%  30%  35% Pandora Facebook
+
+
+ Figure 16: Resource savings of jointly using fast dormancy (the timer is 5s) for periodic transfers, piggyback ( =30s), and batching (increasing the periodicity to 3 minutes).
+Figure 14: Impact of fast dormancy applied to only periodic transfers (S4).
+Figure 15: Impact of fast dormancy applied to all traf c (S  
+
+
+ Fast Dormancy Timer (sec)
+
+ W = {S2} corresponds to a scenario where transfers of C2 (target transfers highlighted in red in Figure 10) are piggybacked with C1 (non-target transfers) using an elastic window of  =8 sec.
+Figure 10 shows that qualitatively P1 and P2 are very similar in terms of both traf c pattern and RRC states.
+Quantitatively, their total DCH time, FACH time, and promotion delay differ by no more than
+ small differences between P1 and P2, which are also similar for W = {S3} and W = {S2, S3} (S2 and S3 are jointly applied) with varied parameters.
+The differences are mainly caused by network and promotion delays that vary between P1 and P2.
+The results indicate our of ine optimizers are accurate.
+We consider the four types of optimizations described in  7.1: S2 (piggyback), S3 (batching), S4 (fast dormancy applied to only periodic transfers), S  
+ (TailEnder [10]).
+The results are shown in Figures 11, 12, 14,
+ we quantify the positive or negative impact of each optimization technique using  E and  S ( D is well correlated with  E) by comparing two scenarios where the optimization is disabled and enabled, respectively.
+We highlight our  ndings as follows.
+(i) As expected, invoking batching, piggyback, and TailEnder more aggressively reduces more radio energy and signaling overhead at the cost of potentially degraded application functionality (e.g., ad transfers may be delayed thus affecting real-time ad customization).
+The performance of piggyback and TailEnder are qualitatively similar.
+(ii) The side-effect of fast dormancy is increased signaling overhead as going to IDLE too quickly may incur an additional IDLE DCH promotion triggered by the next packet.
+(iii) Blindly applying fast dormancy on all traf c is not recommended due to its prohibitively high signaling overhead increased by up to 175% (Figure 15).
+However, invoking fast dormancy only at the end of periodic transfers incurs acceptable signaling overhead while the achieved resource savings are still signi cant (Figure 14).
+Further, we search combinations of multiple optimization techniques to reveal the merit of combining different strategies.
+Figure 16 considers a case where we jointly use batching (increasing the periodicity to 3 minutes, justi ed in  5 based on our contact with Pandora and our knowledge of cellular NAT), piggyback (  = 30sec), and fast dormancy for periodic transfers (the timer is 5 seconds).
+Combining them essentially means increasing the periodicity to 3 minutes before piggybacking each periodic transfer with non-periodic transfers, then invoking fast dormancy at the end of each (shifted) periodic transfer if possible.
+Such a combined scheme eliminates almost all radio energy impact (about 30%) of periodic transfers for Facebook and Pandora.
+To summarize our  ndings:   All optimization strategies described in  7.1 effectively reduce the resource consumption of periodic transfers by incurring diverse tradeoffs.
+  By jointly using several optimization strategies with moderate aggressiveness, the saved resources are comparable to those achieved by aggressively employing one single strategy with more signi cant side effects incurred.
+We study three popular Android applications and show how to optimize their delay-tolerant transfers.
+Table 3 lists the three applications.
+Pandora is one of the most popular mobile music streaming applications.
+Dictionary corresponds to the top dictionary application on Android Market.
+Pocket Express News is a critically acclaimed news application.
+We refer to them as Pandora, Dict, and News henceforth.
+For each application, we analyze traces collected from  ve students who used the application as normal users.
+Clearly, the recorded traf c Trace Pandora Dict News Application Pandora Music Dictionary Pocket Express News # Traces Length Usage Scenario Target Transfers
+
+
+ 1.5 2 hrs 10 12 mins 14 16 mins Continuously playing the music Periodic measurement (every 1 min) Looking up an English word every 15 to 30 sec Periodic ad (every 1 min) Browsing and reading the news articles Ad transfers triggered by user Table 4: Effectiveness of optimization techniques for the three case study applications.
+Pandora
+
+
+
+ Dict
+
+ News
+
+ -47.7% -39.2% -57.3% -19.3% -16.7% -18.8% -29.3% -22.0% -34.9% -24.1% +2.1% +8.9% -34.4% +3.1% +12.5% -19.7% -15.4% -20.5% -42.3% -48.3% -42.9% -12.6% -23.9% -8.6% -6.5% +0.3% -2.4% -0.2% +9.4% +12.3% -18.4% +5.9% +11.4% +1.5% +62.3% +64.8% -28.7% +11.3% +17.1% -3.1% -19.1% -19.3% -23.5%
+
+ -3.5%
+
+ -9.8% -6.6% +2.5% Resource impact relative to the overall resource consumption of the trace Impact of target transfers S2: Piggyback (  = 30 s) S3: Batching (every 3 mins) S4: FD for target transfers (5s)
+ S5: TailEnder (deadline 60s)
+ (a) (b) (c)
+
+
+ Time
+
+
+ Time
+
+
+ Time Figure 17: Traf c pattern examples of (a) Pandora, (b) Dict, (c) News.
+Target transfers are marked in red.
+Refer to Figure 10 for legends of the RRC states.
+patterns are affected by user behavior randomness.
+We therefore focus on applications  most common usage scenarios (Table 3), which we found resulted in qualitatively similar traf c patterns among users.
+We are interested in usage patterns of the applications for a long period of usage time (at least several minutes) so that the optimization strategies for delay-tolerant transfers are effective.
+Figure 17 plots traf c patterns and inferred RRC states for the three applications.
+Traf c patterns of target transfers are highlighted in red in Figure 17.
+Both Pandora and Dict employ periodic transfers, which are automatically detected, for every one minute.
+News does not use periodic transfers.
+Instead, its advertisement transfers (manually labeled by us) are triggered when a user switches to a different news article or to the headline screen.
+Traf c patterns of non-target traf c.
+As depicted in Figure 17, non-target traf c for Pandora is sparse and bursty, but each burst (music streaming) is transmitted using the maximal bandwidth.
+In contrast, packets for Dict are more evenly spread out, leading to a much higher ratio of radio channel occupation time to the total application usage time (86%).
+We found this is intrinsic to the application design of Dict, which makes delay-sensitive data inef ciently transferred by signi cantly under-utilizing the bandwidth, even if user requests are made at a moderate frequency of every 15 to 30 sec.
+For News, its ratio of radio channel occupation time (43%) lies between those of Pandora (21%) and Dict (86%).
+As summarized in Table 4, overall, the three applications exhibit +10%
+  10%  20%  30%  40%  50%
+    60% +40% +30%
+   +20% +10% Pandora Dictionary News (b) Pandora Dictionary News (a)
+
+ Fast Dormancy Timer (s)
+
+
+
+
+ Fast Dormancy Timer (s)
+
+ Figure 18: Impact of S4 (fast dormancy for target transfers).
+different responses (in terms of resource savings) to optimization strategies due to their diverse traf c patterns.
+Note that piggyback and batching are not applicable to News, whose delay-tolerant transfers are initiated by a user.
+The impact of target transfers.
+As indicated in Table 4, for Pandora and News, signi cant amount of radio energy (at least 42%) and signaling overhead (at least 43%) are spent on target transfers.
+For Dict, their contributions are only 12.6% for radio energy and 9.8% for signaling overhead, although Dict uses the same periodicity.
+This is because its non-target transfers already occupy radio channels for most of the time.
+Thus injecting target transfers only marginally increases resource utilization.
+The impact of fast dormancy.
+S4 and S  
+ that fast dormancy yields signi cantly different consequences on the three applications.
+For Pandora, fast dormancy effectively reduces resource consumption with very small signaling overhead (i.e., state promotions) incurred, since the inter-burst time (illustrated in Figure 17a) is usually much longer than the fast dormancy timer value.
+For Dict, its traf c pattern consists of intermittent data bursts interleaved with short pauses, many of which are shorter than the fast dormancy timer.
+Therefore, invoking fast dormancy causes high signaling overhead.
+For example, by applying S   4, the total promotion delay increases by 40 sec for one Dict trace of
+ application-dependent tradeoff is con rmed by Figure 18, which systematically investigates the impact of fast dormancy on  E (plot a) and on  S (plot b), for S4.
+Aggressively invoking fast dormancy for target transfers bene ts Pandora by bringing signi cant reduction of radio energy by up to 40% with signaling overhead of no more than 5%.
+On the other hand, fast dormancy is not applicable to Dict because the cost of achieving a saving of 5% of radio energy is the high signaling overhead of 35%.
+The impact of piggyback and batching.
+For Pandora, S2 and S3 in Table 4 indicate that both piggyback and batching effectively save resources (TailEnder is qualitatively similar to piggyback).
+For Dict, the resource savings brought by piggyback and batching
+
+
+
+
+
+
+
+
+
+
+
+
+ (b) l ) e u o
+ ( y g r e n
+ o d a
+ i l a t o
+
+
+
+
+
+
+
+
+ #
+ Batches
+
+
+
+
+
+   (sec) l ) e u o
+ ( y g r e n
+ o d a
+ i l a t o
+ (c)
+
+
+
+
+
+
+
+
+ # Batches
+
+
+
+
+
+   (sec)
+
+ (a)
+
+
+
+ l ) e u o
+ ( y g r e n
+ o d a
+ i l a t o
+
+
+
+ #
+ Batches
+
+
+
+
+
+
+
+   (sec)
+
+
+
+ Figure 19: Jointly applying piggyback (varying  ), batching (varying the number of batches), and fast dormancy (the timer is 5s) on target transfers for the three apps: (a) Pandora (b) Dict (c) News.
+Piggyback and batching can be (a) compatible, (b) ineffective, or (c) incompatible.
+are very limited due to its inef cient non-target transfers.
+Figure 19 shows how each application is jointly optimized by three strategies: piggyback, batching, and fast dormancy (only for target transfers), revealing interesting interactions between piggyback and batching.
+For Pandora, either increasing   or decreasing the number of batches (i.e., increasing the periodicity) effectively reduces radio energy consumption.
+However, neither strategy is effective for Dict due to its non-target transfers that are already spread out.
+Since piggyback and batching are not applicable to News, we just use its traf c pattern to demonstrate a potential type of interaction between piggyback and batching.
+As shown in Figure 19c, jointly applying piggyback and batching does not outperform the piggyback-only approach, which effectively overlaps almost all target transfers with non-target transfers.
+In that case, aggressively using batching actually wastes radio energy since one long batched transfer is not as  exible as several short transfers when being overlapped with non-target transfers (unlike Pandora whose batched transfers are still short enough).
+To summarize, our case study indicates that it is far from trivial to determine what combination of techniques and for each technique what parameter settings to use for balancing the tradeoff.
+Effective solutions require efforts from both application and platform developers.
+We summarize our recommendations as follows.
+  For Pandora, fast dormancy, batching, and piggyback can be jointly and aggressively used whenever timing constraints of audience measurement are satis ed.
+The savings of radio energy and signaling overhead are 40% when the parameters of S2, S3, and S4 are 60s, every 3mins, and 5s, respectively (similar to our  ndings of Pandora in  7.2).
+  For Dict, the inef cient non-target transfers need to be improved, otherwise the optimization is largely ineffective.
+  For News, TailEnder (a deadline of 60 sec) and fast dormancy (5s for target transfers) can be applied to reduce radio energy and signaling overhead by up to 25%.
+Using large packet traces collected from a commercial UMTS network, we performed the  rst network-wide investigation of cellular periodic data transfers, which have signi cant impact on resource consumption despite contributing only small traf c volumes.
+Periodic transfers are widespread and are generated for various reasons, many of which are overly aggressive, if not unnecessary.
+We also investigated how well various traf c shaping and resource control algorithms might be used to optimize resource utilization for periodic transfers.
+Our work is an important step towards better understanding cellular traf c dynamics and the complex interactions between radio resource control policy and mobile application behavior, and determining how to develop cellular-friendly mobile applications.

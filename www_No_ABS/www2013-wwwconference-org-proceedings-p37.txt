@@ -1,0 +1,438 @@
+Very large natural graphs are common on the internet, particularly in the context of social networks.
+For instance, Facebook has at present in excess of 900M registered users.
+ The research was performed while all authors were at Yahoo Research.
+Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+IW3C2 reserves the right to provide a hyperlink to the author s site if the Material is used in electronic media.
+Similarly large graphs can be found among email and instant messaging graphs.
+Online recommendation for products and connections, as well as online advertising, clearly rely on the analysis of such networks, which makes inference on very large natural graphs a pressing problem.
+However, this problem is hard and cannot at present be solved on a single machine.
+For inference problems at the scale of billions of edges it is imperative to use a distributed setting where the graph is partitioned over a number of machines.
+We examine the challenges in applying distributed latent variable models to graph factorization.
+Latent variable modeling is a promising technique for many analytics and predictive inference applications.
+However, parallelization of such models is di cult since many latent variable models require frequent synchronization of their state.
+The power-law nature of such graphs makes it di cult to use chromatic scheduling [18].
+Furthermore, the bulk-synchronous processing paradigm of Map-Reduce [19] does not a ord low-enough latency for fast convergence: this has been reported, e.g.
+in comparisons between bulk-synchronous convergence [20] and asynchronous convergence [23].
+Consequently there is a considerable need for algorithms which address the following issues when performing inference on large natural graphs: Graph Partitioning We need to  nd a communication-e cient partitioning of the graph in such a manner as to ensure that the number of neighboring vertices rather than the number of edges is minimized.
+This is relevant since latent variable models and their inference algorithms store and exchange parameters that are associated with vertices rather than edges [1].
+Network Topology In many graph-based applications the cost of communication (and to some extent also computation) dwarfs the cost of storing data.
+Hence it is desirable to have an algorithm which is capable to layout data in a network-friendly fashion on the  y once we know the computational resources.
+Variable Replication While the problem of variable synchronization for statistical inference with regular structure is by now well understood, the problem for graphs is more complex: The state space is much larger (each vertex holds parts of a state), rendering synchronization much more costly   unlike in aspect models [8] only few variables are global for all partitions.
+Asynchronous Communication Finally there is the problem of eliminating the synchronization step in tradi-37tional bulk-synchronous systems [19, 21] on graphs.
+More speci cally, uneven load distribution can lead to considerable ine ciencies in the bulk synchronous setting [24].
+After all, it is the slowest machine that determines the runtime of each processing round (e.g.
+MapReduce).
+Asynchronous schemes, on the other hand, are nontrivial to implement as they often require elaborate locking and scheduling strategies.
+Large-scale matrix factorization has received considerable attention in data mining and machine learning communities in recent years due to the proliferation of tasks such as recommendation (e.g., a matrix of movies vs. users), news personalization (users vs. news items), or keyword search (terms vs. documents).
+Several sequential and distributed algorithms have been proposed to tackle this problem over the last four years [11, 17, 25, 26, 16].
+We use factorization as our test case and we relate to these approaches in Section 8.
+We address the issues raised in the previous section in a systematic fashion.
+To validate our strategy we apply our algorithm to a social graph with 200 million vertices and
+ ized in parallel on hundreds of computers performing distributed asynchronous optimization.
+We tackle the issues raised above as follows: Graph Partitioning We propose a streaming algorithm for graph partitioning to ensure that the number of neighbors for any given partition does not exceed a machine-speci c capacity limit.
+The algorithm proceeds by greedily adding vertices to partitions such as to minimize the amount of additional storage required per vertex.
+Network Topology The data layout problem at runtime can be expressed as a quadratic assignment problem (QAP), which is NP-hard.
+We experimentally show that explicitly addressing the data layout problem by (approximately) solving the QAP signi cantly minimizes the cost of communication.
+Variable Replication We resort to a global consensus formulation [6, 9]: we create local copies of global variables and optimize over the slightly relaxed optimization problem jointly.
+Asynchronous Communication Unlike classical MM [6] or ADMM [9] methods for relaxation which alternate between explicit local and global steps for optimization, we perform integrated updates.
+This eliminates an explicit global update phase.
+Global constraints are updated asynchronously and independently.
+Outline.
+Section 2 formally de nes our optimization problem and its distributed variant.
+We propose a synchronous algorithm in Section 3 and an asynchronous algorithm in Section 4.
+Section 5 discusses large-scale graph partitioning and Section 6 details a novel approach to distribute parts of the graph over cluster nodes.
+Experiments on large natural graphs are presented in Section 7, followed by a discussion of related work in Section 8, and we conclude in Section 9.
+to  nd latent (unobserved) factors associated with vertices (users) which can be used for further inference in the network.
+Furthermore, graph factorization is a test bed for considerably more sophisticated algorithms, such as nonpara-metric latent variable models.
+Hence it is highly desirable to solve the factorization problem e ciently.
+We begin by specifying our notation: We are given an undirected graph G = (V, E) with n nodes and m edges.
+In this paper, n is in the order of 108   109 vertices and m is in the order of 1010 edges, hence typically m = O(n).
+For a node v   V , denote by N(v) the set of its neighbors, that is, {u   V |(u, v)   E}.
+The adjacency matrix of G, Y   Rn n is symmetric, and our goal is to  nd a matrix Z   Rn r, with a given r (cid:28) n, such that ZZ T is close to Y in terms of observed (nonzero) entries.
+G the given graph number of nodes number of edges set of neighbors of node v Yij is the weight on edge between i and j factor matrix with vector Zi for node i idem, local to machine k  ,   regularization parameters n = |V | m = |E| N(v) Y   Rn n Z   Rn r i   Rr X (k)
+ Bk Vk Ok   Bk pairwise disjoint partitions of V {v   V |v /  Ok, u   Ok, (u, v)   E} Objective There exists a wide range of objective functions for graph reconstruction and factorization [13].
+Many of them share the property that we have vertex attributes Zi which can be used to determine whether an edge (i, j) should be established.
+This is also a consequence of the Aldous-Hoover [3] theorem.
+A discussion of this rich variety of models is beyond the scope of the current paper.
+For the purpose of demonstrating the feasibility of our model we restrict ourselves to a simple inner product model where we assume that information regarding the presence of an edge Yij can be captured e ciently via (cid:104)Zi, Zj(cid:105).
+Moreover, we impose a small amount of regularization to ensure that the problem remains well-posed even in the absence suf- cient data.
+Note that the algorithms we describe apply to a much larger family of models.
+However, for the bene t of a focused and streamlined presentation we limit ourselves to a simple regularized Gaussian matrix factorization.
+More advanced models are subject to research and will be reported elsewhere.
+We use the following objective to recover Z.
+(cid:107)Zi(cid:107)2 f (Y, Z,  ) = (1)  
+ i
+
+ (i,j) E (cid:88) (cid:0)Yij   (cid:104)Zi, Zj(cid:105)(cid:1)2 + (cid:0)Yij   (cid:104)Zi, Zj(cid:105)(cid:1)Zj +  Zi (cid:88) =   (cid:88)  (cid:0)Yij   (cid:104)Zi, Zj(cid:105)(cid:1)Zj    Zi.
+j N(i) (2) (3) The gradient of f with respect to the row i of Z is given by  f  Zi For a pair (i, j)   E this amounts to
+
+ Many social networks have an undirected graph as one of their core data structures.
+Graph factorization allows us It is straightforward to include other variables, such as per-node and common additive biases.
+Stochastic gradient descent is a common way of solving this nonconvex problem.
+Algorithm 1 gives the pseudocode for this procedure for a
+ Require: Matrix Y   Rn n, rank r, accuracy  Ensure: Find a local minimum of (1)
+ 2: t   1 3: repeat
+
+
+
+
+
+
+
+ Zi   Zi +  [(cid:0)Yij   (cid:104)Zi, Zj(cid:105)(cid:1)Zj +  Zi] Z(cid:48)   Z for all edges (i, j)   E do     1  t   t + 1 Frob    end for t single machine.
+By construction its runtime complexity is linear in the number of iterations and edges m in G.
+Distributing the Optimization Since the algorithm requires access to a matrix, the two-dimensional pattern of access will result in non-sequential I/O if the data were to be stored on disk.
+Thus, in our solution we aim to keep the data in main memory.
+Whenever both the number of vertices is large (e.g.
+108 users) and the attribute space is nontrivial (e.g.
+hundreds of bytes), it is impossible to store the full graph.
+It would take 10GB to 1TB for e cient representation.
+Hence, we need to distribute data on a cluster of workstations where each one retains parts of the global state.
+This raises some issues: such that the partial views of the graph  t on it.
+  We need to select subsets of vertices on each machine,   We need to keep solutions on subsets from diverging.
+  We need an e cient communications layer for speed.
+We achieve this by partitioning data such as to minimize the number of neighboring vertices rather than minimizing the number of edge cuts.
+For now we assume that we have a partitioning of the graph into non-overlapping clusters of nodes Ok   V such that the union Vk of each cluster with the set of its direct neighbors, Vk = Ok   Bk where Bk = {v   V |v /  Ok, u   Ok, (u, v)   E},  ts on a single machine.
+We describe a partitioning algorithm in Section 5.
+We call nodes in Ok owned and nodes in Bk borrowed by machine k. In the diagram above darker shapes represent non-overlapping partitions Ok, and lighter shapes encompassing them depict Vk, the overlapping extensions of Ok obtained by including their neighboring nodes.
+Distributed Objective Each machine can optimize the objective restricted to the cluster of nodes assigned to it, Vk, but the solutions obtained by di erent machines have to be encouraged to match on nodes which are shared between clusters, Bk.
+We borrow intuition from the theory of dual multipliers [9, 6].
+That is, we use variables X (k) on machine k to act as a proxy for Zi.
+If we were to enforce i K(cid:88) (cid:88) k=1 i Vk (cid:13)(cid:13)(cid:13)Zi   X (k) i (cid:13)(cid:13)(cid:13)2 = 0 (4) the decomposed problem would be equivalent to the original problem of solving (1).
+Since this is clearly impossible, we relax the above constraints and add them with a suitable Lagrange multiplier   to the objective.
+This yields the Lagrange function (and distributed objective) L(Y, Z, X (1), .
+.
+.
+, X (K),  ,  ) K(cid:88) k=1 = =
+
+ fk(Y, X (k),  ) +
+
+ (cid:88) (cid:0)Yij   (cid:104)X (k) i (i,j) E, i,j Vk K(cid:88) k=1   (cid:104) (cid:88) (cid:105)(cid:1)2 + i Vk , X (k) j (5) (6) i (cid:107)2(cid:105) (cid:107)Zi   X (k) (cid:88) i Vk  
+ (cid:107)X (k) i (cid:107)2.
+where fk(Y, X (k),  ) Dual ascent in the Lagrange function L with respect to   means that we end up increasing   commensurate to the extent to which the equality constraint is violated.
+That said, if we were to start with a large value of   the problem would not be numerically well-conditioned in X and Z, hence this only makes sense once we are close to optimality.
+Note that here the goal is to learn Z and the copies X (k) serve as auxiliary parameters.
+Updates in   can be carried out, e.g.
+by dual gradient ascent.
+In the following sections we will describe two approaches of optimizing this objective.
+As a baseline to solve the above optimization problem, we follow [7, 9] and use the following synchronous block-minimization strategy for minimizing L with respect to X, Z: We randomly initialize Z and set X = Z on all machines; Subsequently we alternate until convergence: Latent Parameter Update: Optimize X for  xed Z.
+This step decomposes over all machines and can be done in parallel.
+Each machine minimizes (7).
+This modi es only the local copies of X (k) i (cid:88) for all i   Vk
+
+   i Vk (cid:107)Zi   X (k) i (cid:107)2 (7) minimize X(k) fk(Y, X (k),  ) + These updates are analogous to standard matrix factorization and can be obtained using stochastic gradient descent (SGD) with the following gradient for X (k) : i =   (cid:88) (cid:0)Yij   (cid:104)X (k) i (cid:105)(cid:1)X (k) j , X (k) j  f  X (k) i (8) j N(i) +  X (k) i +  (X (k) i   Zi).
+Require: Matrix Y   Rn n, rank r, accuracy  Ensure: Find a local minimum of (5) over X and Z
+
+ 3: repeat
+
+
+
+
+ Z(cid:48)   Z for all k do send Zvx to machine k for all k do receive X (x) from machine k 9: until(cid:80) i (cid:107)Z(cid:48) i   Zi(cid:107)2    Receive global factors Zvk and match X (k) to it repeat
+
+ 12: repeat
+
+
+
+
+
+
+ X (k)(cid:48)   X (k) for all nodes i   vk do update X (x) i (cid:107)X (k)(cid:48) i (cid:107)2    Send X (k) to the global server until(cid:80) i   X (k) i using (8) Latent Synchronizer Update: A second phase minimizes Z given X.
+This is a global update step: K(cid:88) (cid:104) k=1   (cid:88) i Vk i (cid:107)2(cid:105) (cid:107)Zi   X (k) (9) minimize
+
+
+ This term has a closed form solution, simply by setting Zi to the average of each machine s local copy.
+In other words, the di erent copies of each latent factor are averaged to produce a new Z which is again distributed to all machines.
+Algorithm 2 describes a client-server architecture which can be easily mapped to MapReduce.
+The drawback of the synchronous optimization procedure is that at each step, all machines must wait until every machine has  nished computation.
+Consequently the slowest machine will determine the execution speed of the algorithm   a problem known as the curse of the last reducer [24].
+While the synchronous variant has merit in terms of being easy to implement, it su ers from rather middling speed of convergence.
+This is due to both the systems-speci c issues of having to wait for the slowest machine and the fact that aggressive synchronization makes for slow convergence.
+The key idea is to carry out stochastic gradient descent on X (k) and Z jointly.
+That is, we repeat the following steps in machine k: pick a node i; update its factors X (k) , and its corresponding global versions Zi and repeat until convergence.
+The part of the gradient for node Zi restricted to its local version at machine k, X (k) , is given by i (cid:104)  f  Zi (cid:105) i X (k) i = (Zi   X (k) i ).
+(10) There are several di culties with the above approach.
+First, the global factors Zi are not stored in machine k and might i be stored in a rather distant machine.
+Thus a naive implementation of this idea would proceed as follows: First pick node i in machine k, obtain its global version Zi from the global server and lock it, update X (k) and Zi using a gradient step with the gradient from (10), send the updated Zi to the global server and unlock it.
+Clearly, this approach is rather ine cient and would be slower than the synchronous version described in Section 3.
+A possible solution is for machine k to cache the value of the global variable locally and use it while refreshing its cache from the global server periodically.
+If we let Z (k) denote the cached value of the global variable Zi at machine k, then the asynchronous method proceeds as follows: For each node i in machine k,  rst update X (k) using i i =   (cid:88) (cid:0)Yij   (cid:104)X (k) i (cid:105)(cid:1)X (k) j , X (k) j  f  X (k) i j N(i) +  X (k) i +  (X (k) i   Z (k) i (11) ).
+Now we still need to update the value of the global variable and refresh the local copy of the global variable.
+Before specifying these details, we  rst describe the architecture and how the global variables are distributed across machines, and then give the full algorithm in Section 4.3.
+Recall that we assume to have a suitable partitioning of the graph into K partitions which are mapped to K machines.
+Each machine k   {1 .
+.
+.
+K} runs a client processing the nodes assigned to it.
+Edge information via Yij is ingested by optimizer threads in parallel.
+An updater thread incorporates the changes using (11) to shared memory.
+This decoupling is useful since this way the optimizer threads, which are computationally more expensive, do not need to acquire write locks to incorporate changes.
+Instead, all writes are delegated to a separate thread.
+Occasionally checkpoints are committed to  le.
+This ensures fault tolerance.
+Each client holds both the local copy X (k) and the cached values of the global variables, Z (k) .
+The synchronizer thread takes care of refreshing the cached copies of the global variables periodically.
+It executes a gradient descent step on Z using (10).
+The overall client architecture resembles that of [1, 23], however the modules here execute di erent functions as described in Section 4.3.
+i i To distribute the global variables among a set of servers we use the ICE asynchronous RPC server by www.zeroc.com.
+Each machine k executes a client and a server program.
+We distribute the global variables among the servers such that the server at machine k is assigned the global variables corresponding to the nodes owned by the partition k, Ok.
+This enables e cient communication since, among all clients, client k has to be the one requesting global copies of nodes in Ok most frequently when updating its local copies.
+Note that other clients will also require access to nodes in Ok if these nodes appear in their borrowed sets.
+It is important here to examine the amount of replication in our solutions: As {O1, .
+.
+.
+, OK} are assumed to be non-overlapping k |Ok|.
+Denote by k |Bk| the total number of borrowed nodes.
+For each client k, we need to keep 2(|Ok| +|Bk|) copies of factor partitions of G, we have n = |V | = (cid:80) N := (cid:80) 40end for Update X (x) i i   Zi using the gradient from (11) for all nodes i   Vk do Algorithm 3 Asynchronous Distributed Optimization Require: Matrix Y   Rn n, rank r, accuracy  Ensure: Find a local minimum of (5) over X and Z
+
+
+ i   Zi
+ i   Z (k)
+ 6: repeat
+
+
+
+
+ 12: repeat for all nodes i   Vk do
+
+
+
+
+
+
+
+
+ to the Global server i   Zi Send X (k) i end for ) i i vectors: one for the local copies X (k) and one for the cached i , for i   Ok   Bk.
+This copies of the global variables, Z (k) amounts to 2n + 2N variables in Rr.
+We then add to them n global variables, which makes the total memory consumption (3n+2N )r. This is the same order of magnitude (albeit slightly more) as for the synchronous optimizer in Section 3.
+The details of the optimization strategy are given in Algorithm 3.
+The optimizer thread in the client is rather straightforward.
+Hence we focus here on the synchronization threads: Their goal is to execute the gradient step over the global variable Zi and to refresh the local copies of the global variables, Z (k) .
+We use asynchronous communication as follows: Each client executes a thread that loops through the client local memory storing X (k)i.
+For each node i, it sends this local copy to the server holding the global variable Zi.
+When the server receives this values, it performs a gradient step using (10) and returns the new value of Zi.
+Upon reception of this value, the client synchronization thread updates the cached copy Z (k) i with this new value which is then used by the optimizer thread.
+All these steps are done in parallel.
+This is analogous to the lock-free SGD [22], albeit in a distributed setting.
+i We denote by the synchronization time the time needed to move the local copies in machine k to the global servers and receive a response from the global sever.
+This is the time needed to perform a synchronization pass.
+Niu et al. [22] showed that the convergence rate of the lock-free algorithm is inversely proportional to the synchronization time, and the number of overlapped nodes.
+Our goal is thus to accelerate convergence as much as possible, and we tackle this problem by partitioning the graph in order to minimize the number of overlapped nodes (Section 5) and by allocating partitions to machines taking into consideration the inter-partition overlap which dictates the communication bandwidth needed between any two partitions (Section 6) and thus minimize synchronization time.
+As discussed above, we need an e cient algorithm to partition very large graphs into portions that are small enough to  t onto individual machines.
+For our purpose it matters that we perform vertex partitioning of the graph, that is, we need to minimize the number of neighboring vertices rather than the number of edges that are cut: The bulk of the computational cost is incurred by updating the local factors X (k) and updating the global factors Zi.
+Both updates require access to the up-to-date value of the global factor, thereby inducing cross-node communication.
+This increases the cost of the computation.
+For all nodes {u   Ok| v   N(u), v   Ok} that reside on the same machine with all their neighbors, the changes a ect only local factors - no synchronization with the global factors outside the same machine is required1.
+i In summary, we would like to  nd a partitioning that reduces the total number of borrowed nodes, that is, the sum of |Bk| over all partitions k. Moreover, since the nodes in Bk are replicated across machines and as the number of nodes in each partition is constrained by the size of the main memory, reducing their number increases the throughput of the whole architecture and requires fewer partitions.
+Ideally, each machine would hold one or several connected components of the graph, thereby avoiding communication with other machines.
+This would require the largest connected component and all the variables associated with it to easily  t on one machine.
+However, this is unlikely to happen in natural graphs, in which the largest connected component usually contains a very large fraction of nodes: In the email graph used in our experiments the largest connected component contains more than 90% of all nodes.
+More formally, we can postulate the partitioning of the graph nodes V into {O1, .
+.
+.
+, OK} with all Ok pairwise disk Ok = V , as a constrained optimization prob-joint and (cid:83) lem: K(cid:88) |Bk| minimize
+ subject to Oi   Oj =   and |Ok   Bk|   capacity k=1 (12) Such balanced graph partitioning is an NP-hard problem [5].
+There exist e cient heuristics, such as METIS [15], and its parallel version, ParMETIS, that can be con gured to return partitions with size not exceeding a given threshold.
+Unfortunately ParMETIS did not scale to 10 Billion edges.
+To address this we propose two algorithms: a  at greedy partitioning and a faster hierarchical greedy strategy.
+Assume that the graph is stored on a disk as an adjacency list with each line containing a vertex and a list of its
+ global factor of node i, if i is owned by a given machine, say m, and not borrowed by any other machine, then the global factor will reside on machine m and be only updated by machine m, which speeds up convergence.
+of H splits.
+Then we re-partition each of the H splits.
+Random (HierRandom) We randomly split the nodes of the graph into H parts and repartition the result.
+Locality Sensitive Hashing (HierLSH) We use LSH [10] to group nodes into H partitions.
+We consider each row of the connectivity matrix as a vector and hash it into a b-dimensional bitvector with b (cid:28) n using the inner product representation of [10].
+Subsequently we partition the hash range in H buckets and partition based on proximity to the buckets.
+This operation is very fast as it only involves bit-wise comparisons.
+So far we discussed o ine performance optimization, that is, optimization prior to requesting computers from a resource pool.
+Many server centers have nonuniform network layout, that is, the bandwidth within a rack is considerably higher than between racks, due to oversubscription of top-of-rack routers.
+Hence it pays to ensure that partitions with the largest overlap share the same rack whereas more loosely connected partitions are best relegated to di erent racks, as described in Figure 1.
+As we shall see, this leads to a quadratic assignment problem.
+While such problems are NP-hard, it pays to make at least some progress towards optimality rather than picking an entirely random con guration.
+More formally, the communication required between two machines holding Vk and Vl respectively is given by the amount of updates on nodes belonging to one partition and borrowed by the other.
+That is, it amounts to Ckl = |Ok   Bl| + |Ol   Bk| for k (cid:54)= l and Ckk = |Ok| + |Bk|.
+It follows by Gerschgorin s theorem [12] that C (cid:23) 0 since it is diagonally dominant.2 The second matrix of interest in our case is the communication time matrix.
+The latter is given by the inverse point-to-point bandwidth.
+Dkl =
+ bandwidth(k, l) for k (cid:54)= l and Dkk = 0 otherwise.
+Hence the aggregate time required to synchronize all vertex partitions is given by(cid:88) DklCkl = tr DC (13) kl Now denote by   a permutation matrix encoding an assignment of partitions Vk to machines l, i.e.,  kl = 1.
+With slight abuse of notation we also denote this by  (k) = l. In this case the aggregate time required to synchronize data becomes machines is given by T ( ) = tr C D  (cid:62) .
+(14) Maximizing T ( ) amounts to a quadratic assignment problem and is NP-hard in general, even for approximations.
+Nonetheless, optimizing for   is always better than using the random con guration that the system assigns.
+We use an o -the-self heuristic QAP solver as a preprocessing step.
+timization.
+However, it just serves to make the optimization problem more tractable since it will allow us to lower-bound the arising quadratic assignment problem.
+Figure 1: Left: nodes correspond to overlapping partitions Vk = Ok   Bk of the graph.
+The thickness of the edges is commensurate with how much is shared between nodes |Vi   Vj|.
+Right: two racks with 3 busy (shaded) and 3 available machines each.
+Communication time between racks is slower than within a rack.
+Middle: assignment of the partitions to machines to minimize communication cost.
+neighbors.
+Our algorithm consumes this list in a streaming fashion, requiring only a single pass.
+It proceeds as follows:   We keep a set of open partitions in memory, corresponding to Ok and Bk for k   {1, .
+.
+.
+K}.
+These are dynamically updated as we receive data.
+  A partition is considered open if |Bk|+|Ok|   capacity.
+That is, if it can still accommodate additional nodes.
+Note that once a partition k is closed, the sets Bk and Ok remain automatically  xed since Bk already contains all neighbors of Ok.
+  Once a vertex i is read from  le we have to assign it to an open partition that will not over ow if we add i to it.
+We  rst compute the overhead of adding node i to each open partition, say partition k, as follows: Node i would increase the size of Ok by one.
+However, Bk would change based on how many nodes from the neighborhood of i, N(i), are already in k. We count the extra nodes added to Bk as a result of adding i to k for all open partition k and we choose to add node i to partition k with the minimum increase in Bk.
+In case of a tie, we favor the partition with the smallest number of total borrowed nodes, |Bk|.
+  If no open partition can accommodate node i, for instance, if adding i would make any of the open partitions over ow, we increase the total number of partitions in memory by  K.
+For e ciency, we maintain Ok and Bk as bit vectors of length n where n is the total number of nodes in the graph.
+We implemented a multi-threaded version of the algorithm on an 8-core machine.
+In our experiments, it took 166 minutes to partition a graph with 200 million nodes and 10 billion edges.
+It results in 150 partitions, each of them holding at most 3 million nodes.
+Note that any advances in the area of vertex partitioning graphs can be utilized in our framework.
+The dominant cost in generating the partitioning is to compute the set of candidate improvements for each vertex.
+This requires search over all Ok and Bk for all neighbors of a given vertex.
+Hence, if the total number of partitions is small, should be able to perform this step faster.
+This suggests a hierarchical extension of the above  at algorithm: First partition into a set of larger supernodes and then repar-tition the latter again.
+We considered the following variants: V1V5V2V4V3Rack 1Rack 2V1V2V3V4V5Machine 1.3Machine 1.5Machine 1.6Machine 2.1Machine 2.4Machine 2.6Machine 1.3Machine 1.5Machine 1.6Machine 2.4Machine 2.142To summarize, our architecture proceeds as follows: We  rst partition the graph into K partitions.
+Then we obtain K machines from the cloud.
+We query the bandwidth between each pair of machines and then let a single machine solve the QAP above to determine the optimal partition layout.
+This layout is then propagated to all machines to let each machine know it assigned partition.
+Afterwards, Algorithm 3 is executed until convergence.
+The time needed to solve the QAP is negligible and in the order of a few seconds.
+To demonstrate our ideas we recorded the volume of email exchanges between all pairs of nodes in a subset of users of Yahoo!
+Mail during a nondisclosed period of time.
+The graph contains only the users who sent at least one mes-sage/email during the period under consideration.
+Edges Yij = Yji = 1 and between users i and j were added if user i contacted user j.
+The weight of the edge is commensurate with the amount of communications between the users.
+The graph has 200 million nodes and 10 billion edges.
+The largest connected component contains more than 90% of all nodes.
+The task we consider in our experiments is to predict the volume of email exchange between held-out test pairs of users selected uniformly at random from the whole graph.
+It is important to stress that we use this task purely as a test bed for our framework.
+A plethora of methods for solving this speci c task exist and will be studied in subsequent work.
+The point of our experiments is simply to show that the distributed factorization framework is e ective.
+To evaluate convergence we compare three systems: a single machine setup, a synchronous parallel implementation and an asynchronous implementation.
+Single Machine is used as a baseline on a subset of the graph since the entire graph would not  t into a single computer.
+It employs the standard matrix factorization algorithm described in Section 2.
+Baseline: Parallel Synchronous implements the parallel baseline synchronous algorithm of Section 3.
+This baseline is similar to ADMM of [9].
+For fairness, to avoid the wasteful overhead of Hadoop s MapReduce framework we used the same architecture as described in Section 4.
+This has the advantage of keeping graph data local between iterations.
+Moreover it eliminates the need to allocate mappers at each iteration, which is an expensive operation.
+Parallel Asynchronous implements the asynchronous algorithm described in Section 4.
+Unless otherwise stated, we use the  at streaming partitioning algorithm from Section 5.2 and solve a quadratic assignment problem (QAP) for improved task layout over machines.
+Unless otherwise stated, we use r = 50 as the number of factors, and tune the regularization parameters and learning rate on a small subset of the graph using the single machine baseline.
+The experiments aim to answer the following:   How does the quality of the solution of the distributed algorithm compare to that of the single-machine algorithm?
+Figure 2: Convergence results on a subgraph of 32 Million nodes using 20 factors.
+Solid line: solution quality obtained by a single machine.
+Dashed line: solution quality obtained by asynchronous optimization using 32 machines.
+Figure 3: Convergence for synchronous (baseline) vs. asynchronous optimization using the full graph.
+Figure 4: Scaling behavior as a function of the amount of data.
+For a  xed number of machines the time per epoch increases linearly whereas for  xed amount of data per machine time remains constant.
+  How does the algorithm scale in terms of computation   What is the added value of the data layout algorithm?
+  What is the e ect of the quality of graph partitioning and communication with increasing graph size?
+on the performance of the system?
+To assess the quality of the solution obtained from the asynchronous multi-machine algorithm, we compare its test error over the held-out dataset to the error obtained using the single-machine algorithm.
+To be able to perform optimization in a single machine, we randomly chose a subgraph of 32 million nodes and used 20 factors to be able to  t it in the main memory of the machine.
+Figure 2 presents the evolution of the test error as training proceeds in both systems.
+While the convergence of the test error in the  rst minutes seems to be faster in a single machine, later this changes dramatically and the multi-machine asynchronous setting achieves convergence more than an order of magnitude faster than the single-machine scheme.
+The reason for this initial behavior is due to the time needed to initially synchronize the factors across machines.
+The  -nal test errors achieved by both methods are identical.
+To compare the synchronous and asynchronous (both multi-machine) alternatives we use the full 200M graph and set the number of factors to 50.
+Figure 3 shows the convergence curve of the objective function (i.e., the training error) of the two approaches3.
+As we can see from this  gure, the asynchronous algorithm is almost an order of magnitude faster than the synchronous version.
+As noted earlier, the reason for this happening is that the synchronous algorithm is as fast as the slowest machine due to the barrier e ect enforced before updating the global factors in each iteration.
+The asynchronous algorithm does not su er from this e ect.
+Finally, we note that the quality of the solution obtained by the two systems is again almost indistinguishable.
+We  rst assess how the runtime changes as a function of the graph size.
+Linear scaling is nontrivial   many algorithms do not slow down even if the amount of resources scales with the problem size.
+We show that our algorithm indeed scales linearly up to graphs with 200 million nodes.
+Figure 4 presents the time required for a single iteration of stochastic gradient descent (i.e., traverse all edges and update parameters of their endpoints).
+For each point in Figure 4 we run  at streaming partitioning algorithm.
+The number of machines scales linearly with the number of nodes in the graph.
+As can be seen from Figure 4, the runtime for a single machine is linear in the amount of data.
+This is expected, as the complexity of the stochastic gradient descent is linear in the number of edges in the graph G, and natural graphs are often sparse.
+Note that we cannot handle more than 32 million vertices on a single machine.
+On multiple machines, we observe a constant line, indicating that our architecture can handle hundreds of millions of vertices without any problem.
+For all graph sizes up to 32 millions of nodes, the test
+ error since it is computed using the global factors and the comparison is done using the same number of factors, so there is no danger of over tting.
+Figure 5: The e ect of data layout optimization on the time to perform a synchronization pass over all nodes in a given machine, shown as a histogram over all machines.
+Top: without optimization.
+Bottom: with data layout optimization.
+error obtained using single and multi-machine settings was indistinguishable, as can be seen in Figure 2.
+Second, we study the e ect of the data layout scheme.
+Figure 5 shows the distribution of the synchronization time across clients with and without solving the quadratic assignment problem to minimize the synchronization time.
+We see that without optimization the synchronization time is bi-modal.
+There are a few clients that are assigned partitions with relatively few nodes to be synchronized, and therefore no matter where these partitions are allocated, their synchronization time is small while other closely connected ones end up in di erent racks.
+By solving the QAP, we move clients with demanding communication constraints in close proximity with each other.
+This smoothes out the total synchronization time, thus accelerating convergence.
+Finally, we study the e ect of graph size and number of factors on the synchronization time.
+From Figure 6, we see that as the number of factors increases, synchronization rates do not get signi cantly a ected, but computation time per iteration increases almost linearly (due to large di-mensionality).
+Thus, we can synchronize more often per iteration, which will again bring variables up to date faster.
+As we simultaneously linearly increase the number of machines (4, 8, 16 etc) and the graph size (4   106, 8   106, 16   106, etc), the average time to synchronize a single ma chine does not increase too rapidly, thanks to solving the QAP: this is the case since by exploiting local graph structure the aggregate network load is sublinear in the graph
+ scalability.
+Table 1: E ect of the partitioning algorithm on variable replication and synchronization time.
+Method Flat Hierarchical HierLSH HierRandom Borrowed nodes Partitioning (minutes)
+
+
+
+ (millions)
+
+
+
+ Sync time (seconds)
+
+
+
+ it takes to converge to a feasible solution on which the local factors agree with the global factors.
+On the other hand, as we noted in Section 5, minimizing the total number of borrowed nodes is an NP-hard problem, thus there is a trade-o  between the time we spend to get a good partitioning of the nodes and its quality.
+We  rst study the performance of the streaming algorithm discussed in Section 5.
+Table 1 provides the time needed for partitioning, the quality of the partitioning and the time it takes to perform a single synchronization pass using this partitioning in the asynchronous setting.
+  For the hierarchical algorithms we use two levels with   For the LSH variant, we used a hash of 128 bits.
+10 splits at the  rst level.
+This table shows that random and LSH schemes are very fast but result in poor performance and slow synchronizing rates.
+The hierarchical algorithm achieves almost 4-fold speedup over the  at algorithm but yields a partitioning with more borrowed nodes and slower synchronization rates.
+To help better understand this trade-o  between  at and hierarchical partitioning, we show in Figure 7 the convergence curve of the training error of the asynchronous algorithm when using each of them.
+As we can see from this  gure, the  at algorithm results in a better partitioning with fewer borrowed nodes and, as such, enables faster convergence and better quality of the  nal model.
+On the test data we found that the solution obtained by using the output form the hierarchical algorithm is 6.4% worse than the solution obtained when using the output of the  at partitioning algorithm.
+Finally while we were not able to run METIS or other partitioning algorithms on our large scale graphs, we plan in the future to combine METIS [15] or any alternative partitioning algorithm such as [4] with our hierarchical algorithm so that we start to use these algorithms once the graph reaches a manageable size.
+There exist a number of approaches related to the algorithms proposed in the present paper.
+They fall into three categories: collaborative  ltering, distributed latent variable inference algorithms, and graph partitioning algorithms.
+Collaborative Filtering Several recent papers addressed the rather related but not identical problem of distributed matrix factorization mostly in collaborative  ltering settings [11, 17, 25, 26, 16].
+Note that most of these approaches rely on synchronous approaches while, as we showed in this paper, asynchronous approaches are faster.
+Second, several of the algorithms proposed for distributed collaborative  ltering would not be as e ective for graph factorization as the rows and columns share the same factors which limits the admissible permutations for block-based optimization Figure 6: The time it takes to make a single synchronization pass over the nodes in a given machine as a function of the number of factors, and as a function of the graph size.
+Note the essentially linear dependency in terms of the payload.
+Furthermore note that the increase is sublinear in terms of the size of the graph.
+This follows from locality e ects.
+Figure 7: Convergence for  at and hierarchical partitioning, showing the bene t of preprocessing.
+We conclude our experimental analysis by studying the effect that the quality of graph partitioning has on the performance of our system.
+Intuitively, a good partitioning algorithm should minimize the number of borrowed nodes.
+This is important since the larger the number of borrowed nodes, the harder it is to bring them to agreement and the longer
+ throughput with [11], using their published numbers we note that their algorithm on average took 72 seconds per a single iteration over the Net ix data that has 100 Million nonzero entries using 64 machines with 50 factors (a throughput of 21.7K entries per machine per second).
+However, our asynchronous algorithm took 40 seconds per a single iteration over 10 Billion nonzero entries using 200 machines with 50 factors (a throughput of 1.25 Million entries per machine per second).
+Moreover, we also note that the famous alternating least squares (ALS) method for matrix factorization [26] can not be applied in our setting e ciently out of the box without modi cation as the rows and columns of the adjacency matrix of the graph represent the same object.
+Graph Partitioning [4] addressed the problem of overlapping clustering for distributed computation which shares some of the  avor of our graph partitioning algorithm.
+However, the goal in [4] was to facilitate random walk models which results in a di erent algorithm than the one we gave in Section 5.
+Moreover, while the authors in [4] only provided simulation results as a proof of concept, here we give a full implementation on a large-scale natural graph orders of magnitude larger.
+Distributed Latent Variable Models Closest in spirit to the present work are [1, 2] and [23].
+E ectively, they are precursors to the present approach in describing a scalable generic architecture for latent variable models.
+While our client architecture slightly overlaps with [1] in terms of the module structure inside each client, the semantics of each module is not the same and the semantics of the communication protocol is totally different: here the messages represent gradients while in [1] the messages perform a  aggregation on an Abelian group.
+In fact, experiments using Abelian group updates showed that the algorithm diverges on natural graphs and that a dual decomposition as described in this paper is vital.
+Finally, we address many practical issues such as graph partitioning and data layout.
+Finally, graphlab.org provides a general framework for analyzing large graphical models.
+The version described in [18] allows for e cient computation and scheduling algorithms whenever the degree of vertices is not too high.
+Very recently (October 2012) a paper describing a new version of GraphLab [14] which provides functionality for dealing with high degree vertices was published.
+This makes it an interesting platform for designing large scale graph factorization algorithms.
+In other words, this provides an attractive tool to implement the algorithms described in the present paper.
+Due to the recency of this relevant work we did not compare our native implementation with one relying on GraphLab generic primitives.
+4
+ is faster than an implementation using GraphLab generic primitives.
+As an anecdotal evidence, our native asynchronous LDA implementation [1] is 33% faster than an implementation based on GraphLab generic primitives   personal communication with the GraphLab team.
+While clearly the task here is di erent, we plan though to compare our native implementation with a GraphLab-based implementation for the graph factorization task in the future.
+In this paper we addressed the problem of factorizing natural graphs.
+We gave an augmented representation of the factorization problem which is amenable to distributed computation and we described two algorithms for optimizing the resulting objective function.
+Our contributions are the following:   We provide an e cient algorithm for vertex partitioning the graph and demonstrate that it is important.
+  We describe automatic task layout at runtime and   Asynchronous optimization is highly bene cial for scal-able inference, providing an order of magnitude speedup.
+  We perform factorization on one of the largest natural show that it is e cient in practice.
+user graphs currently available.
+In summary, we describe e cient algorithms and experiments at a scale previously not achievable for distributed inference and factorization.
+Future work will see improvements in the graph partitioning algorithm.
+Moreover, we plan to address many further graph-based latent variable models by integrating the techniques in this paper with the generic latent variable architecture in [1].

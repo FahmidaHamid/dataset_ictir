@@ -1,0 +1,1926 @@
+Efﬁcient Search Engine Measurements
+
+Ziv Bar-Yossef∗
+
+Dept. of Electrical Engineering
+Technion, Haifa 32000, Israel
+
+Google Haifa Engineering Center, Israel
+
+zivby@ee.technion.ac.il
+
+ABSTRACT
+We address the problem of measuring global quality met-
+rics of search engines, like corpus size, index freshness, and
+density of duplicates in the corpus. The recently proposed
+estimators for such metrics [2, 6] suﬀer from signiﬁcant bias
+and/or poor performance, due to inaccurate approximation
+of the so called “document degrees”.
+
+We present two new estimators that are able to overcome
+the bias introduced by approximate degrees. Our estimators
+are based on a careful implementation of an approximate
+importance sampling procedure. Comprehensive theoreti-
+cal and empirical analysis of the estimators demonstrates
+that they have essentially no bias even in situations where
+document degrees are poorly approximated.
+
+Building on an idea from [6], we discuss Rao Blackwelliza-
+tion as a generic method for reducing variance in search
+engine estimators. We show that Rao-Blackwellizing our
+estimators results in signiﬁcant performance improvements,
+while not compromising accuracy.
+
+Categories and Subject Descriptors: H.3.3: Informa-
+tion Search and Retrieval.
+General Terms: Measurement, Algorithms.
+Keywords: search engines, evaluation, corpus size estima-
+tion.
+
+INTRODUCTION
+
+1.
+In this paper we focus on methods for ex-
+Background.
+ternal evaluation of search engines. These methods interact
+only with the public interfaces of search engines and do not
+rely on privileged access to internal search engine data or on
+speciﬁc knowledge of how the search engines work. External
+evaluation provides the means for objective benchmarking
+of search engines. Such benchmarks can be used by search
+engine users and clients to gauge the quality of the service
+they get and by researchers to compare search engines. Even
+search engines themselves may beneﬁt from external bench-
+marks, as they can help them reveal their strengths and
+weaknesses relative to their competitors.
+
+Our study concentrates on measurement of global qual-
+ity metrics of search engines, like corpus size, index fresh-
+∗Supported by the European Commission Marie Curie In-
+ternational Re-integration Grant.
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2007, May 8–12, 2007, Banff, Alberta, Canada.
+ACM 978-1-59593-654-7/07/0005.
+
+Maxim Gurevich
+
+Dept. of Electrical Engineering
+Technion, Haifa 32000, Israel
+gmax@tx.technion.ac.il
+
+ness, and density of spam or duplicate pages in the corpus.
+Such metrics are relevance neutral, and therefore no human
+judgment is required for computing them. Still, as external
+access to search engine data is highly restricted, designing
+automatic methods for measuring these quality metrics is
+very challenging. Our objective is to design measurement
+algorithms that are both accurate and eﬃcient. Eﬃciency
+is particularly important for two reasons. First, eﬃcient al-
+gorithms can be executed even by parties whose resources
+are limited, like researchers. Second, as search engines are
+highly dynamic, eﬃcient algorithms are necessary for cap-
+turing instantaneous snapshots of the search engines.
+Problem statement. Let D denote the corpus of doc-
+uments indexed by the search engine. We focus on mea-
+surement of metrics that can be expressed as either sums or
+averages over D. Given a target function f : D → R, the
+sum metric and the average metric corresponding to f are:
+
+sum(f ) , Xx∈D
+
+f (x),
+
+avg(f ) , sum(f )
+
+|D|
+
+.
+
+(In fact, we address sums and averages w.r.t. arbitrary mea-
+sures. See more details in Section 2.) Almost all the global
+quality metrics we are aware of can be expressed as sum or
+average metrics. For example, the corpus size, |D|, is the
+sum of the constant 1 function (f (x) = 1 for all x); the
+density of spam pages in the corpus is the average of the
+spam indicator function (f (x) = 1, if x is a spam page, and
+f (x) = 0, otherwise); the number of unique documents in
+the corpus is the sum of the inverse duplicate-count function
+(f (x) = 1/dx, where dx is the number of duplicates x has,
+including x itself). Many other metrics, like search engine
+overlap, sizes of subsets of the corpus, or index freshness
+can be expressed as sums or averages as well. We allow also
+sums and averages of vector-valued functions f : D → Rm,
+which capture metrics like the distribution of pages in the
+corpus by language, country domain, or topic.
+
+A search engine estimator for sum(f ) (resp., avg(f )) is a
+probabilistic procedure, which submits queries to the search
+engine, fetches pages from the web, computes the target
+function f on documents of its choice, and eventually out-
+puts an estimate of sum(f ) (resp., avg(f )). The quality of
+an estimator is measured in terms of its bias and its variance.
+The eﬃciency of an estimator is measured in terms of the
+number of queries it submits to the search engine, the num-
+ber of web pages it fetches, and the number of documents
+on which it computes the target function f .
+State of the art. Brute-force computation of search qual-
+ity metrics is infeasible, due to the huge size of the corpus
+
+WWW 2007 / Track: SearchSession: Search Potpourri401and the highly restricted access to it. Every user is limited to
+a few thousand queries per day and only the top k matches
+are returned. (k is the search engine’s result set size limit;
+e.g., k = 1, 000 for Google and Yahoo!) If a query “over-
+ﬂows”, i.e., has more than k matches, the user has no way
+of accessing results beyond the top k. Thus, fetching all the
+pages in a search engine’s corpus is practically impossible.
+
+An alternative to brute-force computation is sampling.
+One samples random pages from the corpus and uses them
+to estimate the quality metrics. If the samples are unbiased,
+then a small number of them is suﬃcient to obtain accurate
+estimations. The main challenge is to design algorithms that
+can eﬃciently generate unbiased samples from the corpus us-
+ing queries to the public interface. Bharat and Broder [4]
+were the ﬁrst to propose such an algorithm. The samples
+produced by their algorithm, however, suﬀered from severe
+bias towards long, content-rich, documents. In our previous
+paper [2], we were able to correct this bias by proposing a
+technique for simulating unbiased sampling by biased sam-
+pling. To this end, we applied several stochastic simulation
+methods, like rejection sampling [24] and the Metropolis-
+Hastings algorithm [22, 13]. Stochastic simulation, however,
+incurs signiﬁcant overhead: in order to generate each unbi-
+ased sample, numerous biased samples are used, and this
+translates into elevated query and fetch costs. For instance,
+our most eﬃcient sampler needed about 2,000 queries to
+generate each uniform sample.
+
+In an attempt to address this lack of eﬃciency, we also
+experimented [2] with importance sampling estimation. Im-
+portance sampling [21, 16] enables estimation of sums and
+averages directly from the biased samples, without ﬁrst gen-
+erating unbiased samples. This technique can signiﬁcantly
+reduce the stochastic simulation overhead. Nevertheless, our
+estimators in [2] used stochastic simulation twice (once to se-
+lect random queries and once to select random documents),
+and we were able to use importance sampling to eliminate
+only the latter of the two. Furthermore, our importance
+sampling estimator was still wasteful, as it used only a sin-
+gle result of each submitted query and discarded all the rest.
+Broder et al. [6] have recently made remarkable progress
+by proposing a new estimator for search engine corpus size.
+Their estimator (implicitly) employs importance sampling
+and does not resort to stochastic simulation at all. Moreover,
+the estimator somehow makes use of all query results in
+the estimation and is thus less wasteful than the estimators
+in [2]. Broder et al. claimed their method can be generalized
+to estimate other metrics, but have not provided any details.
+
+The degree mismatch problem. A prerequisite for ap-
+plying importance sampling is the ability to compute for
+each biased sample an importance weight. The importance
+weights are used to balance the contributions of the diﬀerent
+biased samples to the ﬁnal estimator.
+
+In the estimators of [2, 6], computing the importance
+weight of a sample document translates into calculation of
+the document’s “degree”. Given a large pool of queries (e.g.,
+“phrase queries of length 5”, or “8-digit string queries”), the
+degree of a document w.r.t. the pool is the number of queries
+from the pool to whose results x belongs. As the estimators
+of [2, 6] choose their sample documents from the results of
+random queries drawn from a query pool, these samples are
+biased towards high degree documents. Document degrees,
+therefore, constitute the primary factor in determining the
+importance weights of sample documents.
+
+As importance weights (and hence degrees) are computed
+for every sample document, degree computation should be
+extremely eﬃcient. Ideally, it should be done based on the
+content of x alone and without submitting queries to the
+search engine. The above estimators do this by extracting
+all the terms/phrases from x and counting how many of them
+belong to the pool. The resulting number is the document’s
+predicted degree and is used as an approximation of the real
+degree.
+
+In practice, the predicted degree may be quite diﬀerent
+from the actual degree, since we do not exactly know how the
+search engine parses documents or how it selects the terms
+by which to index the document. Moreover, we do not know
+a priori which of the queries that the document matches
+overﬂow; the document may fail to belong to the result sets
+of such queries if it is ranked too low. These factors give rise
+to a degree mismatch—a gap between the predicted degree
+and the actual degree. The degree mismatch implies that the
+importance weights used by the estimators are not accurate,
+and this can signiﬁcantly aﬀect the quality of the produced
+estimates.
+
+In [2], we proved that if the density of overﬂowing queries
+among all the queries that a document matches has low vari-
+ance, then the bias incurred by degree mismatch is small.
+Broder et al. [6] have not analyzed the eﬀect of degree mis-
+match on the quality of their estimations.
+
+Several heuristic methods have been used by [2, 6] to over-
+come the degree mismatch problem. In order to reduce the
+eﬀect of overﬂowing queries, a pool of queries that are un-
+likely to overﬂow was chosen ([2] used a pool of phrases of
+length 5, while [6] used a pool of 8-digit strings). However,
+pools that have low density of overﬂowing queries are also
+more likely to have poor coverage, creating another bias.
+[6] remove overﬂowing queries from the pool by eliminating
+terms that occur frequently in a training corpus. However,
+this heuristic can have many false positives or false nega-
+tives, depending on the choice of the frequency threshold.
+
+In this paper we show how to over-
+Our contributions.
+come the degree mismatch problem. We present two search
+engine estimators that remain nearly unbiased and very ef-
+ﬁcient, even in the presence of highly mismatching degrees.
+Our ﬁrst contribution is a rigorous analysis of an “ap-
+proximate importance sampling” procedure. We prove that
+using importance sampling with approximate weights rather
+than the real weights incurs both a multiplicative bias and
+an additive bias. The analysis immediately implies that the
+estimator of Broder et al. [6] suﬀers from signiﬁcant bias in
+the presence of degree mismatch.
+
+Our second contribution is the design of two new impor-
+tance sampling estimators. Our estimators use approximate
+weights, but are able to eliminate the more signiﬁcant mul-
+tiplicative bias, leading to nearly unbiased estimates. These
+estimators can be viewed as generalizations of “ratio impor-
+tance sampling” (cf. [20]) and importance sampling with ap-
+proximate trial weights [2]. The ﬁrst estimator, the Accurate
+Estimator (AccEst), uses few search engine queries to proba-
+bilistically calculate exact document degrees, and is thereby
+able to achieve essentially unbiased estimations. The second
+estimator, the Eﬃcient Estimator (EﬀEst), predicts docu-
+ment degrees from the contents of documents alone, with-
+out submitting queries to the search engine, similarly to [2,
+6]. To eliminate the multiplicative bias factor incurred by
+degree mismatch, EﬀEst estimates this factor by invoking
+
+WWW 2007 / Track: SearchSession: Search Potpourri402AccEst. Nevertheless, as the bias factor is independent of
+the target function being measured, this costly computation
+can be done only once in a pre-processing step, and then be
+reused in multiple invocations of EﬀEst. Hence, the amor-
+tized cost of EﬀEst is much lower than that of AccEst. The
+estimations produced by EﬀEst may be slightly less accu-
+rate than those of AccEst, because the additive bias cannot
+be always eliminated.
+
+We note that our estimators are applicable to both the
+sum metric and the average metric w.r.t. any target func-
+tion. This in contrast to the estimators in [2], which are
+eﬃciently applicable only to average metrics, and the esti-
+mator in [6], which is applicable only to sum metrics.
+
+Our last contribution builds on the observation that the
+estimator of Broder et al. implicitly applies Rao Blackwelliza-
+tion [7], which is a well-known statistical tool for reducing
+estimation variance. This technique is what makes their es-
+timator so eﬃcient. We show that Rao Blackwellization can
+be applied to our estimators as well and prove that it is guar-
+anteed to make them more eﬃcient as long as the results of
+queries are suﬃciently variable.
+
+Experimental results. We evaluated the bias and the
+eﬃciency of our estimators as well as the estimators from
+[2, 6] on a local search engine that we built over a corpus of
+2.4 million documents. To this end, we used the estimators
+to estimate two diﬀerent metrics: corpus size and density
+of sports pages. The empirical study conﬁrms our analyt-
+ical ﬁndings:
+in the presence of many overﬂowing queries,
+our estimators have essentially no bias, while the estimator
+of Broder et al. suﬀers from signiﬁcant bias. For example,
+the relative bias of AccEst in the corpus size estimation was
+0.01%, while the relative bias of the estimator of Broder et
+al. was 75%. The study also showed that our new estimators
+are up to 375 times more eﬃcient than the rejection sam-
+pling estimator from [2]. Finally, the study demonstrated
+the eﬀectiveness of Rao-Blackwellization by reducing the
+query cost of estimators by up to 79%.
+
+We used our estimators to measure the absolute sizes of
+three major search engines. The results of this study gave
+gross underestimates of the true search engine sizes, largely
+due to the limited coverage of the pool of queries we used.
+Even so, we showed that our estimates are up to 74 times
+higher than the estimates produced by (our implementation
+of) the Broder et al. estimator.
+
+Other related work. Apart from [4, 2, 6], several other
+studies estimated global quality metrics of search engines,
+like relative corpus size. These studies are based on analyz-
+ing anecdotal queries [5], queries collected from user query
+logs [17, 10], or queries selected randomly from a pool a la
+Bharat and Broder [12, 8]. Using capture-recapture tech-
+niques (cf. [19]) some of these studies infer measurements
+of the whole web. Due to the bias in the samples, though,
+these estimates lack any statistical guarantees.
+
+A diﬀerent approach for evaluating search quality is by
+sampling pages from the whole web [18, 14, 15, 1, 23]. Sam-
+pling from the whole web, however, is a more diﬃcult prob-
+lem, and therefore all the known algorithms suﬀer from se-
+vere bias.
+
+2. PRELIMINARIES
+
+In this section we introduce notations and deﬁnitions used
+
+throughout the paper.
+
+Search engines. Fix a search engine S whose corpus D
+we wish to measure. For each query q, the index of the
+search engine consists of a list of matching documents from
+D. Given q, the search engine returns these matches, ranked
+by relevance. The search engine has a result set size limit
+k. If the number of matches for a query q exceeds k, only
+the top k matches are returned. We denote the actual list
+of results returned on query q by results(q).
+
+The cardinality of a query q, denoted card(q), is the to-
+tal number of matches it has. We say that q overﬂows, if
+card(q) > k, and that it underﬂows, if card(q) = 0.
+
+Measures and integrals. We restrict to measurements
+of metrics that can be written as discrete integrals over D:
+
+Intπ(f ) , Xx∈D
+
+f (x)π(x).
+
+Here, f : D → R is a target function and π : D → [0, ∞) is
+a target measure.
+
+π induces a corresponding probability distribution on D:
+
+, where Zπ = Px∈D π(x) is the normalization
+
+π′(x) = π(x)
+Zπ
+constant of π. We say that two diﬀerent measures are the
+same up to normalization, if they induce the same probabil-
+ity distribution, but have diﬀerent normalization constants.
+When the target measure is a distribution, we call the in-
+tegral Intπ(f ) an average metric. Otherwise, it is a sum met-
+ric. For example, corpus size is a sum metric, as the corre-
+sponding target measure is the uniform 1-measure (π(x) = 1
+for all x ∈ D), while the density of spam pages in the corpus
+is an average metric, because its corresponding measure is
+the uniform distribution on D (π(x) = 1/|D| for all x).
+
+Everything we do in this paper can be generalized to deal
+with vector-valued functions f : D → Rm. Yet, for simplic-
+ity of exposition, we focus on scalar functions.
+
+Search engine estimators. A search engine estimator
+for a metric Intπ(f ) is a randomized procedure P, which
+interacts only with the public interface of the search engine
+and/or with the web, and produces an estimate of Intπ(f ).
+The procedure is assumed to have access to an “f -oracle”
+and to a “π-oracle”. Given a document x ∈ D, the f -oracle
+returns f (x) and the π-oracle returns ˆπ(x). ˆπ is a measure
+on D, which is identical to π up to normalization. We denote
+by Zˆπ the normalization constant of ˆπ. If Intπ(f ) is a sum
+metric, we require ˆπ = π. If Intπ(f ) is an average metric, ˆπ
+can be any measure that is the same as π up to normalization
+and the normalization constant Zˆπ need not be known in
+advance. For example, when estimating the density of spam
+in the corpus, the π-oracle can return for each document x
+the value ˆπ(x) = 1, which is identical to the target uniform
+distribution π up to normalization.
+
+The quality of an estimator is measured in terms of two
+parameters: bias and variance. The bias of P is the dif-
+ference | E(P) − Intπ(f )|. P is called unbiased, if E(P) =
+Intπ(f ). The variance of P is var(P) = E((P − E(P))2).
+The estimator’s bias and variance can be used (via Cheby-
+shev’s inequality) to determine estimation conﬁdence in-
+tervals, i.e., parameters ǫ > 0 and 0 < δ < 1 for which
+Pr((1 − ǫ) Intπ(f ) ≤ P ≤ (1 + ǫ) Intπ(f )) ≥ 1 − δ.
+
+The three expensive resources used by search engine esti-
+mators are: (1) queries submitted to the search engine; (2)
+web pages fetched; (3) calculations of the function f . The
+expected query cost of an estimator P, denoted qcost(P), is
+the expected number of queries P submits to the search en-
+
+WWW 2007 / Track: SearchSession: Search Potpourri403gine. Expected query cost cannot be used to compare the
+eﬃciency of diﬀerent estimators, as they may have diﬀerent
+variances. The amortized query cost, deﬁned as qcost(P) ·
+var(P), is a more robust measure of eﬃciency. Expected and
+amortized fetch/function costs are deﬁned similarly.
+Query pools and document degrees. Let P be a pool
+of queries. For a document x ∈ D, we denote by queriesP (x)
+the set of queries to whose result sets x belongs:
+queriesP (x) , {q ∈ P | x ∈ results(q)}.
+
+The degree of x w.r.t. P, denoted degP (x), is |queriesP (x)|.
+A basic task carried out again and again by our algorithms
+is the following: given a query pool P and a document x,
+compute degP (x). Since we need to perform this task ultra-
+eﬃciently, we would like to do it based on the content of
+x alone and without submitting any queries to the search
+engine. This may seem initially impossible to do. How-
+ever, if P consists of term/phrase queries, we can predict
+the queries in P that x matches, simply by extracting all
+the terms/phrases that occur in the text of x and that also
+belong to P. Let pqueriesP (x) denote this set of predicted
+queries and let pdegP (x) denote the predicted degree of x,
+i.e., |pqueriesP (x)|. pdegP (x) will be our approximation for
+degP (x).
+
+In practice, however, pqueriesP (x) may contain queries
+that do not belong to queriesP (x), and, conversely, queriesP (x)
+may contain queries that do not belong to pqueriesP (x). We
+would like to somehow bridge the gap between the two.
+Dealing with queries in queriesP (x) \ pqueriesP (x) is rela-
+tively easy. We call a query q valid for x, if x belongs to the
+result set of q and we could have anticipated that by inspect-
+ing the content of x. That is, q ∈ queriesP (x) ∩ pqueriesP (x).
+The set of valid results for a query q is deﬁned as follows:
+vresults(q) , {x ∈ results(q) | q is valid for x}. Our al-
+gorithms will use only the valid results of queries, rather
+than all the results. Therefore, for each document x, the
+set of valid queries for x is: vqueriesP (x) , {q ∈ P | x ∈
+vresults(q)} = queriesP (x) ∩ pqueriesP (x). The valid degree
+of x, denoted vdegP (x), is |vqueriesP (x)|. By using only valid
+results, we are guaranteed that vqueriesP (x) ⊆ pqueriesP (x),
+contributing to shrinking the diﬀerence between the two.
+
+Addressing queries in pqueriesP (x)\vqueriesP (x) is a more
+serious problem, because ﬁguring out which of the queries in
+pqueriesP (x) do not belong to vqueriesP (x) requires submit-
+ting all these queries to the search engine—a prohibitively
+expensive task. We call the ratio vdegP (X)
+pdegP (X) the validity den-
+sity of x and denote it by vdensityP (x). From the above,
+vdensityP (x) ∈ [0, 1] for all x. The closer vdensityP (x) is to
+1, the better is our approximation of vdegP (x).
+
+Usage of the k available results of overﬂowing queries
+in our estimations is a potential source of bias, since such
+queries may favor documents with high static rank. In or-
+der to eliminate any bias towards such documents, our al-
+gorithms simply ignore overﬂowing queries. Technically, we
+do this by deﬁning all the results of overﬂowing queries to
+be “invalid”. Therefore, if q overﬂows, vresults(q) = ∅. This
+in particular means that vqueriesP (x) cannot contain any
+overﬂowing query.
+
+We say that the pool P covers a document x, if there
+is at least one query q ∈ P which is valid for x. That is,
+vqueriesP (x) 6= ∅. Note that documents that do not contain
+any of the terms/phrases in P or that match only overﬂowing
+queries in P are not covered by P.
+
+3.
+
+IMPORTANCE SAMPLING
+
+In this section we present a basic importance sampling
+search engine estimator. It will be used as a basis for the
+more advanced estimators presented in subsequent sections.
+
+Setup. Like the pool-based estimators in [4, 2, 6], our es-
+timator assumes knowledge of an explicit query pool P. For
+example, in our experiments, we used a pool of 1.75 billion
+English phrases of lengths 3-5. Such a pool can be con-
+structed in a pre-processing step, by crawling a representa-
+tive corpus of web documents and extracting terms/phrases
+that occur therein (we used the ODP [9] directory for this
+purpose). We can run the estimator with any such pool, yet
+the choice of the pool may aﬀect the bias and the eﬃciency
+of the estimator.
+
+No matter how large P is, in practice, there will always be
+documents in D that P does not cover. Since our estimator
+uses only queries from P, it can never reach such documents.
+This means that our estimator can estimate integrals only
+over the set of documents that are covered by P and not
+over the entire corpus D. So regardless of the statistical
+bias of the estimator, there will be an additional “built-
+in” bias that depends on the coverage of the chosen query
+pool. To simplify our discussion, from now on, we suppress
+this coverage-induced bias and use D to denote only the
+documents that are covered by P.
+
+Importance sampling estimation. Recall that we would
+like to estimate the integral Intπ(f ) for some given target
+function f and target measure π on D. The naive Monte
+Carlo estimator (cf. [20]) for Intπ(f ) works as follows: (1)
+sample a random document X from the distribution π′ in-
+duced by π; (2) compute the normalization constant Zπ of
+π; (3) output f (X) · Zπ. It is easy to check that this esti-
+mator is unbiased. Its variance can be reduced by averaging
+over multiple independent instances of the estimator.1
+
+In our setting, however, this simple estimator is impracti-
+cal, for the following reasons: (1) sampling from the distribu-
+tion π′ may be hard or costly (e.g., when π is a uniform mea-
+sure on D); (2) computation of the normalization constant
+Zπ may be costly (e.g., in corpus size estimation, Zπ = |D|,
+which is exactly the quantity we need to estimate); (3) the
+random variable f (X) may have high variance. Importance
+sampling [21, 16, 20] can be used in these circumstances to
+obtain a more eﬃcient estimator.
+
+The basic idea of importance sampling is the following.
+Instead of sampling a document X from π′, the estimator
+samples a document Y from a diﬀerent trial distribution p on
+D. p can be any distribution, as long as supp(p) ⊇ supp(π)
+(here, supp(p) = {x ∈ D | p(x) > 0} is the support of p;
+supp(π) is deﬁned similarly). In particular, we can choose
+it to be a distribution that is easy to sample from. The
+importance sampling estimator is then deﬁned as follows:
+
+IS(Y) , f (Y) ·
+
+π(Y)
+p(Y)
+
+= f (Y) · w(Y).
+
+The correction term w(Y) , π(Y)
+p(Y) is called the “importance
+weight” and it guarantees that IS(Y) is an unbiased estima-
+
+1More eﬃcient aggregation techniques, like the median of
+averages (cf. [11, 6]), exist. For simplicity of exposition, we
+will focus mainly on averaging in this paper.
+
+WWW 2007 / Track: SearchSession: Search Potpourri404tor of Intπ(f ):
+
+Ep(IS(Y)) =
+
+= Xy∈supp(π)
+
+p(y)f (y)
+
+π(y)
+p(y)
+
+= Xy∈supp(π)
+
+f (y)π(y) = Intπ(f ).
+
+Implementation of an importance sampling estimator re-
+quires: (1) ability to sample eﬃciently from the trial distri-
+bution p; and (2) ability to compute the importance weight
+w(y) and the function value f (y), for any given element
+y ∈ D. There is no need to know the normalization con-
+stant Zπ or to be able to sample from π′.
+The sample space. The sample space of the importance
+sampling estimator proposed in our previous paper [2] was
+the corpus of documents D. The trial distribution p was
+the “document degree distribution”, in which documents are
+sampled proportionally to their degree. In order to sample
+documents from this distribution, we had to sample queries
+from the pool P proportionally to their cardinality, and then
+to sample random documents from the result sets of these
+queries. As cardinalities of queries are not known in ad-
+vance, sampling queries from P required application of re-
+jection sampling. This step incurred signiﬁcant overhead.
+
+In this paper we propose a diﬀerent sample space. Rather
+than sampling queries and then documents in two separate
+steps, we sample them together. The sample space is then
+Ω = P × D. Each sample is a query-document pair (q, x).
+We extend the target measure π on D into a target measure
+µ on Ω and the function f on D into a function F on Ω. The
+extension is done in such a way that Intµ(F ) equals Intπ(f ).
+We thus reduce the problem of estimating Intπ(f ) to the
+problem of estimating Intµ(F ). For the latter, we can apply
+importance sampling directly on the two-dimensional sam-
+ple space Ω, without having to resort to rejection sampling.
+Let Ω = P × D. We extend π into a measure on Ω as
+follows: µ(q, x) , I(x∈vresults(q))·π(x)
+, where I is an indicator
+function: I(condition) = 1 if the condition is true, and 0
+otherwise. The connection between µ and π is given by the
+following proposition:
+
+vdeg(x)
+
+Proposition 3.1. π is the marginal measure of µ on D.
+Furthermore, the normalization constants of π and µ are the
+same.
+
+It follows from the proposition that µ is a distribution if and
+only if π is a distribution.
+
+Similarly, we extend the function f on D into a function
+F on Ω as follows: F (q, x) , f (x). It is easy to see that
+Intµ(F ) = Intπ(f ). Our estimator therefore estimates the
+integral Intµ(F ).
+The trial distribution. We next describe the trial dis-
+tribution for selecting query-document pairs from Ω. Let
+P+ denote the collection of queries in P that have at least
+one valid result: P+ , {q ∈ P | vresults(q) 6= ∅}. Our
+trial distribution selects a pair (q, x) as follows: (1) pick a
+query q ∈ P+ uniformly at random; (2) pick a document
+x ∈ vresults(q) uniformly at random:
+
+p(q, x) , 1
+|P+|
+
+·
+
+I(x ∈ vresults(q))
+
+vcard(q)
+
+.
+
+one valid result. We then select a document from the set of
+valid results of this query uniformly at random.
+
+1: Function TrialDistributionSampler(S, P)
+2: while (true) do
+3:
+4:
+5:
+6:
+7:
+8:
+9:
+10:
+11:
+
+Q := uniformly chosen query from P
+submit Q to S
+if Q overﬂows continue
+results(Q) := results returned by S
+download all pages in results(Q)
+vresults(Q) := valid results extracted from results(Q)
+if (vresults(Q) 6= ∅) then
+
+X := uniformly chosen document from vresults(Q)
+return (Q,X)
+
+Figure 1: Trial distribution sampler
+
+The importance weights. The importance weights cor-
+responding to the target measure µ and the trial distribution
+p are the following:
+
+w(q, x) =
+
+µ(q, x)
+p(q, x)
+
+=
+
+π(x) · |P+| · vcard(q)
+
+vdeg(x)
+
+.
+
+Thus, the importance sampling estimator for Intπ(f ) is:
+
+IS(Q, X) , f (X) · π(X) · |P+| · vcard(Q)
+
+vdeg(X)
+
+,
+
+where (Q, X) is a sample from the trial distribution p. The
+caveat with this estimator is that computing the importance
+weights may be hard or costly to do for three reasons: (1)
+we cannot compute vdeg(x) without submitting queries to
+the search engine; (2) we do not know a priori which of
+the queries in P have at least one valid result and therefore
+cannot compute |P+|; and (3) if Intπ(f ) is an average metric,
+we may know π(x) only up to normalization.
+
+The estimator of Broder et al. [6] resembles the above im-
+portance sampling estimator for the special case of corpus
+size estimation. As they could not compute the exact impor-
+tance weights, they used approximate importance weights,
+by substituting pdeg(x) for vdeg(x). It is not clear, however,
+what is the eﬀect of the approximate importance weights on
+the bias of the estimator. Also, it is unknown how to extend
+the estimator to work for average metrics. We address these
+issues in the next section.
+
+4. APPROXIMATE IMPORTANCE
+
+SAMPLING
+
+Suppose we come up with an approximate weight function
+u(q, x), which is “similar”, but not identical, to w(q, x) (we
+will discuss possible alternatives for u(q, x) in the next sec-
+tion). What is the eﬀect of using u(q, x) rather than w(q, x)
+in importance sampling? In the following we analyze the
+quality and performance of this “approximate importance
+sampling” procedure.
+Bias analysis. Suppose supp(u) ⊆ supp(w). The follow-
+ing lemma analyzes the bias of the approximate importance
+sampling estimator: AIS(Q, X) = f (X) · u(Q, X).
+
+Lemma 4.1.
+
+Ep(AIS(Q, X)) =
+
+Here, vcard(q) is the number of valid results q has. Sampling
+from p can be done easily (see Figure 1): we repeatedly
+select queries from P uniformly at random, submit them
+to the search engine, and extract the valid results from each
+such query. We stop when reaching a query that has at least
+
+= Intπ(f ) · Eµ′ (cid:18) u(Q, X)
+
+w(Q, X)(cid:19) + Zπ · covµ′ (cid:18)f (X),
+
+u(Q, X)
+
+w(Q, X)(cid:19) ,
+
+where µ′ is the distribution induced by µ and Zπ is the nor-
+malization constant of π.
+
+WWW 2007 / Track: SearchSession: Search Potpourri405For lack of space, the proof of this lemma, as the proofs
+of all the other results in this paper, are postponed to the
+full version of the paper [3].
+
+It follows from the lemma that there are two sources of
+bias in this estimator: (1) multiplicative bias, depending
+on the expectation of u/w under µ′; and (2) additive bias,
+depending on the correlation between f and u/w and on
+the normalization constant Zπ. Note that the multiplica-
+tive factor, even if small, may have a signiﬁcant eﬀect on
+the estimator’s bias, and thus must be eliminated. The ad-
+ditive bias is typically less signiﬁcant, as in many practical
+situations f and u/w are uncorrelated (e.g., when f is a con-
+stant function as is the case with corpus size estimation).
+
+For a query-document pair (q, x), the ratio u(q, x)/w(q, x)
+is called the weight skew at (q, x). The multiplicative bias
+factor is the expected weight skew under the target distribu-
+tion µ′. In order to eliminate this bias, we need to somehow
+estimate the expected weight skew. For now, let us assume
+
+we have some unbiased estimator WSE for Eµ′ (cid:16) u(Q,X)
+w(Q,X)(cid:17)
+
+(WSE may depend on the same sample (Q, X) used by the
+importance sampling estimator). It follows from Lemma 4.1
+that:
+
+Ep(AIS(Q, X))
+
+E(WSE)
+
+= Intπ(f ) +
+
+w(Q,X)(cid:17)
+Zπ · covµ′ (cid:16)f (X), u(Q,X)
+
+Eµ′ (cid:16) u(Q,X)
+w(Q,X)(cid:17)
+
+.
+
+Thus, the ratio of the expectations of the two estimators,
+AIS and WSE, gives us the desired result (Intπ(f )), modulo
+an additive bias factor. Ignoring for the moment this addi-
+tive bias, it would seem that a good estimator for Intπ(f )
+is the ratio AIS
+WSE . However, there is one problem: the ex-
+pectation of a ratio is not the ratio of the expectations, i.e.,
+
+E(cid:0) AIS
+
+WSE(cid:1) 6= E(AIS)
+
+E(WSE) .
+
+To solve this problem, we resort to a well-known trick
+from statistics: if we replace the numerator and the denom-
+inator by averages of multiple independent instances of the
+numerator estimator and of the denominator estimator, the
+diﬀerence between the expected ratio and the ratio of ex-
+pectations can be diminished to 0. This idea is formalized
+by the following theorem:
+
+Theorem 4.2. Suppose A and B are two estimators such
+E(B) = I. Let A1, . . . , An and B1, . . . , Bn be n indepen-
+
+that E(A)
+dent instances of A and B, respectively. Then,
+
+| E(cid:18) 1
+
+1
+
+i=1 Ai
+
+n Pn
+i=1 Bi(cid:19) − I| ≤
+n Pn
+·(cid:18)I ·
+
+var(B)
+E2(B)
+
++
+
+1
+n
+
+| cov(A, B)|
+
+E2(B) (cid:19) + o(cid:18) 1
+
+n(cid:19) .
+
+We can therefore deﬁne the approximate ratio importance
+
+sampling estimator for Intπ(f ) as follows:
+
+ARIS ,
+
+1
+
+n Pn
+
+i=1 f (Xi) · u(Qi, Xi)
+1
+
+,
+
+i=1 WSEi
+
+n Pn
+
+where (Q1, X1), . . . , (Qn, Xn) are n independent samples from
+the trial distribution p and WSE1, . . . , WSEn are n indepen-
+dent estimators of the weight skew (WSEi may depend on
+(Qi, Xi)). Using Lemma 4.1 and Theorem 4.2, we can ana-
+lyze the bias of this estimator:
+
+Lemma 4.3. If E(WSE) = Eµ′ (cid:16) u(Q,X)
+
+w(Q,X)(cid:17), then
+w(Q,X)(cid:17)
+Zπ · covµ′ (cid:16)f (X), u(Q,X)
+
+| Ep(ARIS)−Intµ(f )| ≤
+
+Eµ′ (cid:16) u(Q,X)
+w(Q,X)(cid:17)
+
++O(cid:18) 1
+
+n(cid:19) ,
+
+where the O(1/n) term suppresses constant factors that de-
+pend on var(WSE) and on cov(f (X) · u(Q, X), WSE).
+
+We conclude from the lemma that if we use suﬃciently
+many samples, then we are likely to get an estimate of
+Intπ(f ), which has only additive bias that depends on the
+correlation between f and u/w.
+
+5. TWO ESTIMATORS
+
+In this section we describe two variants of the approxi-
+mate ratio importance sampling estimator (ARIS) discussed
+above. The two estimators, the Accurate Estimator (Ac-
+cEst) and the Eﬃcient Estimator (EﬀEst), oﬀer diﬀerent
+tradeoﬀs between accuracy and eﬃciency. The former has
+lower bias, while the latter is more eﬃcient.
+
+The estimators diﬀer in the choice of the approximate im-
+portance weight function u(q, x) and in the expected weight
+skew estimator WSE. Before we show how u and WSE are
+deﬁned in each of the estimators, let us rewrite the impor-
+tance weights:
+
+w(q, x) =
+
+π(x) · |P+| · vcard(q)
+
+vdeg(x)
+
+=
+
+π(x) · |P+| · vcard(q)
+pdeg(x) · vdensity(x)
+
+.
+
+Of the diﬀerent terms that constitute the weight, the three
+we may not know a priori are π(x), |P+|, and vdensity(x).
+vcard(q) is known, because we always obtain the pair (q, x)
+after having submitted q to the search engine and extracting
+its valid results. pdeg(x) is known, because we can extract
+the predicted queries from the content of x.
+5.1 The Accurate Estimator
+
+The Accurate Estimator (AccEst) uses approximate weights
+
+uacc(q, x) that are equal to the exact weights w(q, x), up to
+a constant factor. It follows that uacc(q, x)/w(q, x) is con-
+stant, and hence the correlation between f and uacc/w is 0.
+Using Lemma 4.3, the bias of AccEst is then only O(1/n).
+How do we come up with approximate weights that equal
+the exact weights up to a constant factor? Well, we are
+unable to eﬃciently do this with deterministic approximate
+weights, but rather with probabilistic ones. That is, Ac-
+cEst uses a probabilistic weight function uacc(q, x), for which
+E(uacc(q, x)) = const · w(q, x). As our analysis for approxi-
+mate importance sampling easily carries over to probabilistic
+weights as well, we can still apply Lemma 4.3 and obtain the
+desired bound on the bias of AccEst.
+
+The approximate weights are deﬁned as follows:
+uacc(q, x) , ˆπ(x) · |P| · vcard(q) · IVD(x)
+
+pdeg(x)
+
+.
+
+That is, π(x) is approximated by ˆπ(x) (they are the same,
+if Intπ(f ) is a sum metric), |P+| is approximated by |P|,
+and the term 1/ vdensity(x) is estimated probabilistically by
+the “Inverse Validity Density Estimator” (IVD) described
+below. Note that apart from the computation of IVD(x),
+computing uacc(q, x) requires no search engine queries.
+
+Figure 2 shows a procedure for estimating 1/ vdensity(x)
+for a given document x, using a limited number of queries.
+
+WWW 2007 / Track: SearchSession: Search Potpourri406The procedure repeatedly samples queries uniformly at ran-
+dom from the set of predicted queries pqueries(x). It submits
+each query to the search engine and checks whether they are
+valid for x. The procedure stops when reaching the ﬁrst valid
+query and returns the number of queries sampled so far. As
+this number is geometrically distributed with vdensity(x) as
+the success parameter, the expectation of this estimator is
+exactly 1/ vdensity(x). Note that the procedure is always
+guaranteed to terminate, because we apply it only on docu-
+ments x for which vdensity(x) > 0.
+
+i := 1
+
+1: Function InverseValidityDensityEstimator(S, P, x)
+2: pqueries(x) := predicted queries for x
+3:
+4: while (true) do
+5:
+6:
+7:
+8:
+9:
+
+Q := uniformly chosen query from pqueries(x)
+submit Q to S
+results(Q) := results returned by S
+if (Q does not overﬂow and x ∈ results(Q)) return i
+i := i + 1
+
+Figure 2: Estimator for the inverse of the validity
+density
+
+The expectation of uacc(q, x) is analyzed as follows:
+
+E(uacc(q, x)) = E(cid:18) ˆπ(x) · |P| · vcard(q) · IVD(x)
+
+pdeg(x)
+
+(cid:19)
+
+=
+
+=
+
+|P|
+|P+|
+|P|
+|P+|
+
+·
+
+·
+
+ˆπ(x) · |P+| · vcard(q) · E(IVD(x))
+
+pdeg(x)
+
+Zˆπ
+Zπ
+
+· w(q, x).
+
+.
+
+Zπ
+
+Zπ
+
+|P|
+
+|P+| · Zˆπ
+
+Hence, the expectation of uacc(q, x) equals the weight w(q, x),
+up to the unknown multiplicative constant
+It
+immediately follows that also the expected weight skew is
+|P|
+|P+| · Zˆπ
+and that covµ′ (f (X), uacc(Q, X)/w(Q, X)) = 0.
+How we obtain an unbiased estimator WSE for the expected
+weight skew is diﬀerent between the case Intπ(f ) is a sum a
+metric and the case it is an average metric.
+Intπ(f ) is a sum metric. Here, the π-oracle
+Case 1:
+computes the target measure π explicitly. That is, ˆπ = π
+and Zˆπ
+|P+| .
+Zπ
+If we sample a query Q′ uniformly at random from P, it
+has a probability of |P+|
+to have at least one valid result.
+|P|
+Therefore, we can estimate |P|
+|P+| as follows: repeatedly sam-
+ple queries uniformly at random from P and submit them
+to the search engine; stop when reaching the ﬁrst query that
+has at least one valid result; the number of queries submitted
+is an unbiased estimator of
+
+= 1, so the only term we need to estimate is |P|
+
+|P|
+
+|P+| .
+
+|P|
+
+Case 2: Intπ(f ) is an average metric.
+In this case π
+is a distribution, and thus Zπ = 1. Therefore, the expected
+|P+| · Zˆπ. As Zˆπ is not known in advance,
+weight skew is
+we cannot use the same expected weight skew estimator as
+above. On the other hand, we observe that since π is a
+distribution, then the approximate weight uacc(Q, X) itself,
+where (Q, X) ∼ p, is an unbiased estimator of the expected
+weight skew. This follows from Lemma 4.1 with f ≡ 1:
+
+Proposition 5.1.
+
+Ep(uacc(Q, X)) = Zπ · Eµ′ (cid:18) uacc(Q, X)
+
+w(Q, X) (cid:19) .
+
+As Zπ = 1, uacc(Q, X) is indeed an unbiased estimator of
+the expected weight skew.
+
+Analysis.
+
+By Lemma 4.3, the bias of the estimator is
+
+at most
+
+Zπ ·cov
+
+µ
+
+′(cid:16) f (X), uacc (Q,X)
+w(Q,X) (cid:17)
+′(cid:16) uacc (Q,X)
+w(Q,X) (cid:17)
+
+E
+
+µ
+
++ O(cid:0) 1
+
+n(cid:1). Recall that the
+
+covariance term is 0, and thus the bias is only O(1/n).
+
+The cost of the computing uacc(q, x) is dominated by the
+cost of computing the inverse validity density. This compu-
+tation requires O(1/ vdensity(x)) queries to the search en-
+gine in expectation. Complete analysis of the eﬃciency of
+the estimator is postponed to the full version of the paper.
+5.2 The Efﬁcient Estimator
+
+The Eﬃcient Estimator (EﬀEst) uses deterministic ap-
+proximate weights, which require no queries to the search
+engine to compute, similarly to the estimators of [2, 6]:
+
+ueﬀ(q, x) , ˆπ(x) · |P| · vcard(q)
+
+pdeg(x)
+
+.
+
+That is, π(x) is approximated by ˆπ(x) (they are the same, if
+Intπ(f ) is a sum metric), |P+| is approximated by |P|, and
+the term 1/ vdensity(x) is ignored. The weight skew in this
+case is characterized as follows:
+
+Proposition 5.2. ueﬀ(q, x)/w(q, x) = |P|
+
+|P+| ·Zˆπ·vdensity(x).
+
+The estimator for the expected weight skew is again dif-
+ferent between the case Intπ(f ) is a sum metric and the case
+Intπ(f ) is an average metric.
+Case 1: Intπ(f ) is a sum metric. By Proposition 5.1,
+ueﬀ(Q, X), where (Q, X) ∼ p, is an unbiased estimator of the
+expected weight skew, modulo the constant factor Zπ:
+
+Ep(ueﬀ(Q, X)) = Zπ · Eµ′ (cid:18) ueﬀ(Q, X)
+
+w(Q, X) (cid:19) .
+
+In our case π is not a distribution, so Zπ is unknown. Hence,
+ueﬀ(Q, X) is not suﬃcient by itself to estimate the expected
+weight skew.
+In order to obtain an estimator for the ex-
+pected weight skew, we will divide ueﬀ(Q, X) by an unbiased
+estimator for Zπ.
+
+We observe that Zπ = Intπ(1), where 1 is the constant
+1 function. So by applying the Accurate Estimator with
+f ≡ 1, we can obtain an unbiased estimator of Zπ. We
+thus have:
+Theorem 4.2, we can get a nearly unbiased estimator of the
+expected weight skew by averaging over multiple instances
+of ueﬀ(Q, X) and AccEst:
+
+E(AccEst) = Eµ′ (cid:16) ueff(Q,X)
+
+w(Q,X) (cid:17). So, using again
+
+p(ueff(Q,X))
+
+E
+
+WSE =
+
+i=1 ueﬀ(Qi, Xi)
+
+i=1 AccEsti
+
+.
+
+1
+
+1
+
+n Pn
+n Pn
+
+Here, (Q1, X1), . . . , (Qn, Xn) are n independent samples from
+p and AccEst1, . . . , AccEstn are n independent Accurate Es-
+timators for Intπ(1).
+
+At this point the reader may be wonder why the Eﬃcient
+Estimator is more eﬃcient than the Accurate Estimator.
+After all, the Eﬃcient Estimator calls the Accurate Esti-
+mator! The rationale behind this is the following. Indeed,
+if we need to estimate only a single integral Intπ(f ), then
+the Eﬃcient Estimator is less eﬃcient than the Accurate
+Estimator. However, in practice, we usually need to com-
+pute multiple integrals Intπ(f1), . . . , Intπ(ft) w.r.t. the same
+target measure π. Note that the constant Zπ, for whose
+
+WWW 2007 / Track: SearchSession: Search Potpourri407estimation we used the Accurate Estimator, depends only
+on π and is independent of the target function f . There-
+fore, we can reuse the estimation of Zπ in the estimations of
+Intπ(f1), . . . , Intπ(ft). This implies that the amortized cost
+of the Eﬃcient Estimator is lower than that of the Accurate
+Estimator.
+
+In this case π is
+Case 2: Intπ(f ) is an average metric.
+a distribution and thus Zπ = 1. Therefore, by Proposition
+5.1, ueﬀ(Q, X), where (Q, X) ∼ p, is an unbiased estimator
+of the expected weight skew.
+
+Analysis. By Lemma 4.3, the bias of the estimator is at
+
+Zπ ·cov
+
+µ
+
+most
+
+ueff (Q,X)
+
+w(Q,X) (cid:17)
+
+′(cid:16) f (X),
+′(cid:16) ueff (Q,X)
+w(Q,X) (cid:17)
+
+E
+
+µ
+
++ O(cid:0) 1
+
+n(cid:1). By the characteriza-
+
+tion of the weight skew using the validity density (Proposi-
+tion 5.2) and recalling that π′ is the marginal distribution
+of µ′ on D (Proposition 3.1), we can rewrite the bias as:
+
+Zπ · covπ′ (f (X), vdensity(X))
+
+Eπ′ (vdensity(X))
+
++ O(1/n).
+
+That is, as long as the target function is not correlated with
+the validity density of documents, the bias is low.
+
+The Eﬃcient Estimator is indeed eﬃcient, because each
+approximate weight computation requires only fetching a
+single page from the web and no queries to the search en-
+gine. Complete analysis of the eﬃciency of the estimator is
+postponed to the full version of this paper.
+
+6. RAO-BLACKWELLIZATION
+
+There is some inherent ineﬃciency in the importance sam-
+pling estimators: although each random query they submit
+to the search engine returns many results, they use at most
+a single result per query. All other results are discarded.
+The corpus size estimator of Broder et al. [6] uses all query
+results, and not just one. We observe that what they did
+is an instance of the well-known Rao-Blackwellization tech-
+nique for reducing estimation variance. We next show how
+to apply Rao-Blackwellization on our importance sampling
+estimators in a similar fashion.
+
+Recall that the basic approximate importance sampling
+estimator is AIS(Q, X) = f (X) · u(Q, X), where (Q, X) is
+a sample from the trial distribution p and u(Q, X) is an
+approximate weight. Suppose now that instead of using only
+this single document in our basic estimator, we use all the
+query results:
+
+AISrb(Q) =
+
+1
+
+vcard(Q) XX∈vresults(Q)
+
+f (X) · u(Q, X).
+
+Each instance of AISrb is an average over several corre-
+lated instances of AIS. The main point is that computing
+these correlated instances in bulk can be done with a sin-
+gle query. The Rao-Blackwell theorem (cf. [7]) implies that
+AISrb(Q) can be only better than AIS(Q, X) as an estimator
+of Intπ(f ):
+
+Theorem 6.1
+
+(Rao-Blackwell Theorem). AISrb has
+
+the same bias as AIS:
+
+E(AISrb(Q)) = E(AIS(Q, P)).
+
+The variance of AISrb can only be lower:
+
+var(AISrb(Q)) = var(AIS(Q, X)) − E(var(AIS(Q, X)|Q)).
+
+By the above theorem, the expected reduction in variance
+is E(var(f (X) · u(Q, X))|Q), where Q is a uniformly chosen
+query from P+ and X is a uniformly chosen document from
+Q. That is, the more variable are the results of queries w.r.t.
+the target function f , the higher are the chances that Rao-
+Blackwellization will help. In our empirical study we show
+that in practice Rao-Blackwellization can make a dramatic
+eﬀect. See Section 7.
+
+The variance reduction achieved by Rao-Blackwellization
+can lead to lower costs, as fewer instances of the estimator
+are needed in order to obtain a desired accuracy guarantee.
+On the other hand, each instance of the estimator requires
+many more weight and function calculations (as many as the
+number of results of the sampled query), and if these are very
+costly (as is the case with the Accurate Estimator), then the
+increase in cost per instance may outweigh the reduction in
+the number of instances, eventually leading to higher amor-
+tized costs. We conclude that Rao-Blackwellization should
+be used judiciously.
+
+7. EXPERIMENTAL RESULTS
+We conducted two sets of experiments.
+
+In the ﬁrst set
+we performed comparative evaluation of the bias and amor-
+tized cost of our new estimators, of the rejection sampling
+estimator from our previous paper [2], and of the Broder et
+al. estimator [6]. To this end, we ran all these estimators on
+a local search engine that we built over 2.4 million English
+documents fetched from ODP [9]. As we have ground truth
+for this search engine, we could compare the measurements
+produced by the estimators against the real values.
+
+The second set of experiments was conducted over three
+major real search engines. We used the Accurate Estimator
+to estimate the corpus size of each the search engines, with
+and without duplicate elimination.
+(More accurately, we
+estimated sizes of large subsets of the search engine corpora.)
+
+Experimental setup. We used the same ODP search
+engine as in our previous paper [2]. The corpus of this
+search engine consists only of text, HTML, and pdf English-
+language documents from the ODP hierarchy. Each docu-
+ment was given a serial id and indexed by single terms and
+phrases. Only the ﬁrst 10,000 terms in each document were
+considered. Exact phrases were not allowed to cross bound-
+aries, such as paragraph boundaries. We used static ranking
+by serial id to rank query results.
+
+In order to construct a query pool for the evaluation ex-
+periments, we split the ODP data set into two parts: a
+training set, consisting of every ﬁfth page (when ordered by
+id), and a test set, consisting of the rest of the pages. We
+used the training set to create a pool of phrases of length 4.
+The measurements were done only on the test set.
+
+The experiments on real search engines were conducted
+in February 2007. The pool used by our estimators was a
+pool of 1.75 billion phrases of lengths 3-5 extracted from the
+ODP data set (the entire data set, not just the test set).
+
+Evaluation experiments. We compared the following
+6 estimator conﬁgurations: (1) AccEst, without Rao Black-
+wellization; (2) AccEst, with Rao Blackwellization; (3) EﬀEst,
+without Rao Blackwellization; (4) EﬀEst, with Rao Black-
+wellization; (5) the Broder et al. estimator; (6) the rejection
+sampling estimator from our previous paper.
+
+We used the estimators to measure two metrics: (1) cor-
+pus size (i.e., the size of the test set); (2) density of pages
+
+WWW 2007 / Track: SearchSession: Search Potpourri408in the test set about sports.
+(We used a simple keyword
+based classiﬁer to determine whether a page is about sports
+or not.) Note that the ﬁrst metric is a sum metric, while
+the second is an average metric. We did not use the rejec-
+tion sampling estimator for estimating corpus size, as it can
+handle only average metrics. We did not use the Broder
+et al. estimator for estimating the density of sports pages,
+because it can handle only sum metrics.
+
+In order to have a common baseline, we allowed each es-
+timator to use exactly 1 million queries. Each estimator
+produced a diﬀerent number of samples from these queries,
+depending on its amortized query cost.
+
+We ran each experiment four times, with diﬀerent values
+of the result set size limit k (k = 5, 20, 100, 200). This was
+done in order to track the dependence of the estimators’ bias
+and cost on the density of overﬂowing queries (the lower k,
+the higher is the density).
+
+Figure 3(a) compares the relative bias (bias divided by the
+estimated quantity) of our two estimators and the estimator
+of Broder et al. when measuring corpus size. Figure 3(b)
+compares the relative bias of our two estimators and the re-
+jection sampling estimator when measuring density of sports
+pages. The results for the Rao-Blackwellized versions of
+these estimators are suppressed, since Rao-Blackwellization
+has no eﬀect on bias.
+
+The results for the corpus size clearly show that our esti-
+mators have no bias at all, while the estimator of Broder et
+al suﬀers from signiﬁcant bias, which grows with the density
+of overﬂowing queries in the pool. For example, for k = 5,
+the relative bias of the Broder et al. estimator was about
+75%, while the relative bias of our estimators was 0.01%.
+Note that since the target function is constant in this case,
+then its value has no correlation with the weight skew, which
+explains why also EﬀEst has no bias.
+
+The results for the density of sports pages show that
+AccEst is unbiased, as expected. EﬀEst has small bias,
+which emanates from a weak correlation between the func-
+tion value and the validity density. The rejection sampling
+method has a large observed bias, primarily because it pro-
+duced a small number of samples and thus its variance is
+still high.
+
+Figures 4(a) and 4(b) compare the amortized costs of the
+regular and the Rao-Blackwellized versions of our two esti-
+mators and of the rejection sampling estimator. We used a
+square root scale in order to ﬁt all the bars in a single graph.
+The results clearly indicate that Rao-Blackwellization is ef-
+fective in reducing estimation variance (and therefore also
+amortized costs) in both metrics and both estimators. For
+example, in corpus size estimation, when k = 200, Rao-
+Blackwellization reduced the amortized query cost of AccEst
+by 79% and the query cost of EﬀEst by 60%. Furthermore,
+the amortized cost of the rejection sampling estimator is
+tremendously higher than the amortized cost of our new es-
+timators (even the non-Rao-Blackwellized ones). For exam-
+ple, when k = 200, Rao-Blackwellized EﬀEst was 375 times
+more eﬃcient than rejection sampling!
+
+Experiments on real search engines. We used our
+most accurate sampler, AccEst, to estimate the corpus sizes
+of three major search engines. For reference, we also ran the
+Broder et al. estimator with the same query pool. These
+measurements count duplicate pages as separate pages. We
+also measured the duplicate-free size of the corpus, by es-
+timating the average number of duplicates each document
+
+in the corpus has. The results, together with conﬁdence
+intervals, are plotted in Figure 5.
+
+It can be seen that the estimations we got are far below
+the reported sizes of search engines. The main reason for
+this is that our estimators eﬀectively measure the sizes of
+only subsets of the corpora—the indexed pages that match
+at least one phrase from the pool. As our pool consists
+of English-only phrases, pages that are not in English, not
+in HTML, pdf, or text format, or pages that are poor in
+text, are excluded from the measurement. A second reason
+is that search engines may choose sometimes not to serve
+certain pages, even though these pages exist in their index
+and match the query, e.g., because these pages are spam or
+duplicates.
+
+Another observation we can make from the results is that
+overﬂowing queries really hurt the Broder et al. estimator
+also on live search engines. We note that like Broder et al,
+we ﬁltered out from the query pool all phrases that occurred
+frequently (at least 10 times) in the ODP corpus. Even
+after this ﬁltering, 3% of the queries overﬂowed on the ﬁrst
+search engine, 10% on the second, and 7% on the third. The
+overﬂowing queries probably incurred high bias that made
+the estimates produced by the Broder et al. estimator to be
+much lower than ours.
+
+Finally, the experiments reveal search engines deal dif-
+ferently with duplicates. In one of the search engines, the
+corpus size, after removing duplicates, shrunk in 28%, while
+in the other two it shrunk in 14% and 17%, respectively.
+
+Broder et al, with dups
+
+AccEst, with dup
+
+AccEst, w/o dups
+
+)
+s
+n
+o
+
+i
+l
+l
+i
+
+b
+(
+ 
+e
+z
+i
+s
+ 
+s
+u
+p
+r
+o
+c
+ 
+e
+t
+u
+o
+s
+b
+A
+
+l
+
+8.0
+
+7.0
+
+6.0
+
+5.0
+
+4.0
+
+3.0
+
+2.0
+
+1.0
+
+0.0
+
+SE1
+
+SE2
+
+SE3
+
+Figure 5: Corpus sizes of three major search en-
+gines, with and without elimination of duplicates.
+
+8. CONCLUSIONS
+
+In this paper we presented two new estimators for search
+engine quality metrics that can be expressed as discrete in-
+tegrals. Our estimators are able to overcome the “degree
+mismatch” problem and thereby be accurate and eﬃcient at
+the same time. We show both analytically and empirically
+that our estimators beat recently proposed estimators [2, 6].
+In designing our estimators we employ a combination of
+statistical tools, like importance sampling and Rao Black-
+wellization. By carefully analyzing the eﬀect of approxi-
+mate weights on the bias of importance sampling, we were
+able to design procedures to mitigate the bias. This bias-
+elimination technique for approximate importance sampling
+may be applicable in other scenarios as well.
+
+WWW 2007 / Track: SearchSession: Search Potpourri409s
+a
+i
+b
+ 
+e
+v
+i
+t
+a
+l
+e
+R
+
+80%
+
+70%
+
+60%
+
+50%
+
+40%
+
+30%
+
+20%
+
+10%
+
+0%
+
+3.5E+07
+
+3.0E+07
+
+2.5E+07
+
+2.0E+07
+
+1.5E+07
+
+1.0E+07
+
+5.0E+06
+
+0.0E+00
+
+t
+s
+o
+c
+ 
+y
+r
+e
+u
+q
+d
+e
+z
+i
+t
+r
+o
+m
+a
+
+ 
+
+ 
+f
+o
+
+ 
+t
+o
+o
+r
+ 
+
+e
+r
+a
+u
+q
+S
+
+Broder et al
+
+EffEst
+
+AccEst
+
+i
+
+ 
+
+s
+a
+b
+e
+v
+i
+t
+a
+e
+R
+
+l
+
+Rejection sampling
+EffEst
+AccEst
+
+70%
+
+60%
+
+50%
+
+40%
+
+30%
+
+20%
+
+10%
+
+0%
+
+5
+
+20
+
+100
+
+200
+
+5
+
+20
+
+100
+
+200
+
+Result set size limit (k)
+
+(a) Corpus size.
+
+Result set size limit (k)
+
+(b) Density of sports pages.
+
+Figure 3: Relative bias of the estimators.
+
+EffEst without RB
+EffEst with RB
+AccEst without RB
+AccEst with RB
+
+Rejection sampling
+EffEst without RB
+EffEst with RB
+AccEst without RB
+AccEst with RB
+
+t
+s
+o
+c
+ 
+y
+r
+e
+u
+q
+d
+e
+z
+i
+t
+r
+o
+m
+a
+
+ 
+
+ 
+f
+o
+
+ 
+t
+o
+o
+r
+ 
+
+e
+r
+a
+u
+q
+S
+
+18
+
+16
+
+14
+
+12
+
+10
+
+8
+
+6
+
+4
+
+2
+
+0
+
+5
+
+20
+
+100
+
+200
+
+5
+
+20
+
+100
+
+200
+
+Result set size limit (k)
+
+(a) Corpus size.
+
+Result set size limit (k)
+
+(b) Density of sports pages.
+
+Figure 4: Square root of amortized query cost of the estimators.
+
+9. REFERENCES
+[1] Z. Bar-Yossef, A. Berg, S. Chien, J. Fakcharoenphol, and
+
+D. Weitz. Approximating aggregate queries about Web pages
+via random walks. In Proc. 26th VLDB, pages 535–544, 2000.
+
+[2] Z. Bar-Yossef and M. Gurevich. Random sampling from a
+
+search engine’s index. In Proc. 15th WWW, pages 367–376,
+2006.
+
+[3] Z. Bar-Yossef and M. Gurevich. Eﬃcient search engine
+
+measurements, 2007. Full version available at
+http://www.ee.technion.ac.il/people/zivby.
+
+[4] K. Bharat and A. Broder. A technique for measuring the
+
+relative size and overlap of public Web search engines. In Proc.
+7th WWW, pages 379–388, 1998.
+
+[5] E. T. Bradlow and D. C. Schmittlein. The little engines that
+could: Modeling the performance of World Wide Web search
+engines. Marketing Science, 19:43–62, 2000.
+
+[14] M. R. Henzinger, A. Heydon, M. Mitzenmacher, and
+
+M. Najork. Measuring index quality using random walks on
+the Web. In Proc. 8th WWW, pages 213–225, 1999.
+[15] M. R. Henzinger, A. Heydon, M. Mitzenmacher, and
+
+M. Najork. On near-uniform URL sampling. In Proc. 9th
+WWW, pages 295–308, 2000.
+
+[16] T. C. Hesterberg. Advances in Importance Sampling. PhD
+
+thesis, Stanford University, 1988.
+
+[17] S. Lawrence and C. L. Giles. Searching the World Wide Web.
+
+Science, 5360(280):98, 1998.
+
+[18] S. Lawrence and C. L. Giles. Accessibility of information on
+
+the Web. Nature, 400:107–109, 1999.
+
+[19] S.-M. Lee and A. Chao. Estimating population size via sample
+
+coverage for closed capture-recapture models. Biometrics,
+50(1):88–97, 1994.
+
+[6] A. Broder, M. Fontoura, V. Josifovski, R. Kumar, R. Motwani,
+
+[20] J. S. Liu. Monte Carlo Strategies in Scientiﬁc Computing.
+
+S. Nabar, R. Panigrahy, A. Tomkins, and Y. Xu. Estimating
+corpus size via queries. Proc. 15th CIKM, 2006.
+
+[7] G. Casella and C. P. Robert. Rao-Blackwellisation of sampling
+
+schemes. Biometrika, 83(1):81–94, 1996.
+
+[8] M. Cheney and M. Perry. A comparison of the size of the
+
+Yahoo! and Google indices. Available at
+http://vburton.ncsa.uiuc.edu/indexsize.html, 2005.
+[9] dmoz. The open directory project. http://dmoz.org.
+
+[10] A. Dobra and S. E. Fienberg. How large is the World Wide
+
+Web? Web Dynamics, pages 23–44, 2004.
+
+[11] O. Goldreich. A sample of samplers - a computational
+perspective on sampling (survey). ECCC, 4(20), 1997.
+
+[12] A. Gulli and A. Signorini. The indexable Web is more than
+
+11.5 billion pages. In Proc. 14th WWW, pages 902–903, 2005.
+[13] W. K. Hastings. Monte Carlo sampling methods using Markov
+chains and their applications. Biometrika, 57(1):97–109, 1970.
+
+Springer, 2001.
+
+[21] A. W. Marshal. The use of multi-stage sampling schemes in
+Monte Carlo computations. In Symposium on Monte Carlo
+Methods, pages 123–140, 1956.
+
+[22] N. Metropolis, A. Rosenbluth, M. Rosenbluth, A. Teller, and
+
+E. Teller. Equations of state calculations by fast computing
+machines. J. of Chemical Physics, 21:1087–1091, 1953.
+
+[23] P. Rusmevichientong, D. Pennock, S. Lawrence, and C. L.
+
+Giles. Methods for sampling pages uniformly from the World
+Wide Web. In Proc. AAAI Symp. on Using Uncertainty
+within Computation, 2001.
+
+[24] J. von Neumann. Various techniques used in connection with
+
+random digits. In John von Neumann, Collected Works,
+volume V. Oxford, 1963.
+
+WWW 2007 / Track: SearchSession: Search Potpourri410

@@ -1,0 +1,1359 @@
+Redundancy Detection in Service-Oriented Systems
+
+Peep Küngas
+
+Institute of Computer Science
+
+University of Tartu
+
+50409 Liivi 2
+Tartu, Estonia
+
+peep.kungas@ut.ee
+
+Marlon Dumas
+
+Institute of Computer Science
+
+University of Tartu
+
+50409 Liivi 2
+Tartu, Estonia
+
+marlon.dumas@ut.ee
+
+ABSTRACT
+This paper addresses the problem of identifying redun-
+dant data in large-scale service-oriented information sys-
+tems. Speciﬁcally, the paper puts forward an automated
+method to pinpoint potentially redundant data attributes
+from a given collection of semantically-annotated Web ser-
+vice interfaces. The key idea is to construct a service net-
+work to represent all input and output dependencies between
+data attributes and operations captured in the service inter-
+faces, and to apply centrality measures from network theory
+in order to quantify the degree to which an attribute belongs
+to a given subsystem. The proposed method was tested on a
+federated governmental information system consisting of 58
+independently-maintained information systems providing al-
+together about 1000 service operations described in WSDL.
+The accuracy of the method is evaluated in terms of preci-
+sion and recall.
+
+Categories and Subject Descriptors
+D.2.8 [Software Engineering]: Metrics; D.2.12 [Software
+Engineering]:
+Interoperability; H.2.5 [Database Man-
+agement]: Heterogeneous Databases
+
+General Terms
+Algorithms, Design, Experimentation, Measurement
+
+Keywords
+Data model redundancy, metrics, Web services, federated
+information systems, semantic Web services
+
+1.
+
+INTRODUCTION
+
+A major issue in large-scale information systems manage-
+ment is that of avoiding data redundancy, that is, ensuring
+that each fact is stored in a single location [12]. Data redun-
+dancy does not originate exclusively from duplicated records
+within a database, but perhaps more frequently, from a com-
+mon practice to store partially overlapping entries in mul-
+tiple databases or information (sub-)systems. For instance,
+it often happens that supplier contact addresses are stored
+in the procurement, billing, logistics and technical support
+subsystems, as opposed to storing this address at one subsys-
+tem and having the other subsystems retrieve it from this
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2010, April 26–30, 2010, Raleigh, North Carolina, USA.
+ACM 978-1-60558-799-8/10/04.
+
+primary location. The reasons for such redundancy may
+range from performance, reliability or security concerns, to
+miscommunications between system architects, lack of doc-
+umentation of existing systems, or lack of cooperation be-
+tween independent business units. In some cases, data re-
+dundancy is deliberate and controlled, while in others it is
+highly problematic and may lead to inconsistency and poor
+data quality.
+
+The practical relevance of data redundancy management
+has been highlighted in several previous works. Moody &
+Shanks [7] report on a technical review of a repository of data
+models of a large information system. This technical review
+surfaced a high degree of overlap between diﬀerent applica-
+tion data models. Closer inspection showed that diﬀerent
+project teams had independently decided to represent the
+same data in diﬀerent ways, resulting in data redundancy
+and duplicated development eﬀort. In a similar vein, Ven-
+trone & Heiler [10] point to several cases where data model
+overlap in large federated information systems was up to
+80%.
+
+In this paper, we propose and evaluate a method for de-
+tecting potentially redundant attributes in a service-oriented
+information system by exploiting the metadata stored in
+Web service interfaces. The proposed method relies on a
+representation of a service-oriented information system as
+a network structure in which the nodes denote either data
+attributes (XML attributes or leaf XML elements such as
+“supplier business name” or “supplier address”) or operations
+that take certain attributes as input and produce other at-
+tributes as output. Centrality measures1 are then applied
+to analyze the resulting service network in order to detect
+sources of potential redundancy. The result is a set of data
+attributes that appear in multiple information systems, a
+diagnostic of which of these information systems is the pri-
+mary location of the attribute, and a diagnostic of whether
+or not the attribute in question is a key (primary or for-
+eign key). With this information, we diagnose an attribute
+as potentially redundant if it occurs in multiple information
+systems and it is not a key.
+In this case, we are able to
+pinpoint in which information system the attribute should
+be stored (the primary location) and in which information
+systems the attribute is probably redundant.
+
+The proposed method does not intend to provide fully re-
+liable diagnostics, nor is it able to assert if the redundancy it
+detects has been introduced on purpose or whether it is de-
+sirable or not. In this respect, what we provide are heuristics
+
+1In network theory, a centrality measure is a measure of the
+relative importance of a node within a graph.
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA581for identifying potential sources of redundancy as opposed
+to exact methods. On the other hand, the proposed method
+is able to detect potential redundancy despite heterogeneous
+naming conventions (synonyms). To this end, the method
+is not directly applied on the raw WSDL interfaces, but on
+WSDL interfaces that have been semantically annotated us-
+ing the method outlined in [4].
+
+We have validated our proposal on a service-oriented in-
+formation system consisting of 58 independently-maintained
+information systems providing altogether about 1000 data
+services described by means of WSDL. The results obtained
+by applying the method were compared to the results ob-
+tained from a manual inspection of the service interfaces.
+The results show that the proposed heuristics achieve a high
+precision and recall.
+
+The rest of the paper is structured as follows. In Section 2
+we deﬁne basic concepts and we frame the research problem.
+Section 3 describes the proposed method while Section 4
+presents its empirical evaluation. Section 5 reviews related
+work and Section 6 concludes the paper.
+
+2. PRELIMINARIES
+
+This section introduces basic deﬁnitions used in the rest of
+the paper, formulates the research questions and introduces
+a running example.
+2.1 Basic Deﬁnitions
+
+The input of the redundancy detection method proposed
+in this paper is a collection of semantically annotated ser-
+vice interfaces. Speciﬁcally, we assume that we are given a
+collection of Web service interfaces described using WSDL
+and XML Schema, and a collection of semantic annotations
+on these interfaces. Semantic annotations are encoded as
+SA-WSDL model references. A model reference is an URI
+that refers to a concept in a semantic model. For example, a
+model reference may refer to a class or a property in an OWL
+ontology, but equally well it may refer to a class or attribute
+in an UML class diagram.
+In this paper, we do not deal
+with the issue of obtaining the semantic annotations. For
+the purpose of validating the redundancy detection method,
+we relied on a method for semi-automated annotation of
+Web services presented in our previous work [4], but other
+annotation methods could be employed instead.
+
+If multiple elements in an XML Schema are annotated
+with the same model references, these elements are deemed
+to encode the same datum. For example,
+if two XML
+Schema elements “client address” and “customer address”
+refer to the same class or property in an OWL ontology,
+they are considered to represent the same datum.2
+
+The purpose of the method proposed in this paper is to
+identify redundant entity attributes. By entity attribute we
+mean an atomic unit of information about an entity, like
+for example the address of a supplier or the salary of an
+employee. In the context of a service-oriented information
+system, an entity attribute corresponds to an XML element
+or an XML attribute that appears in the schema of one of
+2Other notions of semantic equivalence between elements
+could be employed. For example, we could consider that
+two elements are equivalent if these elements are annotated
+with concepts that subsume one another according to a given
+ontology. For practical purposes, the notion of equivalence
+used to compare model entities is orthogonal to the tech-
+niques proposed in this paper.
+
+the messages produced or consumed by a Web service. We
+abstract away from the choice of granularity of an attribute.
+For example, one could either take “supplier address” to be
+an entity attribute, or “supplier address’s street name” to
+be an entity attribute. The lower the granularity, the ﬁner-
+grained will be the detection of redundant entity attributes,
+but having too low granularity may lead to large numbers
+of entity attributes being reported as redundant.
+
+We deﬁne a (service-oriented) information system as a col-
+lection of service operations. As an alternative, we could
+have deﬁned an information system as a set of services, each
+one providing a set of service operations, but the interme-
+diate level of grouping (the “service”) turns out not to be
+needed in our proposal. A service operation takes as input
+a set of entity attributes and produces as output another
+set of entity attributes. We write input (so) and output (so)
+to denote the set of inputs and the set of outputs of service
+operation so.
+For a given information system IS , we deﬁne the set of
+attributes of IS as: atts (IS ) = {d ∈ A | ∃so ∈ IS d ∈
+input (so) ∪ output(so)}, where A is the set of all possible
+attributes. In other words, the set of attributes of an infor-
+mation system IS is composed of all attributes that appear
+at least once as input or output of an operation in IS .
+
+A federated (service-oriented) information system is a set
+of information systems whose schema are semantically anno-
+tated using a common vocabulary (either in OWL, UML or
+any other modeling language) or a reference system. Given
+a federated information system FIS , the set of attributes
+of a federated information system FIS is the union of the
+set of attributes of its contained information systems, i.e.
+atts (FIS ) = ∪IS∈FIS atts(IS ).
+
+An attribute d may appear in multiple information sys-
+tems within a federated information system. For a given
+FIS and a given attribute d, we deﬁne occurs (FIS , d) as
+the number of information systems in which d appears, i.e.
+occurs (FIS , d) = |{IS ∈ FIS | d ∈ atts (IS)}|.
+
+Ideally, each entity attribute is maintained in one informa-
+tion system and retrieved from other information systems if
+and when required. The information system in which an in-
+formed system architect would most likely place an attribute
+is called the primary location of the attribute. In some cases,
+replicas of the attribute exist in other information systems
+(and these replicas may or may not be maintained synchro-
+nized). Information systems where replicas of an attribute
+exist are called secondary locations of the attribute in ques-
+tion. The concept of primary location is purposefully left
+subjective since it is largely application-dependent. For ex-
+ample, an attribute businessAddress might appear in two in-
+formation systems: the Business Registry and the Tax and
+Customs Information System. Intuitively, this attribute be-
+longs primarily in the business registry. We know this be-
+cause we have some understanding of the functional scope of
+these two information systems. In some cases, the primary
+location of an attribute might be less clear-cut. For exam-
+ple, one might argue whether the primary location of an
+attribute annualTurnover should be the Business Registry
+or the Tax and Customs Information System. We adopt
+the view that analysts and system architects, based on their
+knowledge of the application domain, are sole judges of the
+primary location of an attribute. Later in the paper we will
+deﬁne a metric that can serve as an indicator of the pri-
+mary location of an attribute.
+In other words, we try to
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA582approximate a subjective notion by means of a metric. The
+situation is akin to the concept of relevance in the context of
+document retrieval. A search engine returns a list of ranked
+documents based on the degree of match between a query
+and the documents indexed by the search engine. This de-
+gree of match is intended to reﬂect a subjective notion of
+relevance that only users of the search engine can judge.
+
+Some attributes are used to link entities across multiple
+information systems. For example, a customer identiﬁer can
+be used in one information system in order to refer to a
+customer entity in another information system. Such an at-
+tribute is called a reference attribute. The concept of refer-
+ence attribute is akin to the concept of “key” in the database
+world. A reference attribute is a “(primary) key” from the
+perspective of the information system that is the primary
+location of the attribute, and a “foreign key” from the per-
+spective of other information systems.
+
+In the context of databases, keys are determined at design-
+time based on functional dependencies. This approach does
+not scale in the context of large-scale service-oriented sys-
+tems, and in particular in the context of systems with large
+numbers of legacy services. In this context, it is impractical
+for analysts to deﬁne all possible functional dependencies.
+Accordingly, later in this paper we will deﬁne a metric that
+can serve as indicator of whether or not a given attribute is
+a reference attribute, without assuming that an analyst has
+identiﬁed all possible functional dependencies.
+
+The key intuition of our redundancy detection method is
+the following: If an attribute appears in multiple informa-
+tion systems and it is not a reference attribute, then this
+attribute is redundant in some information systems. Refer-
+ence attributes link diﬀerent entities together so it is normal
+that they appear in multiple information systems. Since the
+deﬁnition of redundancy is based on two subjective deﬁni-
+tions, it is itself subjective. It is also up the analysts and
+architects of a system to judge whether a given occurrence
+of an attribute in multiple information systems constitutes
+a redundancy or not. Our redundancy detection criterion is
+meant to approximate this subjective judgment.
+
+In order to deﬁne the metric used for redundancy detec-
+tion, we start by abstracting a federated information system
+as a network. This network is constructed by introducing
+an arc between each service operation and its inputs and
+outputs. An arc exists from an attribute to an operation if
+the attribute appears in the inputs of the operation, and an
+arc exists from an operation to an attribute if the attribute
+in question appears in the outputs of the operation.
+It is
+important to note that in the context of service networks,
+if we talk about inputs and outputs we mean conceptual
+representations of inputs and outputs. Formally:
+
+Definition 1
+
+(Service network). A service net-
+work is a graph {E, N}, where E and N represent
+respectively a set of edges and a set of nodes in the graph.
+Set N consists of service operation nodes Ns and entity
+attribute nodes Nd. Set E is deﬁned as:
+
+E =
+
+IS∈F IS
+
+( {(d, so) | so ∈ IS ∧ d ∈ inputs(so)}
+
+∪ {(so, d) | so ∈ IS ∧ d ∈ outputs(so)} )
+
+[
+
+In the rest of the paper, we use the following deﬁnitions.
+
+Definition 2
+
+(Degree). The degree deg (d) of an at-
+tribute node d in a service network N = (N, E) is the num-
+
+ber of edges incident to that node (counting both incoming
+and outgoing edges), i.e. deg(d) = |{so | so ∈ N ∧ [(d, so) ∈
+E ∨ (so, d) ∈ E]}|. Meanwhile, the degree of an attribute
+node in an information system IS is the number of edges in-
+cident to d whose source or target is an operation in IS, i.e.
+deg (d, IS) = |{so | so ∈ IS ∧ [(d, so) ∈ E ∨ (so, d) ∈ E]}|.
+
+−
+
+−
+
+Definition 3
+
+(Indegree). The indegree deg
+
+(d) of
+an attribute node is the number of edges targeting d, i.e.
+(d) = |{so | so ∈ N ∧ (so, d) ∈ E}|. Meanwhile, the in-
+deg
+degree of an attribute node in an information system IS is
+the number of edges targeting d whose source is an operation
+in IS , i.e. deg
+
+(d, IS) = |{so | so ∈ IS ∧ (so, d) ∈ E}|.
+
+−
+
+Definition 4
+
+(Outdegree). The outdegree deg +(d)
+of an attribute node is the number of edges emanating from
+d, i.e. deg +(d) = |{so | so ∈ N ∧ (d, so) ∈ E}|. Mean-
+while, the outdegree of an attribute node in an information
+system IS is the number of edges emanating from d whose
+target is an operation in IS, i.e. deg +(d, IS) = |{so | so ∈
+IS ∧ (d, so) ∈ E}|.
+2.2 Problem Statement & Example
+
+In order to detect potential redundancy, we are looking
+
+for answers to the following questions:
+
+1. Given a federated information system FIS , can we ﬁnd
+a classiﬁcation function C(IS , d) that takes as input
+an information system IS ∈ FIS and an attribute d ∈
+atts (F IS), and returns T (true) if IS is the primary
+location of d, and F (false) otherwise?
+
+2. Given a federated information system FIS , can we ﬁnd
+a classiﬁcation function C
+(d) that takes as input an
+attribute d ∈ atts (FIS ) and returns T if d is a reference
+attribute in FIS , and F otherwise?
+
+(cid:3)
+
+Let us consider a federated information system comprising
+subsystems for Customer Relationship Management (CRM),
+invoicing, logistics and after-sales service. All these sub-
+systems refer to customers and need to deal with contact
+addresses (billing address, delivery address, legal address).
+One would expect that the CRM maintains the customer
+address(es), therefore C(CRM , customerAddress ) = T . The
+invoicing, logistics and after-sales services need to retrieve
+customer data (including addresses) from the CRM sys-
+tem. To do so, they need to refer to a particular customer
+through an identiﬁer. Accordingly, one would expect that
+there would be an attribute custId so that C
+(custId ) = T .
+Note that these attributes customerAddress and custId are
+conceptual entities rather than concrete XML elements. It
+is possible that diﬀerent information systems will use dif-
+ferent concrete representations of this attribute. For exam-
+ple, in the invoicing system this attribute might be repre-
+sented as an element called customerIdentiﬁer while in the
+logistics subsystem it might be represented as an element
+addresseeIdentiﬁer . The semantic annotations attached to
+the XML schemas will allow us to relate these two elements
+back to the same concept.
+
+(cid:3)
+
+As a second example, let us consider three information
+systems of the Estonian federated governmental information
+system: the Tax and Customs Board service, the Business
+Registry service and the Register of Economic Activities.
+Figs. 1, 2, 3 and 4 show message schema fragments for each
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA583of these services. For the sake of understandability, ele-
+ment names have been translated to English and some irrel-
+evant fragments have been deleted. The Business Registry
+service provides information about companies – their reg-
+istration numbers (details company/businessregistrycode in
+Fig. 3 and detailedQuery/businessregistrycode in Fig. 2)3,
+names (details business name/content in Fig. 3 and de-
+tailedQuery/businessname in Fig. 2), and contact details
+(details contact medium/content in Fig. 3 and detailed-
+Query/address in Fig. 2). At the same time the Regis-
+ter of Economic Activities provides also business registra-
+tion number (generalinfoBaseType/code in Fig. 4), name
+(generalinfoBaseType/name in Fig. 4) and contact details
+(generalinfoBaseType/{tel,fax,email,web} in Fig. 4). Fur-
+thermore, the Tax and Customs Board service also pro-
+vides business registration numbers (employerTaxQueryAn-
+swer/businessregistrycode in Fig. 1) and business names
+(employerTaxQueryAnswer/employername in Fig. 1).
+
+In this example, it is clear that the business registry num-
+ber is a reference attribute. Business names and business
+contact details ﬁt most naturally in the Business Registry
+(i.e. this is their primary location). Therefore, elements re-
+ferring to company names and contact details at the Register
+of Economic Activities and at the Tax and Customs Board
+service are redundant. However, the business registration
+number, which is stored in all three information systems is
+not redundant since it is required in order to link company
+data stored across these information systems.
+
+collected from service descriptions of particular IS according
+to deﬁnitions in Section 2. An example of clusters and their
+overlappings is visualized in Fig. 6. The ﬁgure uses cluster
+map technology to represent overlappings of entity attribute
+clusters. The highlighted central area represents entity at-
+tributes that are potentially redundant, since they appear
+in multiple clusters at the same time.
+
+Figure 6: A cluster map of data entities in diﬀerent
+information systems.
+
+After clusters have been formed, we analyze in how many
+clusters an entity attribute occurs in. If an entity attribute
+occurs only in a single cluster, it is clearly not redundant.
+For instance, in Fig. 1 socialtax (paid social taxes) and in-
+cometax (paid income tax) are in this respect not redundant.
+In the case of attributes occurring in multiple information
+systems, we start by determining the primary location. Pri-
+mary location of an entity attribute is determined by mea-
+suring its degree in the constructed service network. An
+IS for which the entity attribute degree is highest, is most
+probably the attribute’s primary location. The justiﬁcation
+is based on the tendency that the majority of data process-
+ing services are normally provided at the same information
+system where the data originates from. Accordingly, the pri-
+mary location classiﬁer C(IS, d) for information system IS
+and entity attribute d is deﬁned as follows:
+
+j
+
+C(IS, d) =
+
+if Sr(IS, d) − Sm(d) ≥ ρ
+
+T,
+F, otherwise
+
+,
+
+Figure 5: Service network constructed from service
+interface fragments in Fig. 1, Fig. 2, Fig. 3 and
+Fig. 4.
+
+Based on SA-WSDL references in Fig. 1, Fig. 2, Fig. 3,
+Fig. 4 we can construct a service network as seen in Fig. 5.
+Rectangular nodes in the ﬁgure represent services whose
+interface fragments were annotated with SA-WSDL ref-
+erences, while ellipsoidal nodes represent data attributes,
+which were annotated.
+
+3. REDUNDANCY DETECTION METHOD
+In order to detect redundancy we start by constructing
+clusters representing entity attributes in diﬀerent informa-
+tion systems (IS). Each cluster represents entity attributes
+within an information system, whereas entity attributes are
+3We use XPath-style references to refer to speciﬁc fragments
+of schema.
+
+where relative score Sr(IS, d) = deg(d , IS )/deg(d ), av-
+erage score Sm(d) = 1/occurs (FIS , d) and ρ ∈ [0, 1] is a
+threshold that can be used to tune the classiﬁer.
+
+We can interpret deg(d , IS )/deg(d ) as a metric indicating
+the “relative attachment” of attribute d to IS. A relative at-
+tachment of 1 means that the attribute exclusively belongs
+in that information system, an attachment of 0 means that
+the attribute does not appear at all in IS. The higher the
+attachment of an attribute to an IS, the higher the chances
+that this is the primary location of the attribute.
+If an
+attribute appears in multiple information systems (say n),
+and the attribute appears an equal amount of times in each
+system, then its relative attachment to each system is 1/n.
+Thus a relative attachment above 1/n shows that an at-
+tribute is proportionally more strongly than average linked
+to an IS. In this light Sm(d) can be interpreted as the “av-
+erage attachment” of d to the information systems in which
+it is used.
+
+When an attribute appears more times in one information
+system than in others, then the diﬀerence between relative
+attachment Sr(IS, d) and 1/n becomes higher. For example,
+if an attribute d appears in two information systems X and
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA584<xsd:complexType name="employerTaxQueryAnswer">
+
+<xsd:all>
+
+<xsd:element name="nationalidcode" nillable="true" type="xsd:string"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/NationalOntology.owl#personNationalIdentifierCode"
+
+/>
+
+<xsd:element name="personname" nillable="true" type="xsd:string"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/NationalOntology.owl#firstName"
+sawsdl:modelReference="http://onto.soatrader.com/ontology/NationalOntology.owl#lastName"/>
+
+<xsd:element name="period" nillable="true" type="xsd:string"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/TimeOntology.owl#datePeriod"/>
+
+<xsd:element name="businessregistrycode" nillable="true" type="xsd:string"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/NationalOntology.owl#organizationBusinessRegistryCode"/>
+
+<xsd:element name="employername" nillable="true" type="xsd:string"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/NationalOntology.owl#organizationName"/>
+
+<xsd:element name="sum" nillable="true" type="xsd:decimal"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/FinanceOntology.owl#monetaryAmount"/>
+
+<xsd:element name="socialtax" nillable="true" type="xsd:decimal"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/FinanceOntology.owl#socialTaxAmount"/>
+
+<xsd:element name="incometax" nillable="true" type="xsd:decimal"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/FinanceOntology.owl#incomeTaxAmount"/>
+
+</xsd:all>
+
+</xsd:complexType>
+
+Figure 1: A Tax and Customs Board service—output message content fragment.
+
+<xsd:complexType name="detailedQuery">
+
+<xsd:sequence>
+
+<xsd:element name="businessname" type="xsd:string" minOccurs="0"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/NationalOntology.owl#organizationName"/>
+
+<xsd:element name="businessregistrycode" type="xsd:int" minOccurs="0"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/NationalOntology.owl#organizationBusinessRegistryCode"/>
+
+<xsd:element name="address" type="xsd:string" minOccurs="0"/>
+<xsd:element name="relatedpersonfirstname" type="xsd:string" minOccurs="0"/>
+<xsd:element name="relatedpersonlastname" type="xsd:string" minOccurs="0"/>
+<xsd:element name="relatedpersonbirthdate" type="xsd:date" minOccurs="0"/>
+<xsd:element name="relatedpersonnationalidcode" type="xsd:string" minOccurs="0"/>
+
+...
+
+</xsd:sequence>
+
+</xsd:complexType>
+
+Figure 2: A Business Registry service—input message content fragment.
+
+<xsd:complexType name="details_company">
+
+<xsd:sequence>
+
+//business registry number
+
+<xsd:element name="businessregistrycode" type="xsd:int"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/NationalOntology.owl#organizationBusinessRegistryCode"/>
+
+<xsd:element name="generaldata" type="typens:details_general" minOccurs="0"/>
+<xsd:element name="personaldata" type="typens:details_personal" minOccurs="0"/>
+
+</xsd:sequence>
+
+</xsd:complexType>
+...
+<xsd:complexType name="details_contact_medium">
+
+<xsd:sequence>
+
+<xsd:element name="typecode" type="xsd:string" minOccurs="0" /> //phone, fax, e-mail, ...
+<xsd:element name="typename" type="xsd:string" minOccurs="0"/>
+
+//contact medium value
+
+<xsd:element name="content" type="xsd:string" minOccurs="0"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/NationalOntology.owl#businessContactPhoneNumber"/>
+
+<xsd:element name="enddate" type="xsd:date" minOccurs="0"/>
+
+</xsd:sequence>
+
+</xsd:complexType>
+<xsd:complexType name="details_business_name">
+
+<xsd:sequence>
+
+...
+<xsd:element name="entryno" type="xsd:int" minOccurs="0"/>
+
+// business name
+
+<xsd:element name="content" type="xsd:string" minOccurs="0"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/NationalOntology.owl#organizationName"/>
+
+<xsd:element name="startdate" type="xsd:date" minOccurs="0"/>
+<xsd:element name="enddate" type="xsd:date" minOccurs="0"/>
+
+</xsd:sequence>
+
+</xsd:complexType>
+
+Figure 3: A Business Registry service—output message content fragment.
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA585<complexType name="generalinfoBaseType">
+
+<sequence>
+
+<element name="name" type="string"/> // business name
+
+// business registry code
+
+<element name="code" type="string" minOccurs="0"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/NationalOntology.owl#organizationBusinessRegistryCode"/>
+
+// contact phone
+
+<element name="tel" type="string" minOccurs="0"
+
+sawsdl:modelReference="http://onto.soatrader.com/ontology/NationalOntology.owl#businessContactPhoneNumber"/>
+
+<element name="fax" type="string" minOccurs="0"/> //contact fax
+<element name="email" type="string" minOccurs="0"/> // contact E-mail
+<element name="web" type="string" minOccurs="0"/> // contact WWW
+
+</sequence>
+
+</complexType>
+
+Figure 4: A service of The Register of Economic Activities—output message content fragment.
+
+Y and it is used 10 times in X and 5 times in Y , then the
+attachment of this attribute to X will be 10/15 = 0.66 and
+Sr(X, d) − 1/n = 0.16. We can then say with some conﬁ-
+dence that X is likely to be the primary location of d. Note
+that for a given attribute d, classiﬁer C(IS, d) might return
+true for multiple information systems. This may happen
+for example when the relative attachment of an attribute
+d is the same in all information systems in which this at-
+tribute appears – i.e. Sr(IS , d) = Sm(d) for all IS such that
+d ∈ atts(IS ). In this case, the classiﬁer is unable to assign
+attribute d to a single primary location.
+
+To illustrate the primary location classiﬁer, let us consider
+a selection of entity attributes (business registry code, busi-
+ness name, paid social tax, paid income tax, business con-
+tact phone number) from information system descriptions
+presented in Section 2.2. In Table 1 we summarize degrees
+of these entity attributes in considered information systems
+(Tax and Customs Board services (TCB), The Register of
+Economic Activities (REA), Business Registry (BR)). Ac-
+cording to the classiﬁer, the primary location of business
+registry code and business name is the Business Registry,
+while the primary location of “paid social tax” and “paid in-
+come tax” is the Tax and Customs Board services and the
+primary location of “business contact phone number” is the
+Register of Economic Activities.
+
+If an entity attribute appears in multiple information sys-
+tems, it may be redundant, but only, if it is not a reference
+attribute. Symmetrically, an entity attribute occurring in
+more than one information system, is a potential reference
+attribute.
+In order to detect such reference attributes we
+use the following classiﬁer:
+
+(
+
+if ∃IS : C(IS , d) ∧ deg
+
++(d,IS )
+deg−(d,IS )
+
+− deg
+
++(d)
+deg−(d)
+
+≤ ρ
+
+(cid:3)
+
+(cid:3)
+
+C
+
+(d) =
+
+T,
+F, otherwise
+
+where ρ
+
+(cid:3) ∈ [−∞, +∞] is a threshold.
+
+The hypothesis underpinning this deﬁnition is that the
+ratio between the number of times a reference attribute is
+used as input and the number of times it is produced as
+output can be used to characterize whether an attribute
+is a reference attribute. Especially in the attribute’s pri-
+mary location, we would expect that the reference attribute
+is used many times since such attributes are used to re-
+trieve data about an entity and these data are normally
+located in the primary location. To illustrate the reference
+attribute detection classiﬁer, let us elaborate further on the
+primary location suggestion results in Table 1. In Table 2
+we list additional characteristics for entity attributes whose
+
+primary location was proposed. According to Table 2 we see
+that both business registry code and business name serve as
+reference attributes, which would be used to link company
+records over multiple informations systems within a feder-
+ated IS. One may argue that business name is not a reference
+attribute. If we adopt this view, we have here an example
+where the ﬁndings of the classiﬁer do not always agree with
+the subjective judgment of informed users.
+
+Given the above two classiﬁers, we deﬁne a third classi-
+ﬁer, namely R(IS, d), which determines whether or not an
+attribute d is redundant in an information system IS:
+
+R(IS, d) =
+
+if occurs (d) > 1 ∧ C(IS , d) ∧ C
+
+T,
+F, otherwise
+
+(cid:3)
+
+(d)
+
+j
+
+In other words, an attribute d is redundant in an informa-
+tion IS if it appears in multiple information systems, IS is
+not its primary location and d is not a reference attribute.
+
+4. EVALUATION
+
+4.1 Dataset and methodology
+
+We applied the redundancy detection method proposed
+above to the Estonian governmental Web service reposi-
+tory [3], which contains interfaces of 58 information sys-
+tems, each one exposed as a Web service described in WSDL.
+These 58 systems encompass around 1000 Web service op-
+erations.
+
+In previous work [4] we introduced a method to seman-
+tically annotate WSDL interfaces and we applied it to the
+above governmental information system. This led us to a
+collection of SA-WSDL annotations on top of the 60 WSDL
+ﬁles comprising the Web services repository. Altogether,
+there were 7757 leaf elements in the XML schemas in the
+repository from which we managed to annotate 5555 leaf el-
+ements. The remaining elements were too specialized to be
+annotated meaningfully, but since they each only occurred
+in one information system, they do not constitute a source
+of potential redundancy. The semantic annotations that we
+constructed refer to classes in an ontology that we built in-
+crementally during the semantic annotation process.
+
+From the semantically annotated Web service interfaces,
+we constructed a service network consisting of 928 service
+operation nodes (annotated WSDL operations), 466 entity
+attribute nodes (forming a uniﬁed data model used for cov-
+ering about 72% of XML Schema leaf node elements across
+all WSDL interfaces of the federated IS) and 17006 edges.
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA586Table 1: Example of entity attribute primary location detection with ρ = 0.
+
+Location is
+Entity attribute d
+TCB
+Business registry code
+TCB
+Business name
+TCB
+Paid social tax amount
+TCB
+Paid income tax amount
+REA
+Business registry code
+Business name
+REA
+Business contact phone number REA
+BR
+Business registry code
+BR
+Business name
+Business contact phone number BR
+
+deg(d, is) C(is, d)
+
+10
+3
+1
+6
+6
+7
+5
+15
+13
+1
+
+F
+F
+T
+T
+F
+F
+T
+T
+T
+F
+
+Table 2: Example of reference detection for attributes in Table 1 with ρ
+
+= 1.
+
+−
+
+deg +(d , IS )
+
+deg +(d ) C’(d)
+
+Entity attribute d
+Paid social tax
+Paid income tax
+Business contact phone
+Business registry code
+Business name
+
+Location IS
+
+deg
+
+TCB
+TCB
+REA
+BR
+BR
+
+(d , IS )
+0
+0
+0
+7
+6
+
+(cid:3)
+
+−
+
+deg
+
+(d )
+
+1
+6
+5
+8
+7
+
+0
+0
+35
+38
+16
+
+3
+6
+73
+52
+33
+
+F
+F
+F
+T
+T
+
+Clusters were built for the 58 information systems forming
+the federated information system.
+
+For evaluation purposes we use the classical notions of
+precision and recall deﬁned for statistical classiﬁers.
+In a
+statistical classiﬁcation task, the precision of a classiﬁer for
+a given class is the number of true positives divided by the
+sum of true positives and false positives. Meanwhile, the
+recall of a classiﬁer for a given task is deﬁned as the number
+of true positives divided by the sum of true positives and
+false negatives.A precision score of 1.0 for a class c means
+that every item labeled by the classiﬁer as belonging to class
+c does indeed belong to this class, whereas a recall of 1.0
+means that every item of class c was labeled by the classiﬁer
+as belonging to c. Finally, the evaluation also relies on the
+concept of F-score, which is deﬁned as the harmonic mean
+of the precision and recall.
+
+To evaluate the performance of the classiﬁers deﬁned in
+Section 3, we manually inspected each entity attribute and
+we determined its primary location and whether it is a ref-
+erence attribute or not. This manual judgement was made
+by the ﬁrst author of the paper who is familiar with the
+overall information system, from involvements in previous
+projects. Based on these manual judgements, we computed
+redundancy as deﬁned in Section 2.1 and we compared the
+resulting judgment to the one obtained with the automated
+redundancy classiﬁer.
+
+When evaluating the redundancy classiﬁer, we discarded
+all entity attributes that occurred in a single information sys-
+tem, since these attributes are trivially non-redundant and
+including them in the evaluation of the redundancy classi-
+ﬁer would have led to biased results (i.e. all these attributes
+would have been correctly classiﬁed, in a trivial manner).
+
+The ontology used to annotate the WSDL interfaces had
+taxonomic relations between classes. However, in order to
+reduce eﬀects arising from semantic annotations with dif-
+ferent granularity (such as “general identiﬁer” vs “person’s
+
+national identiﬁer code” vs “child’s national identiﬁer code”)
+we discarded annotations in the top-level of the taxonomy.
+In other words, we gave preference to more speciﬁc seman-
+tic annotations over more general ones. The rationale for
+this choice is the following: If we compared annotations at
+a higher level, we would immediately obtain a large number
+of false positives for the redundancy classiﬁer. For example,
+every time we ﬁnd an attribute containing an address we
+would say that this attribute is redundant. Yet, it is nor-
+mal that a federated information system contains multiple
+address types (e.g. personal address versus work address,
+billing address versus shipping address). Thus, even though
+all these elements would have been annotated with the con-
+cept “address”, this annotation was deleted during the pre-
+processing phase. Without this ﬁltering step, the accuracy
+results of the statistical classiﬁers became meaningless.
+4.2 Results and discussion
+
+We calculated precision, recall and f-score for every pos-
+, with ρ ranging from 0
+sible setting of parameters ρ and ρ
+to 1 in steps of 0.1 and ρ
+ranging from -25 to 25 in steps of
+5. The resulting f-scores for each setting are shown in Ta-
+ble 3, while precision and recall are summarized respectively
+in Table 4 and in Table 5.
+
+(cid:3)
+
+(cid:3)
+
+(cid:3)
+
+(cid:3)
+
+We can note that the F-score is consistently high when
+ρ > 0.2. Parameter ρ
+has less inﬂuence on the f-score, al-
+though there is a trend that the f-score is better for negative
+values of ρ
+. By inspecting the results closer, we noted that
+the problem when ρ is positive is that the recall drops signif-
+icantly, meaning that we start getting many false negatives.
+These false negatives probably stem from the fact that for
+(cid:3) ≥ 0, the method starts misclassifying some attributes
+ρ
+as reference attributes and these misclassiﬁed attributes are
+(cid:3)
+It appears that a value of ρ
+not classiﬁed as redundant.
+between −10 and 0 addresses this issue without overly af-
+fecting the precision. For values of ρ
+< 10 we observed
+that the precision is heavily aﬀected, because the method
+
+(cid:3)
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA587Table 3: F-scores for redundancy detection with ρ = [0.0, 1.0] and ρ
+
+(cid:3)
+
+= [−25, 25].
+
+Table 4: Precision for redundancy detection with ρ = [0.0, 1.0] and ρ
+
+(cid:3)
+
+= [−25, 25].
+
+Table 5: Recall for redundancy detection with ρ = [0.0, 1.0] and ρ
+
+(cid:3)
+
+= [−25, 25].
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA588is unable to properly identify any reference attribute and it
+reports all reference attributes as redundant. We therefore
+conclude that good settings can be obtained by simply set-
+ting ρ and ρ
+to the middle of their ranges, i.e. ρ = 0.5 and
+(cid:3)
+ρ
+= 0, although further work on other datasets would be
+needed to conﬁrm this hypothesis.
+
+(cid:3)
+
+The maximum F-score (0.89) was achieved with ρ = 0.6
+(cid:3) ∈ (−20, −10). More detailed results for ρ = 0.6
+and ρ
+are plotted in Fig. 7. We can observe from this ﬁgure the
+(cid:3)
+tradeoﬀ that occurs between precision and recall when ρ
+moves from negative to positive territory. Essentially, when
+(cid:3) ∈ (−20, −10), the recall of the classiﬁer is around 99%.
+ρ
+In other words, if an attribute could reasonably qualify as
+redundant, the classiﬁer will ﬁnd it. At around 80%, the
+precision is not optimal, but arguably still acceptable. One
+could argue that higher precision (at close to 100% recall)
+would be diﬃcult to attain, given the subjectivity underpin-
+ning the notion of redundancy.
+
+Figure 7: Redundancy detection results for ρ = 0.6.
+
+Based on manually classiﬁed redundant data items, we
+analyzed also what percentage of data items occurring at
+multiple locations are redundant. It turned out that 79%
+of such data items are redundant, which is consistent with
+ﬁndings of Ventrone & Heiler [10] who point to several cases
+where data model overlap in large federated information sys-
+tems was up to 80%.
+
+The following threats to validity apply to our results:
+• The evaluation of the classiﬁers proposed in the paper
+was made against our own judgment of the primary
+location of each attribute and its likelihood of it be-
+ing a reference attribute. Some may argue that these
+judgments are subjective and possibly biased. To min-
+imize the risk of bias, we made the manual classiﬁca-
+tion of attributes before deﬁning and evaluating the
+classiﬁers.
+
+• The redundancy detection technique depends on the
+quality of the semantic annotations, so the conclusions
+we made might not be applicable if the quality of the
+semantic annotations is signiﬁcantly lower (or higher),
+or if some semantic annotations are missing.
+
+• There were large amounts of data redundancy in the
+federated information system considered in this study.
+
+To tackle these issues we plan to engage in another it-
+eration of this evaluation, this time by engaging ﬁeld ex-
+perts to get their expert opinion on the results of automated
+classiﬁers. Furthermore, we expect semantic annotations of
+studied information system interfaces of better quality to
+be available at another iteration. Finally, further evalua-
+tion with other federated information systems would help
+to address the third threat to validity. It is worth noting
+in this respect that although the level of data redundancy
+found is high, a large part of this redundancy is likely to
+be deliberate. Due to privacy concerns and IT governance
+decisions, information exchange between diﬀerent informa-
+tion systems in the government sector is sometimes delib-
+erately restricted. For example, the fact that a citizen can
+give multiple contact details for diﬀerent engagements with
+government agencies is considered to be possible in certain
+scenarios and government agencies are sometimes restricted
+in their possibilities of exchanging these details.
+
+5. RELATED WORK
+
+Inter-record redundancy has been recognized in the liter-
+ature for some time [1], and has been addressed in terms of
+normal forms and normalization by Ling et al [5], who gave
+one of the ﬁrst treatments of inter-relational dependencies.
+However, the focus of this and other works on database nor-
+malization is to avoid redudancy within a single database.
+In contrast, the objective of our work is to avoid redundancy
+across information systems that, although federated, are in-
+dependently developed and maintained.
+
+Wadsack et al
+
+[11] studied data dependencies among
+the integrated Web information systems and classiﬁed dis-
+tributed data dependencies. The main driving force behind
+such activity was a need to understand data dependencies
+between locally autonomous informations systems created
+through ad-hoc integration projects. The latter are charac-
+terized as projects with no systematic planning and usually
+produce poor or no documentation at all. Today, industry
+faces the challenge of maintaining and adapting these sys-
+tems without complete documentation although many of the
+systems have become indispensable. The situation is critical
+in large systems, such as federated governmental systems,
+which have evolved independently and just recently have
+started to interact with each-other. This is why automated
+discovery of data dependencies is so important.
+
+The authors propose three types of inter-schema depen-
+dencies such as redundancy, inclusion and constraint depen-
+dency. Redundancy dependency characterizes data, which is
+held and maintained (at least) at two sources. Inclusion de-
+pendency means that an (a set of) attribute in one database
+table holds a part or the same information as an (a set of)
+attribute of a second database table. Finally, constraint de-
+pendency characterizes condition(s) over two or more data
+dependencies to assign information. Redundancy depen-
+dency is then further classiﬁed into synonymity, duplication,
+replication and “real” redundancy. Synonymity occurs when
+multiple attributes hold the same information but have dif-
+ferent names. This can be tackled by using semantic annota-
+tions, as we do in our work, rather than working directly on
+raw schemas or interfaces. Duplication corresponds to the
+case where an explicit copy of a data entry is made at speciﬁc
+points in time, but the copied data entry is not kept consis-
+tent. Finally, replication occurs when an explicit copy of a
+data entry is made and the copies are kept consistent, i.e.,
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA589a controlled redundancy. Finally, “real” redundancy occurs
+when a data entry is stored in multiple locations without
+any mechanism to keep the copies “in sync”. In this paper,
+we are interested in “real” redundancy.
+
+Wadsack et al [11] also point out that inclusion dependen-
+cies, known from (single) relational databases [2], form the
+basis for interpreting the semantics of foreign keys. Each
+foreign key implies an inclusion dependency where the in-
+cluded attribute (set of attributes) is a key of the correspond-
+ing data (table). Since the authors analyze SQL queries to
+identify primary key/foreign key relations we cannot use this
+approach in this paper since we assume availability of service
+interface descriptions only.
+
+According to deﬁnition by Witt and Simsion [12]: “model
+contains no redundancy means that each fact is represented
+in only one place” we are trying to detect “external redun-
+dancy”. Moody [6] identiﬁes external redundancy as exis-
+tence of data model entities, which are duplicated over a set
+of models or systems. This form of redundancy is a seri-
+ous problem in most organizations—empirical studies show
+that there are an average of ten physical copies of each pri-
+mary data item in medium to large organizations [8]. This
+ﬁnding applies to our case as well where for instance par-
+tially overlapping information regarding companies is stored
+in majority of around 60 informations systems we studied.
+In the context of federated databases, Sheth and Lar-
+son [9] have analyzed diﬀerent forms of redundancy between
+database schemas deﬁned at diﬀerent levels of a federated
+database architecture. The authors note that redundancies
+can arise, for example, between “federated schemas” and “ex-
+ternal schemas” deﬁned for diﬀerent federation users. This
+type of redundancy however occurs at the level of schemas,
+because these schemas represent diﬀerent (and possibly over-
+lapping) views on the underlying databases. This schema
+redundancy does not entail a redundancy in the underlying
+databases, so it is not a case of redundancy dependency as
+deﬁned in this paper.
+
+6. CONCLUSION
+
+We have proposed metrics for enabling discovery of data
+redundancy from WSDL descriptions of information system
+interfaces and evaluated them on a federated governmental
+information system. The results of the evaluation are en-
+couraging, since consistently high precision and recall were
+achieved, both for identifying redundant attributes and for
+identifying the primary location of redundant attributes.
+Moreover, the evaluation unveiled that, although individual
+information systems might not have a lot of data redun-
+dancy, there can be considerable redundancy in federated
+information systems.
+
+(cid:3)
+
+The proposed metrics included two parameters (ρ and ρ
+
+),
+which have to be ﬁne-tuned for diﬀerent conﬁgurations. Our
+future research will aim at validating the proposed met-
+rics with further datasets in order to determine to what
+extent the optimal settings of these parameters are domain-
+dependent. Further experimentation is also required in order
+to determine what percentage of the redundancy identiﬁed
+by the proposed metrics is deliberate, and therefore how use-
+ful are the proposed metrics in identifying unintended redun-
+dancy. Finally, more experiments could be conducted using
+diﬀerent notions of semantic equivalence between schema el-
+ements.
+
+Acknowledgement
+This research is funded by Swedbank and the European Re-
+gional Development Fund through the Estonian Centre of
+Excellence in Computer Science.
+
+7. REFERENCES
+[1] E. F. Codd. A relational model of data for large shared
+
+data banks. Commun. ACM, 13(6):377–387, 1970.
+
+[2] Christian Fahrner and Gottfried Vossen. Transforming
+
+relational database schemas into object-oriented
+schemas according to odmg-93. In DOOD ’95:
+Proceedings of the Fourth International Conference on
+Deductive and Object-Oriented Databases, pages
+429–446, London, UK, 1995. Springer-Verlag.
+
+[3] A. Kalja, A. Reitsakas, and N. Saard. eGovernment in
+
+Estonia: Best practices. In Technology Management:
+A Unifying Discipline for Melting the Boundaries,
+pages 500–506. IEEE Press, 31 July–4 August 2005.
+
+[4] P. K¨ungas and M. Dumas. Cost-eﬀective semantic
+
+annotation of XML schemas and web service
+interfaces. In Proceedings of the IEEE International
+Conference on Services Computing, SCC 2009,
+Bangalore, India, September 21–25, 2009, pages
+372–379. IEEE Computer Society Press, 2009.
+
+[5] T.-W. Ling, F. W. Tompa, and T. Kameda. An
+
+improved third normal form for relational databases.
+ACM Transactions on Database Systems,
+6(2):329–346, 1981.
+
+[6] D. L. Moody. Metrics for evaluating the quality of
+
+entity relationship models. In Proceedings of the 17th
+International Conference on Conceptual Modeling,
+volume 1507 of Lecture Notes in Computer Science,
+pages 211–225, London, UK, 1998. Springer-Verlag.
+
+[7] D. L. Moody and G. G. Shanks. Improving the quality
+
+of data models: empirical validation of a quality
+management framework. Information Systems,
+28(6):619–650, 2003.
+
+[8] C. O’Brien and S. O’Brien. Mining your legacy
+
+systems: A data-based approach. In Asia Paciﬁc DB2
+User Group Conference, Melbourne, Australia,
+November 21-23, 1994, 1994.
+
+[9] A. P. Sheth and J. A. Larson. Federated database
+
+systems for managing distributed, heterogeneous, and
+autonomous databases. ACM Computing Surveys
+22(3):183–236, 1990.
+
+[10] V. Ventrone and S. Heiler. Some advice for dealing
+with semantic heterogeneity in federated database
+systems. In Proceedings of the Database Colloquium,
+San Diego, August 1994, Armed Forces
+Communications and Electronics Assc. (AFCEA),
+1994.
+
+[11] J. P. Wadsack, J. Niere, H. Giese, and J. H. Jahnke.
+
+Towards data dependency detection in web
+information systems. In In Proceedings of the Database
+Maintenance and Reengineering Workshop
+(DBMR’2002), Montreal, Canada., 2002.
+
+[12] G. C. Witt and G. C. Simsion. Data Modeling
+
+Essentials: Analysis, Design, and Innovation. The
+Coriolis Group, 2000.
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA590

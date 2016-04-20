@@ -1,0 +1,309 @@
+A Declarative Framework
+
+for Semantic Link Discovery over Relational Data
+
+∗
+
+Oktie Hassanzadeh
+University of Toronto
+
+oktie@cs.toronto.edu
+
+Lipyeow Lim
+IBM Research
+
+liplim@us.ibm.com
+
+Anastasios Kementsietsidis
+
+IBM Research
+
+akement@us.ibm.com
+
+Min Wang
+IBM Research
+
+min@us.ibm.com
+
+ABSTRACT
+In this paper, we present a framework for online discov-
+ery of semantic links from relational data. Our framework
+is based on declarative speciﬁcation of the linkage require-
+ments by the user, that allows matching data items in many
+real-world scenarios. These requirements are translated to
+queries that can run over the relational data source, poten-
+tially using the semantic knowledge to enhance the accuracy
+of link discovery. Our framework lets data publishers to eas-
+ily ﬁnd and publish high-quality links to other data sources,
+and therefore could signiﬁcantly enhance the value of the
+data in the next generation of web.
+
+Categories and Subject Descriptors
+H.2.5 [Information Systems]: Heterogeneous Databases;
+H.2.4 [Information Systems]: Systems; H.2.3 [Information
+Systems]: Languages
+General Terms
+Algorithms, Design, Languages
+Keywords
+Link Discovery, Record Linkage, Linked Data, Semantic Web
+
+1.
+
+INTRODUCTION
+
+While publishing online data is now easier than ever, at-
+tempts to establish semantic relationships between diﬀerent
+published data sources has been less successful. So, from the
+users’ perspective, online sources resemble islands of data
+(or data silos), where each island maintains only part of the
+data necessary to satisfy a user’s information needs. Pene-
+trating these silos to both understand their contents and un-
+derstand potential semantic connections is a daunting task.
+What web users need is automated support for creating ref-
+erential links between data that reside in diﬀerent sources
+and that are semantically related. Of course, ﬁnding such
+links requires the use of both approximate matching (to over-
+come syntactic representational diﬀerences and errors) and
+semantic matching (to ﬁnd speciﬁc semantic relationships).
+Furthermore, both types of matching must be tightly in-
+tegrated to accommodate for the tremendous heterogeneity
+found in web repositories.
+
+∗Work done while at IBM T.J. Watson Research Center
+
+Copyright is held by the author/owner(s).
+WWW 2009, April 20–24, 2009, Madrid, Spain.
+ACM 978-1-60558-487-4/09/04.
+
+In the context of the Linking Open Data (LOD) commu-
+nity project at W3C, a number of tools and frameworks have
+been developed that allow the generation and publication of
+linked data from relational databases. Examples of such
+frameworks include D2RQ [2] and OpenLink’s Virtuoso [1].
+Although these frameworks signiﬁcantly simplify the pro-
+cess of publishing linked data, and are a main reason behind
+the recent growth of the linked data sources, they do not
+provide tools for discovering links between the data sources.
+The number of links between existing LOD data sources is
+still three orders of magnitude less than the number of base
+data triples (as of January 2009).
+
+For typical users, this means they must experiment with
+a myriad of diﬀerent link discovery methods to ﬁnd one
+that suits their needs. In this paper, we seek to develop a
+generic and extensible framework for integrating link discov-
+ery methods. Our goal is to facilitate experimentation and
+help users ﬁnd and tune the link discovery methods that
+will work best for their domain and application. Our frame-
+work permits the discovery of links between autonomous re-
+lational sources.
+
+2. MOTIVATING EXAMPLE
+
+As our motivating example, consider the sample relations
+and data shown in Figure 1, including a database of clini-
+cal trials (the CT relation), a source of electronic medical
+records (EMR) for patients (relation PV ) and a web source
+extracted from DBpedia (or Wikipedia) which stores infor-
+mation about drugs and diseases (the DBPD and DBPG
+relations). Starting from these relations, we now describe
+brieﬂy the types of links data publishers would like to dis-
+cover between them. Patient visit “VID770” with diagno-
+sis “Thalassaemia” in the PV relation should be linked to
+the trial “NCT00579111” with condition “Hematologic Dis-
+eases” since “Thalassaemia” is a diﬀerent representation of
+“Thalassemia” and according to a medical thesaurus (such
+as NCI) “Thalassemia” is a type of “Hematologic Diseases”.
+The prescr iption column of both patient visits in the PV
+relation should link to trial “NCT00336362” based on the
+fact that “Hydroxycarbamide”, “Hydroxyura” and “Hydrox-
+yurea” all refer to the same drug. Other interesting corre-
+lations include linking “Westchester Med. Ctr” from visit
+“VID777” to “Columbia University” based on additional ge-
+ographical information that both locations are in the same
+state (New York), and ﬁnding other related trials based on
+a speciﬁc criteria, e.g., based on the similarity of the title
+and authors of the trials’ corresponding publications. The
+online trials data source can link the condition “Hemato-
+
+WWW 2009 MADRID!Track: Web Engineering / Session: End User Web Engineering1101trial
+NCT00336362
+NCT00579111
+
+cond
+Beta-Thalassemia
+Hematologic Diseases
+
+inter
+Hydroxyurea
+Campath
+
+loc
+Columbia University
+Texas Children’s Hospital
+
+city
+New York
+Austin
+
+pub
+14988152
+3058228
+
+visitid
+VID770
+VID777
+
+diag
+Thalassaemia
+PCV
+
+prescr
+Hydroxyura
+Hydroxycarbamide Westchester Med. Ctr
+
+location
+Texas Hospital
+
+(b) Patient visit (PV )
+
+(a) Clinical trials (CT )
+
+Figure 1: Sample relations
+
+name
+Thalassemia
+Blood Disorders
+
+(c) DBpedia
+
+Disease (DBPD)
+
+name
+Alemtuzumab
+Hydroxyurea
+
+(d) DBpedia
+Drug (DBPG)
+
+linkspec_stmt:= CREATE LINKSPEC linkspec name ( col1, col2 )
+
+AS link_method opt_args opt_limit;
+link_method:= native_link | link_clause_expr | UDF;
+native_link:= synonym | hyponym | stringMatch;
+
+link_clause_expr:= link_clause AND link_clause_expr
+| link_clause OR link_clause_expr
+| link_clause;
+
+link_clause:= LINK col3 WITH col4
+
+USING link_terminal opt_limit;
+
+link_terminal:= native_link | UDF | linkspec name
+
+opt_limit:= LINKLIMIT number;
+
+Figure 2: The LinQL grammar
+
+logic Diseases” to DBpedia resource (or Wikipedia page) on
+“Blood Disorders”, and link the intervention “Campath” to
+DBpedia resource “Alemtuzumab” using the semantic knowl-
+edge that “Campath” is the brand name for the chemical
+name “Alemtuzumab”.
+3. THE LINQL LANGUAGE
+
+We introduce LinQL, an extension of SQL that integrates
+querying with link discovery methods. A query written in
+LinQL identiﬁes (a) the subset of the local data that must
+be linked; (b) a source containing external data that are to
+be linked with the local data from (a); and (c) the meth-
+ods(s) that must be used to ﬁnd links between the local and
+external data. Our framework includes a variety of native
+(or built-in) methods including synonym, hyponym, and a
+variety of string similarity functions. Such native methods
+can be used as such or they can be customized by setting
+their parameters and combined to allow both semantic and
+syntactic matching. This allows users to interleave declara-
+tive queries with interesting combinations of link discovery
+requests. The native support for methods also permits cus-
+tomization where domain knowledge is available that can
+greatly enhance the performance. The framework is also ex-
+tensible to additional methods, written as “black-box” user-
+deﬁned functions (UDF).
+
+Although the linkage speciﬁcation elements of LinQL are
+expressible in a number of diﬀerent languages and nota-
+tions (e.g., RDF/XML, N3, NTriples), in our framework we
+choose for consistency an SQL-like syntax. A link speciﬁca-
+tion, or linkspec for short, deﬁnes the conditions that two
+given values must satisfy before a link can be established
+between them. In more detail, a linkspec is deﬁned using
+the grammar of Figure 2 (we omit here the full grammar
+and only present its main components). As shown in the
+ﬁgure, a CREATE LINKSPEC statement deﬁnes a new linkspec
+and accepts as parameters the name of the deﬁned linkspec
+and the names of the relation columns whose values need to
+be linked.
+
+A link speciﬁcation can also be deﬁned in terms of link
+clause expressions. Link clause expressions are boolean com-
+binations of link clauses, where each link clause is semanti-
+cally a boolean condition on two columns and is speciﬁed
+using either (a) a native method; (b) a user-deﬁned func-
+tion (UDF); or (c) a previously deﬁned linkspec. Note the
+mutual recursive nature of linkspecs and link clauses. A
+linkspec can be deﬁned using link clauses while a link clause
+can be speciﬁed using previously deﬁned linkspecs. The LIN-
+KLIMIT allows the users to limit the number of links and only
+consider k results, or the top-k where ordering is possible.
+
+4. FROM LINQL TO SQL
+
+Irrespectively of the language used, a declarative speci-
+ﬁcation must be translated into some form of a program
+that ﬁnds the links between the local and external data.
+Often, such programs are implemented using programming
+languages like Java or C by third-party developers, and are
+automatically invoked with arguments deﬁned through the
+declarative speciﬁcation. As such, for the data publishers
+these programs act as black-boxes that sit outside the data
+publishing framework and whose modiﬁcation requires the
+help of these developers. We propose an approach to ad-
+dress these shortcomings by providing a native SQL imple-
+mentation for the link discovery algorithms. This approach
+has several advantages including the ability to (a) easily im-
+plement this framework on existing relational data sources
+with minimum eﬀort and without any need for externally
+written program code; (b) take advantage of the underlying
+DBMS optimizations in the query engine while evaluating
+the SQL implementations of the link ﬁnding algorithms; and
+(c) use speciﬁc eﬃciency and functionality enhancements to
+improve the eﬃciency of these algorithms.
+
+5. CONCLUSION
+
+In this paper, we outlined a declarative extensible frame-
+work for link discovery from relational data. We have imple-
+mented the framework on a commercial database engine and
+validated the eﬀectiveness of our approach by ﬁnding links
+between a real clinical trials data source and several other
+data sources1. We believe that our framework can greatly
+enhance the process of publishing a high-quality data source
+with links to other data sources on the web. Furthermore,
+our framework combined with an existing popular declar-
+ative approach for generating RDF data on the web such
+as [2], can lead to a quick and simple way of publishing an
+online linked data source with high-quality links.
+
+6. REFERENCES
+[1] Openlink Virtuoso: Universal server platform for the
+
+real-time enterprise, http://virtuoso.openlinksw.com/.
+[2] C. Bizer and A. Seaborne. D2RQ - Treating non-RDF
+
+databases as virtual RDF graphs. In ISWC2004 (posters).
+
+1A subset of the links found are released at http://linkedct.org.
+
+WWW 2009 MADRID!Track: Web Engineering / Session: End User Web Engineering1102

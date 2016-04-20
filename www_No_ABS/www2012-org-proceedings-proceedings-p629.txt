@@ -1,0 +1,790 @@
+It has been noted that, although RDF is a graph data format, its standard query language, SPARQL, provides only limited navigational functionalities.
+This has led the W3C to include the property-path feature in the upcoming version of the standard, SPARQL 1.1.
+Property paths are essentially regular expressions that retrieve pairs of nodes of an RDF graph that are connected by paths conforming to those expressions.
+In this paper, we study the semantics of property paths and the complexity of evaluating them.
+We perform this study both from a theoretical and a practical point of view, and provide strong arguments against the current semantics of SPARQL 1.1 property paths.
+We began our study by testing several SPARQL 1.1 implementations, and we were faced with an intriguing empirical observation: all these implementations of SPARQL 1.1 fail to give an answer Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+Distribution of these papers is limited to classroom use, and personal use by others.
+ 
+ + + + + + +          
+
+    
+
+  
+
+    
+  
+ +
+
+ KGram Sesame +    
+    
+     + + +
+
+
+
+  
+ +  
+ Figure 1: Time in seconds for processing Cliq-1 w.r.t.
+the clique size n (time axis in log-scale) @prefix : <http://example.org/> .
+:a0 :p :a1, :a2, :a3, :a4, :a5, :a6, :a7 .
+:a1 :p :a0, :a2, :a3, :a4, :a5, :a6, :a7 .
+:a2 :p :a0, :a1, :a3, :a4, :a5, :a6, :a7 .
+:a3 :p :a0, :a1, :a2, :a4, :a5, :a6, :a7 .
+:a4 :p :a0, :a1, :a2, :a3, :a5, :a6, :a7 .
+:a5 :p :a0, :a1, :a2, :a3, :a4, :a6, :a7 .
+:a6 :p :a0, :a1, :a2, :a3, :a4, :a5, :a7 .
+:a7 :p :a0, :a1, :a2, :a3, :a4, :a5, :a6 .
+Figure 2: RDF graph representing a clique with 8 nodes in a reasonable time (one hour) even for small input graphs and very simple property path expressions.
+We conduct two sets of experiments, the clique experiments and the foaf experiments, testing four implementations: ARQ [22], RDF::Query [24], KGRAM-Corese [23], and Sesame [25].
+For the  rst experiment, we consider RDF graphs representing cliques (complete graphs) of different sizes.
+For example, Figure 2 shows a clique with 8 nodes in N3 notation.
+In this scenario, we tested the performance of the implementations by using a very simple query: Cliq-1: SELECT * WHERE { :a0 (:p)* :a1 } that essentially asks for paths of arbitrary length between two  xed nodes.
+The experimental behavior for this query was quite surprising: no implementation was able to handle a clique with 13 nodes.
+That is, all implementations fail to give an answer after one hour for an input RDF graph with only 156 triples and 970 bytes of size on disk.
+In particular, Sesame fails for a clique with
+
+ time needed to process Cliq-1 seems to grow doubly-exponentially w.r.t.
+the input data  le (see the graph in Figure 1, which is in logarithmic scale).
+We also tested queries with nested stars, showing that nesting has an unexpected impact in query evaluation.
+In particular, we tested the query:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ARQ RDFQ Kgram Sesame  
+  
+
+    
+                
+              
+
+             Input
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         RDFQ Kgram Sesame  
+  
+
+                      
+
+
+
+         Psparql Gleen
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Table 1: Time in seconds for processing query Foaf-1 Table 2: Time in seconds for processing Foaf-1D Cliq-2: SELECT * WHERE { :a0 ((:p)*)* :a1 }, for which no implementation was able to handle even a clique with
+ in Figure 2 (which occupied only 378 bytes on disk).
+To show that this behavior also appears with real data, we devised an experiment with data crawled from the Web.
+We constructed RDF graphs from foaf documents crawled by following foaf:knows links starting from Axel Polleres  foaf document.
+We considered several test cases of increasing size, from 9.2 KB (38 nodes and 119 triples) to 25.8 KB (76 nodes and 360 triples), and we tested the following simple query asking for the network of friends of Axel Polleres1: Foaf-1: SELECT * WHERE { axel:me (foaf:knows)* ?x }.
+As in the previous case, the results are striking.
+For query Foaf-1 all the implementations exceeded the timeout for an input RDF graph of 14.8 KB (with only 54 nodes and 201 triples).
+Table 1 shows the behavior of the different implementations for different input sizes.
+The   symbol in the table means timeout (one hour).
+As our experiments show, for the tested implementations, property path evaluation is essentially infeasible in practice.
+But, what is the reason for this behavior?
+Is this only a problem of the particular implementations that we tested?
+Or is there a fundamental problem in the SPARQL 1.1 speci cation?
+Our theoretical results show that this last question is the key to understand this issue.
+In fact, we formally prove that, essentially, any implementation that follows the SPARQL 1.1 speci cation (as of November 2011) [10] will be doomed to show the same behavior.
+We begin our theoretical study by formalizing the semantics of property paths.
+SPARQL 1.1 de nes a bag (or multiset) semantics for these expressions.
+That is, when evaluating property-path expressions one can obtain several duplicates for the same solution, essentially one duplicate for every different path in the graph satisfying the expression.
+For example, every solution of query Cliq-1 is an empty tuple that can have several duplicates in the output.
+ARQ for instance, represents this empty tuple as | |, and for query Cliq-1 it returns several copies of | |.
+Since RDF graphs containing cycles may lead to an in nite number of paths, the of cial speci cation de nes the semantics by means of a particular counting procedure, which handles cycles in a way that ensures that the  nal count is  nite.
+We formalize this procedure, and some other alternative semantics, and prove theoretical bounds on the computational complexity of the evaluation problem, showing that the bag semantics for property paths is the main reason for the infeasibility of the evaluation of property paths in SPARQL 1.1.
+Our theoretical study allowed us to prove some extremely large lower bounds for property-path evaluation: for query Cliq-2 and the RDF graph in Figure 2, we show that every implementation that strictly adheres to the SPARQL 1.1 speci cation should provide as output a  le of size more than 79 Yottabytes!
+It should be noticed that some studies estimate that the cumulative capacity of all the digital stores in the world in 2011 is less than 1 Yottabyte [8] 2.
+We study the computational complexity of the setting for property paths proposed by the W3C, as well as for several alternative settings.
+Given the bag semantics of property paths, we measure the complexity in terms of counting complexity classes.
+The most studied and used intractable counting class is #P [19], which is, intuitively, the counting class associated to the NP problems: while the prototypical NP-complete problem is checking if a propositional formula is satis able (SAT), the prototypical #P-complete problem is counting how many truth assignments satisfy a propositional formula (COUNTSAT).
+We also make a distinction between data complexity and combined complexity.
+Data complexity is the complexity of evaluating a query on a database instance assuming that the query is  xed, that is, the complexity is measured only in terms of the size of the database.
+Combined complexity considers both the query and the database instance as input of the problem [20].
+We prove several complexity results.
+In particular, one of our main results states that property-path evaluation according to the W3C semantics is #P-complete in data complexity.
+Moreover, we prove that the combined complexity of this problem is not even inside #P.
+It has been argued that a possibility to deal with the problem of counting paths in the presence of cycles is to consider only simple paths (a simple path is a path with no repeated nodes).
+We prove that for this alternative semantics the problem is still #P-complete for data complexity, and remains in #P for combined complexity.
+Thus, although the evaluation problems for these two semantics are intractable, the one based on simple paths has lower combined complexity.
+All our results indicate that evaluating property-path queries according to the of cial SPARQL 1.1 semantics is essentially infeasi-ble.
+But not all are bad news.
+A possible solution to this problem is to not use a semantics that considers duplicates, but instead a more traditional existential semantics for path queries, as it has been done for years in graph databases [13, 4, 3], in XML [12, 9], and even on RDF [1, 16] previous to SPARQL 1.1.
+It is well-known that for this semantics the evaluation problem is tractable, and even linear in data complexity.
+As our  nal theoretical result, we prove that the existential semantics for property paths is equivalent to the SPARQL 1.1 semantics when duplicates are eliminated.
+Notice that the language has a special feature for this: SELECT DISTINCT.
+Thus, since the existential semantics can be ef ciently evaluated, one would expect implementations to take advantage of the SELECT DISTINCT feature.
+Unfortunately, as our  nal experiments show, no significant improvement in performance can be observed in the tested implementations when the SELECT DISTINCT feature is used.
+For example, consider the following query: Foaf-1D: SELECT DISTINCT * WHERE { axel:me (foaf:knows)* ?x }.
+axel: pre x is <http://www.polleres.net/foaf.rdf#>.
+some inputs, none of them was able to process an input  le of
+ mentations of existential paths in SPARQL 1.0: Psparql [1] and Gleen [27], which return the same answers as the other tested implementations for the queries using the SELECT DISTINCT feature.
+The numbers speak for themselves (Table 2).
+Organization of the paper: Section 2 presents our experiments.
+Sections 3 and 4 present the formalization of SPARQL 1.1 and property paths.
+Section 5 presents our main complexity results.
+In Section 6, we study alternative semantics for counting paths.
+Section 7 introduces the existential semantics and provide some experimental and theoretical results.
+Finally, we outline in Section 8 a proposal for a semantics with tractable query evaluation.
+In this section, we describe our experimental setting and present more details about the data and results described in the introduction.
+We assume some familiarity with RDF and the most simple SPARQL features, in particular, with the SELECT and FILTER keywords [10], and we only treat property paths at an intuitive level (we formalize the language in Sections 3 and 4).
+As described in the current SPARQL 1.1 speci cation,  a property path is a possible route through a graph between two graph nodes [...] (and) query evaluation determines all matches of a path expression [...]  [10].
+More speci cally, property-path expressions are regular expressions over properties (edge labels) in the graph.
+For example, if :p is a property, then (:p)* is a property-path expression that matches pairs of nodes that are connected by a sequence of zero or more :p properties in the graph.
+The star operator (*) and its derivatives (like the one or more construct) are the only operators that add expressiveness to the language.
+The of -cial semantics of the other property-path constructors are de ned in terms of SPARQL 1.0 operators [10] (and thus, can be simulated in the previous version of the SPARQL standard).
+Hence, our tests focus on the star operator, and, in particular, on the most simple expressions that can be generated by using this construct.
+All our experiments are repeatable; the tools that we implemented for them as well as the data and queries that we used are available at http://www.dcc.uchile.cl/~jperez/papers/www2012/.
+In our tests, we consider the following SPARQL 1.1 implementations: ARQ   version 2.8.8, 21 April 2011 [22]: ARQ is a java implementation of SPARQL for Jena [5].
+When testing ARQ, we use the command-line tool sparql provided in the standard distribution.
+RDF::Query   version 2.907, 1 June 2011 [24]: RDF::Query is a perl module implementing SPARQL 1.1, and we test it with the executable tool query.pl provided with the standard distribution.
+KGRAM   version 3.0, September 2011 [23]: KGRAM [6] provides a set of java libraries that implements SPARQL.
+To test this engine, we implemented a command-line tool kgsparql.java.
+Sesame   version 2.5.1, 23 September 2011 [25]: Sesame provides a set of java libraries to execute SPARQL 1.1 queries.
+To test Sesame, we implemented a command-line tool sesame.java.
+We run all our tests in a dedicated machine with the following con guration: Debian 6.0.2 Operating System, Kernel 2.6.32, CPU Intel Xeon X3220 Quadcore with 2.40GHz, and 4GB PC2-5300 RAM.
+Whenever we run a java program, we set the java virtual n
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   RDFQ Kgram Sesame
+
+
+
+
+        
+
+
+
+
+
+      
+
+
+
+
+
+       Solutions
+
+
+
+
+
+
+
+   Table 3: Time in seconds and number of solutions for query Cliq-1 (CliqF-1 for RDF::Query) n
+
+
+
+
+
+
+
+
+
+
+
+  
+     Sol.
+  n
+
+
+
+
+
+
+
+     Sol.
+  Table 4: Time in seconds and number of solutions for queries Cliq-2 (left) and Cliq-3 (right) machine to be able to use all the available RAM (4 GB).
+All tests were run considering main memory storage.
+This should not be considered as a problem since the maximum size of the input RDF graphs that we used was only 25.8 KB.
+We considered a timeout of 60 minutes.
+For each test, the number reported is the average of the results obtained by executing the test (at least) 4 times.
+No experiment showed a signi cant standard deviation.
+In our  rst experiment, we considered cliques (complete graphs) of different sizes, from a clique with 2 nodes (containing 2 triples) to a clique with 13 nodes (156 triples).
+Query Cliq-1 described in the introduction was the  rst query to be tested.
+Since this query has no variables, the solution is an empty tuple, which, for example, in ARQ is represented by the string | |, and in Sesame by the string [] (when the query solution is printed to the standard output).
+RDF::Query does not support queries without variables, thus for this implementation we tested the following query: CliqF-1: SELECT * WHERE { :a0 (:p)* ?x FILTER (?x = :a1) }.
+Table 3 shows the result obtained for this experiment in terms of the time (in seconds) and the number of solutions produced as output, when the input is a clique with n nodes.
+The symbol   in the table means timeout of one hour.
+Notice that this table contains a tabular representation of the numbers shown in Figure 1.
+We also tested the impact of using nested stars.
+In particular, we consider query Cliq-2 described in the introduction and query Cliq-3: SELECT * WHERE { :a0 (((:p)*)*)* :a1 } For these expressions containing nested stars, Sesame produces a run-time error (we have reported this bug in the Sesame s mailing list), and KGRAM does not produce the expected output according to the of cial SPARQL 1.1 speci cation [10].
+Thus, for these cases it is only meaningful to test ARQ and RDF::Query (we use FILTER for RDF::Query, as we did for the case of query CliqF-1).
+The results are shown in Table 4.
+As described in the introduction, our results show the infeasibil-ity of evaluating property paths including the star operator in the the four tested implementations.
+We emphasize only here the unexpected impact of nesting stars: for query Cliq-3 both implementations that we tested fail for an RDF graph representing a clique
+
+
+
+
+
+
+
+ #nodes #triples size (N3 format)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Table 5: Description of the  les (name, number of nodes, number of RDF triples, and size in disk) used in the foaf experiment.
+File
+
+
+
+
+ ARQ RDFQ Kgram Sesame
+    
+  
+  
+    
+        
+
+       Solutions Size (ARQ)
+
+
+
+
+
+
+
+  
+
+
+
+   Table 6: Time in seconds, number of solutions, and output size for query Foaf-1 with only 4 nodes, which contains only 12 triples and has a size of
+ the star operator does not seem to be natural, it is well known that nesting is indeed necessary to represent some regular languages [7].
+It is also notable how the number of solutions increase w.r.t.
+the input size.
+For instance, for query Cliq-1, ARQ returns more than 9 million solutions for a clique with 12 nodes (ARQ s output in this case has more than 9 million lines containing the string | |).
+For our second experiment, we use real data crawled from the Web.
+We decided to consider the foaf:knows property, as it has been used as a paradigmatic property for examples regarding path queries (notice that it is in all the examples used to describe property paths in the of cial SPARQL 1.1 speci cation [10]).
+To construct our datasets we use the SemWeb Client Library [28], which provides a command-line tool semwebquery that can be used to query the Web of Linked Data.
+The tool receives as input a SPARQL query Q, an integer value k and a URI u.
+When executed, it  rst retrieves the data from u, evaluates Q over this data, and follows the URIs mentioned in it to obtain more data.
+This process is repeated k times (see [11] for a description of this query approach).
+We use a CONSTRUCT query to retrieve URIs linked by foaf:knows properties with Axel Polleres  foaf document as the starting URI.
+We set the parameter k as 3, which already gave us a  le of 1.5MB containing more than 33,000 triples.
+To obtain a  le of reasonable size, we  rst  ltered the data by removing all triples that mention URIs from large Social Networks sites (in particular, we remove URIs from MyOpera.com and SemanticTweet.com), and then we extracted the strongly connected component to which Axel Polleres  URI belongs, obtaining a  le of 25.8 KB.
+From this  le, we constructed several test cases by deleting subsets of nodes and then recomputing the strongly connected component.
+With this process we constructed 8 different test cases from 9.2 KB to
+ as an example of the construction process,  le D is constructed from  le E by deleting the node corresponding to Richard Cygani-ack s URI, and then computing the strongly connected component to which Axel s URI belong.
+All these  les can be downloaded from http://www.dcc.uchile.cl/~jperez/papers/www2012/.
+We tested query Foaf-1 described in the introduction, which asks for the network of friends of Axel Polleres.
+Since the graphs in our test cases are strongly connected, this query retrieves all the nodes in the graph (possibly with duplicates).
+The time to process the query, the number of solutions produced, and the size of the output produced by ARQ are shown in Table 6 ( le E is the last  le shown in the table, as all implementations exceed the timeout limit for the larger  les).
+As for the case of the clique experiment, one of the most notable phenomenon is the large increase in the output size.
+In the following sections, we provide theoretical results that explain the behavior showed by our tests.
+We begin by formalizing the SPARQL language and the of cial semantics of property paths.
+In the following sections, we formalize the semantics of property paths proposed by the W3C [10], and then study the complexity of evaluating property paths under such semantics.
+To this end, we present in this section an algebraic formalization of the core operators in SPARQL 1.1, which follows the approach given in [14,
+ (IRIs), B (blank nodes) and L (literals).
+A tuple (s, p, o)   (I   B)   I   (I   B   L) is called an RDF triple, where s is the subject, p is the predicate and o is the object.
+A  nite set of RDF triples is called an RDF graph.
+Moreover, assume the existence of an in nite set V of variables disjoint from the above sets, and assume that every element in V starts with the symbol ?.
+A SPARQL 1.1 graph pattern expression is de ned recursively as follows: (1) A tuple from (I   L   V)   (I   V)   (I   L   V) is a graph pattern (a triple pattern); (2) if P1 and P2 are graph patterns, then (P1 AND P2), (P1 OPT P2), (P1 UNION P2) and (P1 MINUS P2) are graph patterns; and (3) if P is a graph pattern and R is a SPARQL 1.1 builtin condition, then the expression (P FILTER R) is a graph pattern.
+In turn, a SPARQL 1.1 builtin condition is constructed using elements of the set (I   V), equality, logical connectives and some builtin predicates [17].
+In this paper, we restrict to the fragment where a builtin condition is a Boolean combination of terms constructed by using = and predicate bound, that is, (1) if ?X, ?Y   V and c   I, then bound(?X), ?X = c and ?X =?Y are builtin conditions; and (2) if R1 and R2 are builtin conditions, then ( R1), (R1   R2) and (R1   R2) are builtin conditions.
+Finally, if P is a graph pattern and W is a set of variables, then (SELECT W P ), (SELECT DISTINCT W P ), (SELECT * P ) and (SELECT DISTINCT * P ), are queries in SPARQL 1.1.
+To de ne the semantics of SPARQL 1.1 queries, we borrow some terminology from [17, 15].
+A mapping   is a partial function   : V   (I   L).
+Abusing notation, given a   (I   L) and a mapping  , we assume that  (a) = a, and for a triple pattern t = (s, p, o), we assume that  (t) = ( (s),  (p),  (o)).
+The domain of  , denoted by dom( ), is the subset of V where   is de ned.
+Two mappings  1 and  2 are compatible, denoted by  1    2, when for all x   dom( 1)   dom( 2), it is the case that  1(x) =  2(x), i.e. when  1    2 is also a mapping.
+The mapping with empty domain is denoted by   (notice that this mapping is compatible with any other mapping).
+Finally, given a mapping   and a set W of variables, the restriction of   to W , denoted by  |W , is a mapping such that dom( |W ) = dom( )   W and  |W (?X) =  (?X) for every ?X   dom( )   W .
+Notice that if W =  , then  |W =  .
+The semantics of a SPARQL 1.1 query is de ned as a bag (or multiset) of mappings [10], which is a set of mappings in which every element   is annotated with a positive integer that represents the cardinality of   in the bag.
+Formally, we represent a bag of mappings as a pair ( , card ), where   is a set of mappings and card  is a function such that card ( ) is the cardinality of   in   (we assume that card ( ) > 0 for every      , and card ( ) = 0 for every   6   ).
+With this notion, we have the necessary ingre-
+and returns a bag of mappings.
+More precisely, the evaluation of a graph pattern P over an RDF graph G, denoted by JP KG, is de ned recursively as follows (for the sake of readability, the semantics of  lter expressions is presented separately).
+  If P is a triple pattern t, then JP KG = {  | dom( ) = var(t) and  (t)   G}, where var(t) is the set of variables mentioned in t. Moreover, for every     JP KG: cardJP KG ( ) = 1.
+  If P is (P1 AND P2), then JP KG = { 1    2 |  1   JP1KG,  2   JP2KG and  1    2}.
+Moreover, for every     JP KG we have that cardJP KG ( ) is given by the expression: X 1 JP1KG
+
+ X 2 JP2KG  = 1 2  cardJP1KG ( 1)   cardJP2KG ( 2) 3
+ .
+  If P is (P1 OPT P2), then JP KG = J(P1 AND P2)KG   {    JP1KG |     JP2KG :   6   }.
+Moreover, for every     JP KG, if     J(P1 AND P2)KG, then cardJP KG ( ) = cardJ(P1 AND P2)KG ( ), and if   6  J(P1 AND P2)KG, then cardJP KG ( ) = cardJP1KG ( ).
+  If P is (P1 UNION P2), then JP KG = {  |     JP1KG or     JP2KG}.
+Moreover, for every     JP KG: Thus, from a syntactical point of view, property paths are regular expressions over the vocabulary I, being | disjunction, / concatenation and ( )  the Kleene star.
+It should be noticed that the de ni-tion of property paths in [10] includes some additional features that are common in regular expressions, such as p?
+(zero or one occurrences of p) and p+ (one or more occurrences of p).
+In this paper, we focus on the core operators |, / and ( ) , as they suf ce to prove the infeasibility of the evaluation of property paths in SPARQL 1.1.
+A property-path triple is a tuple t of the form (u, p, v), where u, v   (I   V) and p is a property path.
+SPARQL 1.1 includes as atomic formulas triple patterns and property-path triples.
+Thus, to complete the de nition of the semantics of SPARQL 1.1, we need to specify how property-path triples are evaluated over RDF graphs, that is, we need to extend the de nition of the function J KG to include property-path triples.
+To de ne the semantics of property-path triples we follow closely the standard speci cation [10].
+Assume that u, v   (I   V), W = ({u, v}   V) and p is a property path.
+Notice that if u, v   I, then W =  .
+Then the evaluation of property-path triple t = (u, p, v) over an RDF graph G, denoted by JtKG, is de ned recursively as follows.
+If p = a, where a   I, then (u, p, v) is a triple pattern and JtKG is de ned as in Section 3.
+Otherwise, we have that either p = p1|p2 or p = p1/p2 or p = p  1, where p1, p2 are prop erty paths, and JtKG is de ned as follows.
+First, if p = p1|p2, then JtKG is de ned in [10] as the result of evaluating the pattern ((u, p1, v) UNION (u, p2, v)) over G. Thus, we have that: cardJP KG ( ) = cardJP1KG ( ) + cardJP2KG ( ).
+JtKG = {  |     J(u, p1, v)KG or     J(u, p2, v)KG},   If P is (P1 MINUS P2), then JP KG = {    JP1KG |     JP2KG :   6    or dom( )   dom( ) =  }.
+Moreover, for every     JP KG, it holds that cardJP KG ( ) = cardJP1KG ( ).
+The evaluation of a SPARQL 1.1 query Q over an RDF graph G, denoted by JQKG, is de ned as follows.
+If Q is a SPARQL 1.1 query (SELECT W P ), then JQKG = { |W |     JP KG} and for every     JQKG: cardJQKG ( ) = X JP KG :  = 
+ cardJP KG ( ).
+If Q is a SPARQL 1.1 query (SELECT * P ), then JQKG = JP KG and cardJQKG ( ) = cardJP KG ( ) for every     JQKG.
+If Q is a SPARQL 1.1 query (SELECT DISTINCT W P ), then JQKG = { |W |     JP KG} and for every     JQKG, we have that cardJQKG ( ) = 1.
+Finally, if Q is a SPARQL 1.1 query (SELECT DISTINCT * P ), then JQKG = JP KG and for every     JQKG, we have that cardJQKG ( ) = 1.
+To conclude the de nition of the semantics of SPARQL 1.1, we need to de ne the semantics of  lter expressions.
+Given a mapping   and a builtin condition R, we say that   satis es R, denoted by   |= R, if (omitting the usual rules for Boolean connectives): (1) R is bound(?X) and ?X   dom( ); (2) R is ?X = c, ?X   dom( ) and  (?X) = c; (3) R is ?X =?Y , ?X   dom( ), ?Y   dom( ) and  (?X) =  (?Y ).
+Then given an RDF graph G and a graph pattern expression P = (P1 FILTER R), we have that JP KG = {    JP1KG |   |= R}, and for every     JP KG, we have that cardJP KG ( ) = cardJP1KG ( ).
+In this section, we use the framework presented in the previous section to formalize the semantics of property paths in SPARQL 1.1.
+According to [10], a property paths is recursively de ned as follows: (1) if a   I, then a is a property path, and (2) if p1 and p2 are property paths, then p1|p2, p1/p2 and p  1 are property paths.
+and for every     JtKG, we have that: cardJtKG ( ) = cardJ(u,p1,v)KG ( ) + cardJ(u,p2,v)KG ( ).
+Second, if p = p1/p2, then assuming that ?X is a variable such that ?X 6  W , we have that JtKG is de ned in [10] as the result of  rst evaluating the pattern ((u, p1, ?X) AND (?X, p2, v)) over G, and then projecting over the variables of property-path triple t (and, thus, projecting out the variable ?X).
+Thus, we have that: JtKG = {( 1    2)|W |  1   J(u, p1, ?X)KG,  2   J(?X, p2, v)KG and  1    2}, and for every     JtKG, we have that: cardJtKG ( ) = X 2 J(?X,p2,v)KG  =( 1 2)|W   X 1 J(u,p1,?X)KG  cardJ(u,p1,?X)KG ( 1) cardJ(?X,p2,v)KG ( 2) .
+Finally, if p = p  procedures COUNT and ALP shown in Figure 3.
+More precisely,
+ JtKG = {  | dom( ) = W and COUNT( (u), p1,  (v), G) > 0}.
+Moreover, for every     JtKG, it holds that cardJtKG ( ) = COUNT( (u), p1,  (v), G).
+Procedure ALP in Figure 3 is taken from [10].
+It is important to notice that lines 5 and 6 in ALP formalize, in our terminology, the use of a procedure call eval in the de nition of ALP in [10].
+According to [10], procedure ALP has to be used as follows to compute cardJtKG ( ), where t = (u, p 
+ is the empty list and Visited is the empty set,  rst one has to invoke Input: a, b   I, path is a property path and G is an RDF graph.
+5: return n Procedure ALP(a, path, Result, Visited, G) Input: a   I, path is a property path, Result is a list of elements from I, Visited is a set of elements from I and G is an RDF graph.
+3: end if
+
+
+ return that the number of occurrences of b in Next is card ( ) ALP(c, path, Result, Visited, G)
+
+ 9: end for
+ Figure 3: Procedures used in the evaluation of property-path triples of the form (u, path , v).
+ALP( (u), p, Result, Visited, G), then one has to check whether  (v) appears in the resulting list Result, and if this is the case then cardJtKG ( ) is set as the number of occurrences of  (v) in the list Result.
+For the sake of readability, we have encapsulated in the auxiliary procedure COUNT these steps to compute cardJtKG ( ) from procedure ALP, and we have de ned JtKG by using COUNT, thus formalizing the semantics proposed by the W3C in [10].
+The idea behind algorithm ALP is to incrementally construct paths that conform to a property path of the form p  1, that is, to construct sequences of nodes a1, a2, .
+.
+., an from an RDF graph G such that each node ai+1 is reachable from ai in G by following the path p1, but with the important feature (implemented through the use of the set Visited) that each node ai is distinct from all the previous nodes aj selected in the sequence (thus avoiding cycles in the sequence a1, a2, .
+.
+., an).
+In this section, we study the complexity of evaluating property paths according to the semantics proposed by the W3C.
+Specifically, we study the complexity of computing cardJtKG ( ), as this computation embodies the main task needed to evaluate a property-path triple.
+For the sake of readability, we focus here on computing such functions for property-path triples of the form (a, p, b) where a, b   I.
+Notice that this is not a restriction, as for every property path triple t and every mapping   whose domain is equal to the set of variables mentioned in t, it holds that cardJtKG ( ) = cardJ (t)KG ( ) (recall that   is the mapping with empty domain).
+Thus, we study the counting problem COUNTW3C, whose input is an RDF graph G, elements a, b   I and a property path p, and whose output is the value cardJ(a,p,b)KG ( ).
+It is important to notice that property paths are part of the input of the previous problem and, thus, we are formalizing the combined complexity of the evaluation problem [20].
+As it has been observed in many scenarios, and, in particular, in the context of evaluating SPARQL [15], when computing a function like cardJ(a,p,b)KG ( ), it is natural to assume that the size of p is considerably smaller than the size of G. This assumption is very common when studying the complexity of a query language.
+In fact, it is named data complexity in the database literature [20], and it is de ned in our context as the complexity of computing cardJ(a,p,b)KG ( ) for a  xed property-path p. More precisely, assume given a  xed property path p. Then COUNTW3C(p) is de ned as the problem of computing, given an RDF graph G and elements a, b   I, the value cardJ(a,p,b)KG ( ).
+To pinpoint the complexity of COUNTW3C and COUNTW3C(p), where p is a property path, we need to consider the complexity class #P mentioned in the introduction (we refer the reader to [19] for its formal de nition).
+A function f is said to be in #P if there exists a non-deterministic Turing Machine M that works in polynomial time such that for every string w, the value of f on w is equal to the number of accepting runs of M with input w. As mentioned in the introduction, a prototypical #P-complete problem is the problem of computing, given a propositional formula  , the number of truth assignments satisfying  .
+Clearly #P is a class of intractable computation problems [19].
+Our  rst result shows that property path evaluation is intractable.
+Theorem 5.1 COUNTW3C(p) is in #P for every property path p.
+Besides, COUNTW3C(c ) is #P-complete, where c   I.
+Theorem 5.1 shows that the problem of evaluating property paths under the semantics proposed by the W3C is intractable in data complexity.
+In fact, it shows that one will not be able to  nd ef -cient algorithms to evaluate even simple property paths such as c , where c is an arbitrary element of I.
+We now move to the study of the combined complexity of the problem COUNTW3C.
+In what follows, we formalize the clique experiment presented in Section 2.2, and then provide lower bounds in this scenario for the number of occurrences of a mapping in the result of the procedure (ALP) used by the W3C to de ne the semantics of property paths [10].
+Interestingly, these lower bounds show that the poor behavior detected in the experiments is not a problem with the tested implementations, but instead a characteristic of the semantics of property paths proposed in [10].
+These lower bounds provide strong evidence that evaluating property paths under the semantics proposed by the W3C is completely infeasible, as they show that COUNTW3C is not even in #P.
+Fix an element c   I and an in nite sequence {ai}i 1 of pairwise distinct elements from I, which are all different from c.
+Then for every n   2, let clique(n) be an RDF graph forming a clique with nodes a1, .
+.
+.
+, an and edge label c, that is, clique(n) = {(ai, c, aj) | i, j   {1, .
+.
+.
+, n} and i 6= j}.
+Moreover, for every property path p, de ne COUNTCLIQUE(p, n) as cardJ(a1,p,an)Kclique(n) ( ).
+Then we have that: Lemma 5.2 For every property path p and n   2: COUNTCLIQUE(p , n) = n 1 Xk=1 (n   2)!
+  COUNTCLIQUE(p, n)k (n   k   1)!
+Let p0 = c and ps+1 = p  and p3 = ((c ) ) .
+From Lemma 5.2, we obtain that: s, for every s   0.
+For example, p1 = c  COUNTCLIQUE(ps+1, n) = n 1 Xk=1 (n   2)!
+  COUNTCLIQUE(ps, n)k (n   k   1)!
+, (1) for every s   0.
+This formula can be used to obtain the number of occurrences of the mapping with empty domain in the answer to the property-path triple (a1, ps, an) over the RDF graph clique(n).
+COUNTCLIQUE(ps, n)
+
+
+
+
+
+
+ n
+
+
+
+
+
+
+
+ s
+
+
+
+
+
+
+
+ COUNTCLIQUE(ps, n) n
+
+
+
+
+
+
+
+
+
+
+
+ Table 7: Number of occurrences of the mapping with empty domain in the answer to property-path triple (a1, ps, an) over the RDF graph clique(n), according to the semantics for property paths proposed by the W3C in [10].
+For instance, the formula states that if a system implements the semantics proposed by the W3C in [10], then with input clique(8) and (a1, (c ) , a8), the empty mapping would have to appear more than 79 1024 times in the output.
+Thus, even if a single byte is used to store the empty mapping3, then the output would be of more than
+ with formula (1).
+Notice that these numbers coincide with the results obtained in our experiments (Tables 3 and 4).
+Also notice that, for example, for n = 6 and s = 2 the lower bound is of more than 28 billions, and for n = 4 and s = 3 is of more than 56 millions, which explains why the tested implementations exceeded the timeout for queries Cliq-2 and Cliq-3 (Table 4).
+Most notably, Table 7 allows us to provide a cosmological lower bound for evaluating property paths: if one proton is used to store the mapping with empty domain, with input clique(6) (which contains only 30 triples) and (a1, (((c ) ) ) , a6), every system implementing the semantics proposed by the W3C [10] would have to return a  le that would not  t in the observable universe!
+From Lemma 5.2, we obtain the following double-exponential lower bound for COUNTCLIQUE(ps, n).
+Lemma 5.3 For every n   2 and s   1: COUNTCLIQUE(ps, n)   (n   2)!
+(n 1)s 1 From this bound, we obtain that COUNTW3C is not in #P. Besides, from the proof of Theorem 5.1, we obtain that COUNTW3C is in the complexity class #EXP, which is de ned as #P but considering non-deterministic Turing Machines that work in exponential time.
+Theorem 5.4 COUNTW3C is in #EXP and not in #P.
+It is open whether COUNTW3C is #EXP-complete.
+We consider now the data complexity of the evaluation problem for the entire language.
+More precisely, we use the results proved in the previous section to show the major impact of using property paths on the complexity of evaluating SPARQL 1.1 queries.
+The evaluation problem is formalized as follows.
+Given a  xed SPARQL
+ given an RDF graph G and a mapping  , the value cardJQKG ( ).
+It is easy to see that the data complexity of SPARQL 1.1 without property paths is polynomial.
+However, from Theorem 5.1, we obtain the following corollary that shows that the data complexity is considerably higher if property paths are included, for the case of the semantics proposed by the W3C [10].
+In this corollary, we show that EVALW3C(Q) is in the complexity class FP#P, which is the class of functions that can be computed in polynomial time if
+ string | | in ARQ, and as the two-bytes string [] in Sesame.
+one has access to an ef cient subroutine for a #P-complete problem (or, more formally, one has an oracle for a #P-complete problem).
+Corollary 5.5 EVALW3C(Q) is in FP#P, for every SPARQL 1.1 query Q.
+Moreover, there exists a SPARQL 1.1 query Q0 such that EVALW3C(Q0) is #P-hard.
+The usual graph theoretical notion of path has been extensively and successfully used when de ning the semantics of queries including regular expressions [13, 4, 1, 16, 3].
+Nevertheless, given that the W3C SPARQL 1.1 Working Group is interested in counting paths, the classical notion of path in a graph cannot be naively used to de- ne a semantics for property-path queries, given that cycles in an RDF graph may lead to an in nite number of different paths.
+In this section, we consider two alternatives to deal with this problem.
+We consider a semantics for property paths based on classical paths that is only de ned for acyclic RDF graphs, and we consider a general semantics that is based on simple paths (which are paths in a graph with no repeated nodes).
+In both cases, we show that query evaluation based on counting is intractable.
+Next we formalize these two alternative semantics and present our complexity results.
+A path   in an RDF graph G is a sequence a1, c1, a2, c2, .
+.
+.
+, an, cn, an+1 such that n   0 and (ai, ci, ai+1)   G for every i   {1, .
+.
+.
+, n}.
+Path   is said to be from a to b in G if a1 = a and an+1 = b, it is said to be nonempty if n   1, and it is said to be a simple path, or just s-path, if ai 6= aj for every distinct pair i, j of elements from {1, .
+.
+.
+, n + 1}.
+Finally, given a property path p, path   is said to conform to p if c1c2       cn is a string in the regular language de ned by p.
+We  rst de ne the semantics of a property-path triple considering classical paths, that we denote by J Kpath G .
+Notice that we have to take into consideration the fact that the number of paths in an RDF graph may be in nite, and thus we de ne this semantics only for acyclic graphs.
+More precisely, an RDF graph G is said to be cyclic if there exists an element a mentioned in G and a nonempty path   in G from a to a, and otherwise it is said to be acyclic.
+Then assuming that G is acyclic, the evaluation of a property-path triple t over G in terms of classical paths, denoted by JtKpath G , is de ned as follows.
+Let t = (u, p, v) and W = ({u, v}   V), then JtKpath G = {  | dom( ) = W and there exists a path from  (u) to  (v) in G that conforms to p}, and for every     JtKpath the number of paths from  (u) to  (v) in G that conform to p.
+G , the value cardJtKpath ( ) is de ned as
+ Similarly as we de ned the problem COUNTW3C in Section 5, we de ne the problem COUNTPATH as the problem of computing ( ) given as input an acyclic RDF graph G, ele-cardJ(a,p,b)Kpath ments a, b   I, and property path p. We also de ne, given a  xed property path p, the problem COUNTPATH(p) as the the problem of computing, given an acyclic RDF graph G and elements a, b   I, the value cardJ(a,p,b)Kpath ( ).
+To pinpoint the exact complexity of the problems COUNTPATH and COUNTPATH(p), we need to consider two counting complexity classes: #L and SPANL.
+We introduce these classes here, and we refer the reader to [2] for their formal de nitions.
+#L is the counting class associated with the problems that can be solved in logarithmic space in a non-deterministic Turing Machine (NTM).
+M that works in logarithmic space such that for every string w, the value of f on w is equal to the number of accepting runs of M with input w. A prototypical #L-complete problem is the problem of computing, given a deterministic  nite automaton A and a string w, the number of strings that are accepted by A and whose length is smaller than the length of w [2].
+SPANL is de ned in a similar way to #L, but considering logarithmic-space NTMs with output.
+More precisely, a function f is said to be in this class if there exists such TM M such that for every string w, the value of f on w is equal to the number of different outputs of M with input w. A prototypical SPANL-complete problem is the problem of computing, given a non-deterministic  nite automaton A and a string w, the number of strings that are accepted by A and whose length is smaller than the length of w [2].
+Although classes #L and SPANL look alike, they are quite different in terms of complexity: #L is known to be included in FP, the class of functions that can be computed in polynomial time, while it is known that SPANL is a class of intractable computation problems, if SPANL   FP, then P = NP.
+Our  rst result shows that even for the simple case considered in this section, the problem of evaluating property paths is intractable.
+Theorem 6.1 COUNTPATH is SPANL-complete.
+Interestingly, our second complexity result shows that at least in terms of data complexity, the problem of evaluating property paths is tractable if their semantics is based on the usual notion of path.
+Moreover, Theorem 6.2 COUNTPATH(p) is in #L for every property path p.
+there exists a property path p0 such that COUNTPATH(p0) is #L-complete.
+Although COUNTPATH(p) is tractable, it only considers acyclic RDF graphs, and thus leaves numerous practical cases uncovered.
+We continue our investigation by considering the alternative semantics for property paths that is de ned in terms of simple paths.
+Notice that even for cyclic RDF graphs, the number of simple paths is  nite, and thus, this semantics is properly de ned for every RDF graph.
+Formally, assume that G is an RDF graph, t = (u, p, v) is a property-path triple and W = ({u, v}   V).
+The evaluation of t over G in terms of s-paths, denoted by JtKs-path , is de ned as:
+ JtKs-path
+ = {  | dom( ) = W and there exists an s-path from  (u) to  (v) in G that conforms to p},
+
+ , the value cardJtKs-path and for every     JtKs-path ( ) is de ned as the number of s-paths from  (u) to  (v) in G that conform to p.
+For the case of s-paths, we de ne the problem COUNTSIMPLEPATH as follows.
+The input of this problem is an RDF graph G, elements a, b   I and a property path p, and its output is the value ( ).
+As for the previous problems, we de ne cardJ(a,p,b)Ks-path COUNTSIMPLEPATH(p) as COUNTSIMPLEPATH for a  xed property path p. The following result shows that these problems are also intractable.
+Theorem 6.3 COUNTSIMPLEPATH is in #P. Moreover, if c   I, then COUNTSIMPLEPATH(c ) is #P-complete.
+Notice that the data complexity of evaluating property paths according to the s-path semantics is the same as evaluating them according to the W3C semantics.
+The difference is in the combined complexity that is radically higher for the W3C semantics: for the case of the semantics based on s-paths the combined complexity is in #P, while for the W3C semantics it is not in #P.
+We have shown in the previous section that evaluating property-path triples according to the semantics proposed in [10] is essentially infeasible, being the core of this problem the necessity of counting different paths.
+We have also shown that the version in which one counts simple-paths is infeasible too.
+A possible solution to this problem is to not use a semantics that requires counting paths, but instead a more traditional existential semantics for property-path triples.
+That is, one just checks if two nodes are connected (or not) by a path that conforms to a property-path expression.
+This existential semantics has been used for years in graph databases [13, 4, 3], in XML [12, 9], and even on RDF [1, 16] previous to SPARQL 1.1.
+In this section, we introduce this semantics and study the complexity of evaluating property paths, and also SPARQL 1.1 queries, under it.
+We also compare this proposal with the current of cial semantics for property paths, and present some experimental results that validate our proposal.
+The most natural way to de ne an existential semantics for property paths is as follows.
+Assume that u, v   (I   V), W = ({u, v}   V), t = (u, p, v) is a property-path triple, and G is an RDF graph.
+Then de ne JtK (path) as:
+ JtK (path)
+ = {  | dom( ) = W and there exists a path from  (u) to  (v) in G that conforms to p}.
+Moreover, de ne the cardinality of every mapping   in JtK (path) just as 1.
+Notice that with the semantics JtK (path) , we are essen-
+tially discarding all the duplicates from JtKpath G .
+This allows us to consider general graphs (not necessarily acyclic graph as in Section 5).
+To study the complexity of evaluating property paths under this semantics, we de ne the decision problem EXISTSPATH, whose input is an RDF graph G, elements a, b   I and a property-path triple t = (a, p, b), and whose output is the answer to the question: is card ( ) = 1?
+That is, the problem EXISTSPATH is equivalent to checking whether     JtK (path)  (path)
+ Notice that with EXISTSPATH, we are measuring the combined complexity of evaluating paths under the existential semantics.
+The following result shows that EXISTSPATH is tractable.
+This is a corollary of some well-known results on graph databases (e.g.
+see Section 3.1 in [16]).
+In the result, we use |G| to denote the size of an RDF graph G and |p| to denote the size of a property-path p.
+JtK
+ .
+Proposition 7.1 EXISTSPATH can be solved in time O(|G|   |p|).
+and simple-paths semantics A natural question at this point is whether there exists a relationship between the existential semantics de ned in the previous section and the semantics that can be obtained by discarding duplicates from JtKG and JtKs-path for a property-path triple t. We formalize and study these two semantics in this section.
+Assume that G is an RDF graph and t is a property-path triple.
+Then we de ne JtK  G as having exactly the same mappings as in JtKG, but with the cardinality of every mapping in JtK  G de ned just as 1.
+Similarly, we de ne JtK (s-path) as having exactly the same mappings as in JtKs-path , but with the cardinality of every mapping in JtK (s-path) de ned as 1.
+In this section, we study the decision problem EXISTSW3C, whose input is an RDF graph G, elements a, b   I and a property-path triple t = (a, p, b), and whose output is the answer to the question: is cardJ(a,p,b)K  ( ) = 1?
+We also
+
+
+
+
+ study the complexity of the decision problem EXISTSSIMPLEPATH, which is de ned as EXISTSW3C but considering the semantics J K (s-path) G coincides with J K (path)
+ Our  rst result shows that, somehow surprisingly, the semantics J K  .
+Thus, even though the of cial semantics of property paths is given in terms of a particular procedure [10], when one does not count paths, it coincides with the classical existential semantics based on the usual notion of path.
+Theorem 7.2 For every RDF graph G, mapping   and property-path triple t:     JtK  As a corollary of Propositions 7.1 and Theorem 7.2, we obtain that: G if and only if     JtK (path)
+ .
+Theorem 7.3 EXISTSW3C can be solved in time O(|G|   |p|).
+The situation is radically different for the case of simple paths.
+From some well-known results on graph databases [13], one can prove that EXISTSSIMPLEPATH is an intractable problem, even for a  xed property-path.
+More precisely, for a  xed property-path p, the decision problem EXISTSSIMPLEPATH(p) has as input an RDF graph G and elements a, b   I, and the question is whether card ( ) = 1.
+J(a,p,b)K  (s-path)
+ Proposition 7.4 EXISTSSIMPLEPATH is in NP.
+EXISTSSIMPLEPATH((c/c) ) is NP-complete, where c   I.
+Moreover,
+ We have shown that when bags are considered for the semantics of property paths, the evaluation becomes intractable, even in data complexity.
+However, the previous version of SPARQL, that did not include path queries, considered a bag semantics for the mapping operators (AND, OPT, UNION, FILTER and SELECT), which has proved to be very useful in practice.
+Thus, a natural question is whether one can construct a language with functionalities to express interesting queries about paths in RDF graphs, with bag semantics for the mappings operators, and that, at the same time, can be ef ciently evaluated.
+In this section, we give a positive answer to this question.
+We show that if one combines existential semantics for property paths and bag semantics for the SPARQL 1.1 operators, one obtains the best of both worlds and still has tractable data complexity.
+and JQK (path) G, JQK (path) We start by formalizing this alternative way of evaluating SPARQL 1.1 queries that considers existential semantics for property-path triples.
+Given a SPARQL 1.1 query Q, de ne JQK 
+ exactly as JQKG is de ned in Sections 3 and 4, but evaluating property-paths triples according to the semantics J K  G de ned in Section 7.1 (that is, JtKG is replaced by JtK  G if t is a property-path triple), and likewise for JQK (s-path) .
+Notice
+ and JQK (s-path) that for the three semantics JQK  , we are not discarding all duplicates but only the duplicates that are generated when evaluating property paths.
+Thus, these semantics are still bag semantics, and therefore we consider the following computation problems.
+We de ne  rst the computation problem EVALEXISTSW3C(Q), whose input is an RDF graph G and a mapping  , and whose output is the value ( ).
+Moreover, we also consider the computation prob-cardJQK  lems EVALEXISTSSIMPLEPATH(Q) and EVALEXISTSPATH(Q), that have the same input as EVALEXISTSW3C(Q) and are de-( ) and  ned as the problems of computing card ( ), respectively.
+Notice that in these three prob-card lems, we are considering the data complexity of SPARQL 1.1 under the respective semantics.
+ (s-path)
+  (path)
+
+
+
+ Notably, the next result shows that the just de ned semantics
+ G and J K (path)
+ are tractable, in terms of data complexity.
+This result is a consequence of Theorem 7.3 and Proposition 7.1.
+In the formulation of this result we use the class FP, which is de ned as the class of all functions that can be computed in polynomial time (and thus, it is a class of tractable functions).
+Theorem 7.5 EVALEXISTSW3C(Q) and EVALEXISTSPATH(Q) are in FP for every SPARQL 1.1 query Q.
+We conclude this section by showing that for the case of the semantics J K (s-path) , the data complexity is unfortunately still high.
+To study this problem we need the complexity classes FPkNP and FPNP[O(log n)], which are de ned in terms of oracles as for the case of the complexity class FP#P used in Corollary 5.5.
+More precisely, the class FPkNP contains all the functions that can be computed in polynomial time by a procedure that is equipped with an ef cient subroutine (oracle) for an NP-complete problem, with the restriction that all the calls to the subroutine should be made in parallel, that is, no call to the subroutine can depend on the result of a previous call to this subroutine [21].
+The class FPNP[O(log n)] is de ned in the same way, but with the restriction that the subroutine for an NP-complete problem can be called only a logarithmic number of times.
+Both classes FPNP[O(log n)] and FPkNP are considered to be intractable.
+Moreover, it is known that FPNP[O(log n)]   FPkNP, but it is open whether this containment is strict [18].
+Theorem 7.6 EVALEXISTSSIMPLEPATH(Q) is in FPkNP for every SPARQL 1.1 query Q.
+Moreover, there exists a query Q0 such that EVALEXISTSSIMPLEPATH(Q0) is FPNP[O(log n)]-hard.
+Theorem 7.6 shows that simple paths are not a good option even if duplicates are not considered.
+G and J K (path)
+ In the previous section, we showed that SPARQL 1.1 is tractable in terms of data complexity if one considers the existential semantics J K  for property paths.
+The goal of this section is to show the impact of using these semantics in practice, by conducting a  nal experiment with two implementations that extends SPARQL 1.0 with existential path semantics: Psparql (version 3.3) [26], and Gleen (version 0.6.1) [27].
+These two implementations evaluate SPARQL queries according to J K (path) , although they use a slightly different syntax for path queries (see http://www.dcc.uchile.cl/~jperez/papers/www2012/ for the de ni-tions of these queries).
+In our experiments, we use the following result that allows us to compare SPARQL 1.1 implementations mentioned in Section 2.1 with Psparql and Gleen.
+It is important to notice that this result is of independent interest, as it shows that the implementations of SPARQL 1.1 that follow the of cial speci cation [10] can be highly optimized when using the SELECT DISTINCT feature.
+Theorem 7.7 Let P be a SPARQL 1.1 graph pattern, G an RDF graph and W a set of variables.
+Then we have that:
+
+ J(SELECT DISTINCT W P )K (path)
+ J(SELECT DISTINCT * P )K (path)
+ In view of this theorem, we consider all the queries in Section 2, but this time using the SELECT DISTINCT feature:
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+       Kgram Sesame
+
+        
+
+
+       Cliq-1D Psparql
+
+
+
+
+
+ Gleen
+
+
+
+
+
+ n
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+       Cliq-2D Psparql
+
+
+
+
+
+ Gleen
+
+
+
+
+
+ n
+
+
+
+
+
+
+
+
+        
+
+
+         Psparql
+
+
+
+
+
+ Gleen
+
+
+
+
+
+ Cliq-3D Table 8: Time in seconds for queries Cliq-1D, Cliq-2D, and Cliq-3D (symbol   means one-hour timeout).
+Cliq-1D: Cliq-2D: Cliq-3D: Foaf-1D: SELECT DISTINCT * WHERE { :a0 (:p)* :a1 } SELECT DISTINCT * WHERE { :a0 ((:p)*)* :a1 } SELECT DISTINCT * WHERE { :a0 (((:p)*)*)* :a1 }
+ WHERE { axel:me (foaf:knows)* ?x } Tables 2 and 8 show the results of this experiment.
+Although the tested systems return the same results for these queries, the differences in ef ciency between the SPARQL 1.1 implementations and the implementations that use an existential semantics are dramatic.
+Our results pose a strong argument against the current semantics of property paths, from both, theory and practice.
+We have made clear that the main problem is the necessity of counting paths imposed by the current SPARQL 1.1 speci cation.
+Our investigation raises several questions, being one of the most important whether there exists such a strong use case for counting paths that will make the designers of the language to stick with the current semantics, even knowing that in simple and natural cases it will lead to completely impractical evaluation procedures.
+We have searched in the of cial document and also in the discussions around the design of the language, and to the best of our knowledge, there is no strong use case for counting paths.
+It should also be noticed that this counting functionality has not been used as a primitive in previous navigational languages for graph structured data.
+On the positive side, we have shown that a semantics based on checking the existence of paths (without counting them), has several advantages: it can be easily de ned and understood, it is based on years of research and practical experience, and, most importantly, it can be ef ciently evaluated.
+In view of our result that DISTINCT can be used to go from the counting semantics to the existential semantics, one might be tempted to think that users not interested in counting paths can use DISTINCT in queries.
+We strongly disagree with this view.
+Bag semantics for relational queries has proved to be essential in practice.
+Thus, a good language should be able to deal with both characteristics: being able to search for paths using an existential semantics, and, at the same time, having bag semantics for relational-like operators (such as AND and OPT).
+Our proposal is to have such a semantics for SPARQL 1.1, which corresponds to the semantics J K  G de ned in Section 7.1, and provide a special feature such as ALL-PATHS, for users that would like to count paths and know the implications of this action.
+Although SPARQL is still in its infancy, the increasing interest in managing RDF data is making this language to become more and more popular.
+To maintain and even increase its adoption rate, the group in charge of the upcoming version of SPARQL should consider all the possible inputs regarding the language.
+We do think that for the case of property-path evaluation, our proposal, as opposed to the current of cial semantics, would lead to a wide adoption of the language by practitioners, developers and theoreticians.
+Acknowledgments Arenas was supported by Fondecyt-1090565, and P rez by Fondecyt-11110404 and by VID grant U-Inicia 11/04, Universidad de Chile.

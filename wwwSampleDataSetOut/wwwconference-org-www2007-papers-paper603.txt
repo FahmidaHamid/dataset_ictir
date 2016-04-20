@@ -1,0 +1,1361 @@
+Combining Classiﬁers to Identify Online Databases
+
+Luciano Barbosa
+School of Computing
+
+University of Utah
+
+lbarbosa@cs.utah.edu
+
+ABSTRACT
+We address the problem of identifying the domain of on-
+line databases. More precisely, given a set F of Web forms
+automatically gathered by a focused crawler and an online
+database domain D, our goal is to select from F only the
+forms that are entry points to databases in D. Having a
+set of Web forms that serve as entry points to similar on-
+line databases is a requirement for many applications and
+techniques that aim to extract and integrate hidden-Web
+information, such as meta-searchers, online database direc-
+tories, hidden-Web crawlers, and form-schema matching and
+merging.
+
+We propose a new strategy that automatically and accu-
+rately classiﬁes online databases based on features that can
+be easily extracted from Web forms. By judiciously parti-
+tioning the space of form features, this strategy allows the
+use of simpler classiﬁers that can be constructed using learn-
+ing techniques that are better suited for the features of each
+partition. Experiments using real Web data in a representa-
+tive set of domains show that the use of diﬀerent classiﬁers
+leads to high accuracy, precision and recall. This indicates
+that our modular classiﬁer composition provides an eﬀective
+and scalable solution for classifying online databases.
+Categories and Subject Descriptors
+H.3.3 [Information Search and Retrieval]: Selection
+process.
+General Terms
+Algorithms, Design, Experimentation.
+Keywords
+Hidden Web, learning classiﬁers, hierarchical classiﬁers, on-
+line database directories, Web crawlers.
+1.
+
+INTRODUCTION
+
+Due to the explosion in the number of online databases,
+there has been increased interest in leveraging the high-
+quality information present in these databases [2, 3, 11, 23,
+33]. However, ﬁnding the right databases can be very chal-
+lenging. For example, if a biologist needs to locate databases
+related to molecular biology and searches on Google for the
+keywords “molecular biology database” over 27 million doc-
+uments are returned. Among these, she will ﬁnd pages that
+contain databases, but the results also include a very large
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2007, May 8–12, 2007, Banff, Alberta, Canada.
+ACM 978-1-59593-654-7/07/0005.
+
+Juliana Freire
+
+School of Computing
+
+University of Utah
+
+juliana@cs.utah.edu
+
+number of pages from journals, scientiﬁc articles, personal
+Web pages, etc.
+
+Recognizing the need for better mechanisms to locate on-
+line databases, people have started to create online database
+collections such as the Molecular Biology Database Collec-
+tion [15], which lists databases of value to biologists. This
+collection, has been manually created and is maintained by
+the National Library of Medicine. Since there are several
+million online databases [23], manual approaches to this
+problem are not practical. Besides, since new databases are
+constantly being added, the freshness of a manually main-
+tained collection is greatly compromised.
+
+In this paper, we describe a new approach to the problem
+of identifying online databases that belong to a given do-
+main. There are a number of issues that make this problem
+particularly challenging. Since online databases are sparsely
+distributed on the Web, an eﬃcient strategy is needed to lo-
+cate the forms that serve as entry points to these databases.
+In addition, online databases do not publish their schemas
+and their contents are hard to retrieve. Thus, a scalable
+solution must determine the relevance of a form to a given
+database domain by examining information that can be au-
+tomatically extracted from the forms and in their vicinity.
+Web crawlers can be used to locate online databases [3,
+9, 10, 13, 26, 29]. However, even a focused crawler invari-
+ably retrieves a diverse set of forms. Consider for example,
+the Form-Focused Crawler (FFC) [3] which is optimized for
+locating searchable Web forms. For a set of representative
+database domains, on average, only 16% of the forms re-
+trieved by the FFC are actually relevant—for some domains
+this percentage can be as low as 6.5%. These numbers are
+even lower for less focused crawlers, e.g., crawlers that fo-
+cus only on a topic [9, 10, 13]. The problem is that a focus
+topic (or concept) may encompass pages that contain many
+diﬀerent database domains. For example, while crawling to
+ﬁnd airfare search interfaces the FFC also retrieves a large
+number of forms for rental car and hotel reservation, since
+these are often co-located with airfare search interfaces in
+travel sites. The set of retrieved forms also includes many
+non-searchable forms that do not represent database queries
+such as forms for login, mailing list subscriptions, and Web-
+based email forms.
+
+Having a homogeneous set of forms that lead to databases
+in the same domain is useful, and sometimes required, for a
+number of applications. For example, whereas for construct-
+ing online database directories, such as BrightPlanet [8] and
+the Molecular Biology Database Collection [15], it is desir-
+able that only relevant databases are listed, the eﬀectiveness
+
+WWW 2007 / Track: SearchSession: Crawlers431(a) Job search forms
+
+(b) Hotel and Airfare search forms
+
+Figure 1: Variability in Web Forms. (a) shows forms
+in the Job domain that use diﬀerent attribute names
+to represent the same concepts.
+(b) shows forms
+in two distinct domains, Hotel and Airfare, which
+contain attributes with similar labels.
+
+statistical schema matching across Web form interfaces [18]
+can be greatly diminished if the set of input forms is noisy
+and contains forms from multiple domains.
+
+Identifying relevant forms as belonging to a given database
+domain, however, is a hard problem that has started to re-
+ceive attention in recent literature. Previous works on form
+classiﬁcation can be broadly characterized as pre-query and
+post-query [27]. Post-query techniques issue probe queries
+and the retrieved results (i.e., the database contents) are
+used for classiﬁcation purposes. Probing-based techniques [7,
+17] are eﬀective and required for simple, keyword-based in-
+terfaces, which are easy to ﬁll out automatically and have
+little or no information pertinent to the underlying database
+(e.g., a form with a single attribute labeled “search”). How-
+ever, these techniques cannot be easily adapted to (struc-
+tured) multi-attribute interfaces. The diﬃculties in auto-
+matically ﬁlling out structured Web forms have been docu-
+mented in the literature [7, 11, 25, 32]. To help automati-
+cally ﬁll out multi-attribute forms, paradoxically, it is often
+necessary to ﬁrst discover and organize forms in the domain,
+so that attribute correspondences can be found and possi-
+ble values for attributes collected (e.g., through matching a
+large number of forms in a domain [18]).
+
+Pre-query techniques, on the other hand, rely only on vis-
+ible features of forms. They are suitable for forms whose
+contents are indicative of the database domain. An im-
+portant requirement for these techniques is the ability to
+deal with the wide variation in content and structure of
+automatically gathered forms. This variability is present
+even in well-deﬁned and narrow domains. As Figure 1 illus-
+trates, diﬀerent attribute names can be used to represent the
+same concepts in forms that belong to a domain, and forms
+may be similar even when they belong to diﬀerent domains.
+There can also be high similarity between searchable and
+non-searchable forms (see Figure 2). Previously proposed
+techniques, however, have limitations with respect to scala-
+bility [22], and the ability to deal with highly heterogeneous
+
+Figure 2: Searchable and a non-searchable form with
+similar contents. The form on the left is used for
+searching over a database of used cars, whereas the
+one on the right is used to request quotes.
+
+form sets [12]. The technique proposed by Hess and Kush-
+merick [22] classiﬁes forms based on form attribute labels.
+Thus, the eﬀectiveness of their technique depends on the
+ability to extract descriptive labels for form attributes—a
+task that is hard to automate [19, 25]. Cope et al. [12], on
+the other hand, use a classiﬁer that considers only a subset
+of the form contents: the form structure and the content in-
+side tags in the form context (e.g., the text inside an input
+element). Consequently, their classiﬁer is unable to correctly
+identify forms whose content are indicative of the database
+domain, but occur outside these tags.
+Contributions and Outline. In this paper, we describe
+a new pre-query method for automatically classifying forms
+with respect to a database domain that is both scalable and
+accurate. As discussed in Section 2, we model the prob-
+lem of identifying the domain of an online database as a
+search problem over features of Web forms that serve as
+entry points to these databases. We propose HIerarchical
+Form Identiﬁcation (HIFI), a new strategy that obtains high
+accuracy by partitioning the space of form features and us-
+ing learning classiﬁers that are best suited for the features
+in each partition. The modular classiﬁers are presented in
+Sections 3 and 4, and in Section 5, we discuss how they
+are combined. Because our approach relies only of features
+that are automatically extracted from forms, it is scalable.
+An extensive experimental evaluation of HIFI, using real
+Web data consisting of over 27,000 forms in eight distinct
+database domains, is discussed in Section 6. The results
+conﬁrm that our choice of partitioning the form features
+and combining diﬀerent classiﬁers leads to higher accuracy
+than if a single classiﬁer is used for all features. Most impor-
+tantly, the high precision and recall obtained indicate that
+it is possible to automatically and accurately classify online
+databases using visible information readily available in form
+interfaces. This makes our strategy especially suitable for
+large-scale Web information integration tasks.
+2. SOLUTION OVERVIEW
+
+Our goal is to select only the relevant forms in set of
+heterogeneous forms retrieved by a focused crawler. The
+problem we are trying to solve can be stated as follows:
+Given a set F of Web forms automatically gathered by a
+focused crawler, and an online database domain D, our goal
+
+WWW 2007 / Track: SearchSession: Crawlers432Figure 3: HIFI Architecture.
+
+is to select from F only the forms that are entry points to
+databases in D.
+In other words, we would like to ﬁlter out all irrelevant
+forms—non-searchable forms, and searchable forms that do
+not belong to the domain D. Searchable forms are forms
+which serve as entry points to online databases—once sub-
+mitted, a query is issued against the database and its results
+are returned. Non-searchable forms, in contrast, are often
+used to just to submit information.
+
+Our approach to locate and identify online databases con-
+sists of three components: a focused crawler; the generic
+form classiﬁer (GFC); and the domain-speciﬁc form classi-
+ﬁer (DSFC). Figure 3 shows how the diﬀerent components
+of our solution explore and prune the space of Web forms.
+The focused crawler uses features of Web pages to focus on
+a topic. It helps prune the search space by avoiding a large
+number of irrelevant forms that reside in oﬀ-topic pages.
+Nonetheless, as we discussed above, within a focus topic
+there can be both non-searchable forms as well as searchable
+forms from multiple database domains. The two classiﬁers
+are used in a sequence to identify relevant forms in the input
+set: the ﬁrst classiﬁer eliminates non-searchable forms based
+on structural characteristics; and the second uses the tex-
+tual contents of forms to identify, among searchable forms,
+the ones that belong to the target database domain.
+
+Learning to Classify Forms. Since our goal is to de-
+vise a general solution to this problem, that works across
+diﬀerent domains, we formalize the problem of identifying
+relevant forms in a particular database domain in terms of
+inductive learning concepts [24]. One of the basic ideas in
+inductive inference is that there exists a target concept C
+that can be modeled by an unknown function f . Given an
+instance x, f (x) indicates whether x belongs to C. Thus,
+the task of induction is, given a collection of examples of
+f , to determine a function h, called hypothesis or classiﬁer,
+that approximates f .
+
+There can be several diﬀerent functions that approximate
+f whose hypotheses are consistent with the examples. An
+important question is then how to choose from among these
+hypotheses. For the problem deﬁned above, one possible
+solution would be to gather examples of forms in the domain
+D and construct a classiﬁer based on these examples (the
+hypothesis h). However, given the wide variation in form
+structure and content within and across diﬀerent domains,
+the resulting hypotheses can be very complex.
+
+A simpler hypothesis set can be obtained by hierarchically
+decomposing the feature space.
+In HIFI, this decomposi-
+tion follows the hierarchy of form types. The most general
+concept (GC), which sits at the top of the hierarchy, cor-
+responds to searchable forms which may belong to multiple
+database domains. The more speciﬁc concept (SC) corre-
+sponds to forms in a speciﬁc database domain. The original
+hypothesis h is replaced by hGC and hSC , where hGC iden-
+tiﬁes the searchable forms over the set of all Web forms and
+
+Figure 4: The diﬀerences between the average num-
+ber of checkboxes, selection lists and textboxes of
+searchable and non-searchable forms illustrate some
+the structural diﬀerences between these two kinds
+of forms.
+
+hSC identiﬁes, among searchable forms, forms that are rele-
+vant to a given domain.
+
+In essence, by creating these diﬀerent levels of abstrac-
+tion, instead of using a single complex classiﬁer, we can
+construct two classiﬁers that make simpler decisions: hGC is
+performed by the Generic Form Classiﬁer (GF C) and hSC
+by the Domain-Speciﬁc Form Classiﬁer (DSF C). In addi-
+tion, the decomposition of the feature space allows the use
+of learning techniques that are more appropriate for each
+feature subset. As we discuss in Sections 3 and 4, an eval-
+uation of diﬀerent learning techniques for these classiﬁers
+shows that decision trees [24] present the lowest error rates
+for determining whether a form is searchable based on struc-
+tural patterns, whereas SVM [24] is the most eﬀective tech-
+nique to identify forms that belong to the given database
+domain based on their textual content. More details about
+these classiﬁers, how they are constructed and combined are
+given in Sections 3, 4 and 5.
+
+3. USING STRUCTURE TO IDENTIFY
+
+SEARCHABLE FORMS
+
+As a ﬁrst step in the form-ﬁltering process we apply the
+GFC to identify searchable forms. Empirically, we have ob-
+served that some structural characteristics of a form can be
+a good indicator as to whether the form is searchable or
+not [3]. See for example, Figure 4, which shows the aver-
+age number of selection lists, textboxes and checkboxes in a
+sample set that contains both searchable and non-searchable
+forms (details about this sample are given below). This ﬁg-
+ure suggests that searchable forms have a higher number of
+selection lists and checkboxes, whereas non-searchable forms
+have a higher number of textboxes. The forms in Figure 2
+are concrete examples of this trend. The form on the left
+is searchable and contains several selection lists, whereas
+the form on the right is non-searchable and contains a large
+number of textboxes.
+
+Other structural features of forms that are useful in dif-
+ferentiating searchable and non-searchable forms include:
+number of hidden tags; number of radio tags; number of
+ﬁle inputs; number of submit tags; number of image inputs;
+number of buttons; number of resets; number of password
+tags; number of textboxes; number of items in selection lists;
+sum of text sizes in textboxes; submission method (post or
+get). Another useful feature is the presence of the string
+“search” within the form and submit tags. In fact, the pres-
+ence of the “search” string within the form and submit tags
+
+WWW 2007 / Track: SearchSession: Crawlers433Algorithm
+Na¨ıve Bayes
+MultiLayer Perceptron
+C4.5
+SVM (degree=1)
+SVM (degree=2)
+SVM (degree=3)
+SVM (degree=4)
+SVM (degree=5)
+
+Error test
+24%
+12.8%
+9.05%
+14.7%
+16.2%
+14.9%
+14.9%
+15.1%
+
+Table 1: Error test rates for GFC.
+
+was the feature which obtained the highest entropy in our
+feature set. Note that all of these features can be automat-
+ically extracted from Web forms—they require no manual
+pre-processing.
+
+We built classiﬁers for these features using diﬀerent ma-
+chine learning techniques: Na¨ıve Bayes, Decision tree (C4.5
+algorithm), MultiLayer Perceptron and Support Vector Ma-
+chine with distinct polynomial kernel degrees (SMO algo-
+rithm).1 For positive examples we extracted 216 searchable
+forms from the UIUC repository [30], and we manually gath-
+ered 259 non-searchable forms for the negative examples.
+We set up the training phase with 10-fold cross validation
+and split the form set in two thirds to the training set and
+one third to the testing set. The error test rates for the
+diﬀerent techniques are shown in Table 1. These low error
+rates indicate that structural features are very eﬀective to
+diﬀerentiate between searchable and non-searchable forms.
+For HIFI, we selected the C4.5 classiﬁer because it had the
+lowest error rate.
+
+It is worthy of note that Cope et al. [12] also proposed the
+use of decision trees to classify searchable forms. Similar to
+the GFC, their classiﬁer uses features that can be automati-
+cally extracted from forms. However, because their strategy
+also takes the textual contents inside the form tags into ac-
+count, it is domain-speciﬁc. As a result, a diﬀerent classiﬁer
+needs to be constructed for each domain. In contrast, as we
+discuss in Section 6, the GFC is very eﬀective in identifying
+searchable forms in diﬀerent domains. Because the GFC is
+domain independent, it can be re-used, as is, in many ap-
+plications. For example, it can be used to pre-process input
+forms for form clustering algorithms [4, 19], or to improve
+the quality of automatically constructed online database di-
+rectories such as Complete Planet [8].
+
+4. FORM DOMAIN IDENTIFICATION AS
+
+TEXT CLASSIFICATION
+
+The GFC is eﬀective for identifying searchable forms, re-
+gardless of their domains. However, as we discussed in
+Section 1, even when a focused crawler is used, the set of
+forms retrieved may include searchable forms from many
+diﬀerent domains. Consider, for instance the forms in Fig-
+ure 5. These two forms were retrieved by the Form-Focused
+Crawler (FFC) during a crawl to ﬁnd airfare search forms,
+but neither belongs to the target Airfare database domain—
+one is a hotel search form and the other is a rental car search
+form.
+
+To identify searchable forms that belong to a given do-
+main, as the second step of our form-ﬁltering process, we use
+a more specialized classiﬁer, the DSFC. The DSFC uses the
+textual content of a form to determine its domain. The form
+content is often a good indicator of the database domain—it
+
+1We used WEKA [31] to construct these classiﬁers as well
+as for constructing the classiﬁers described in Section 4.
+
+(a) Hotel search
+
+(b) Rental car search
+
+Figure 5: Searchable forms obtained among Airfare-
+related Web pages.
+
+contains metadata and data that pertain to the database.
+For example, form attribute names often match the names
+of ﬁelds in the database, and selection lists often contain
+values that are present in the database.
+
+Other works have used the form contents for both classi-
+ﬁcation and clustering purposes [19, 22]. He et al. [19] used
+form contents, more precisely the attribute labels, to cluster
+forms. They note that forms in a given domain contain a
+well-deﬁned and restricted vocabulary. Hess and Kushmer-
+ick use both the attribute labels and their values (if present)
+to classify forms. However, the eﬀectiveness of approaches
+that rely on attribute labels is highly dependent on the abil-
+ity to extract descriptive labels for form attributes, and this
+task is hard to automate [19, 25]. It is worthy of note that
+the experiments reported in both [19] and [22] relied on a
+manual pre-processing step for extracting the form attribute
+labels.
+
+To construct a scalable solution that is able to automat-
+ically classify thousands of forms, instead of attempting to
+extract attribute labels, the DSFC uses the textual content
+within a form—the text enclosed by the form tags after the
+HTML markup is removed. Since, in essence, the DSFC
+needs to perform text classiﬁcation, we experimented with
+two learning techniques that have been found to be eﬀective
+for this task: decision trees (C4.5 algorithm) and SVMs (the
+SMO algorithm).
+
+We evaluated the eﬀectiveness of these techniques over
+eight distinct domains.2 For each domain we built a DSFC
+instance as follows. First, we performed a focused crawl
+(using the FFC [3]) and collected all distinct forms in the
+crawled pages. Forms with the same structure and located
+in the same host are considered the same—even if they ap-
+pear in diﬀerent pages. Then, we used the GFC to ﬁlter
+out the non-searchable forms. From this set, we extracted
+the structured forms and manually selected positive (on av-
+erage 220 per domain) and negative examples (on average
+220 per domain). After the HTML markup is removed, each
+form is represented as a vector where each cell represents a
+stemmed word [1], and the cell value is the frequency of the
+corresponding term in the form.
+
+These vectors are then used as input to the DSFC in-
+stance. We set up the training phase with 10-fold cross val-
+idation and split the form set in two thirds to the training
+set and one third to the testing set.
+
+Table 2 shows, for the eight domains, the error rates ob-
+tained by decision trees and by SVMs using distinct polyno-
+
+2These domains are described in Section 6.
+
+WWW 2007 / Track: SearchSession: Crawlers434Domain Decision tree
+Airfare
+
+11.03%
+
+Auto
+Book
+Hotel
+Job
+
+Movie
+Music
+Rental
+
+4.3%
+11.5%
+12.6%
+8.9%
+12.6%
+12.2%
+10.9%
+
+SVM(d=1)
+
+SVM(d=2)
+
+SVM(d=3)
+
+SVM(d=4)
+
+SVM(d=5)
+
+7.1%
+3.5%
+7.8%
+13.4%
+
+8%
+
+8.2%
+11.4%
+
+5%
+
+9.7%
+10%
+7.2%
+10%
+9.8%
+9.7%
+10.6%
+6.7%
+
+12.3%
+10.7%
+6.6%
+11.7%
+10.7%
+15.6%
+14.7%
+6.7%
+
+16.2%
+13.6%
+22.4%
+13.4%
+14.2%
+17.9%
+22.1%
+8.4%
+
+18.1%
+14.3%
+35.1%
+28.5%
+18.75%
+25.4%
+25.4%
+8.4%
+
+Table 2: Error test rates of DSFC in diﬀerent domains.
+
+mial kernel degrees. The low error rates reinforce our choice
+to use the form contents as the basis for classiﬁcation. Note
+that SVMs perform better than decision trees. However, no
+single polynomial kernel degree is uniformly better for all
+domains. For the experimental evaluation described in Sec-
+tion 6, for each domain, we selected the classiﬁer with the
+lowest error rate.
+
+Figure 6: Hierarchical Composition of Modular
+Classiﬁers
+5. COMBINING CLASSIFIERS
+
+A popular technique to combine classiﬁers is to compose
+them in an ensemble. A set of base classiﬁers is constructed,
+and classiﬁcation of new examples is decided by combining
+individual decisions from the base classiﬁers (see e.g., [5]). In
+contrast, HIFI partitions the feature space and applies dif-
+ferent classiﬁers to the diﬀerent partitions in a sequence. As
+illustrated in Figure 6, the domain-independent GFC ﬁrst
+performs a coarse classiﬁcation and prunes a large number
+of irrelevant (non-searchable) forms. The DSFC then works
+on the smaller set of searchable forms and identiﬁes among
+them the relevant forms.
+
+The hierarchical composition of classiﬁers leads to modu-
+larity: a complex problem is decomposed into simpler sub-
+components and a monolithic classiﬁer is replaced by a hier-
+archy of classiﬁers, each dedicated to a subset of the hypoth-
+esis [16, 21]. This has several beneﬁts. First and foremost,
+because the learning task of the DSFC is simpliﬁed, the over-
+all classiﬁcation process is more accurate and robust. The
+DSFC need not consider hypotheses that deal with the high
+variability present in non-searchable forms, and this simpler
+hypothesis set leads to improved classiﬁcation accuracy. As
+an example, consider Figure 2, which shows two forms with
+similar content. Whereas the form on the left is a (relevant)
+searchable form in the Auto domain, the one on the right is
+a non-searchable form (irrelevant) for requesting car quotes.
+There are also instances of badly designed Web pages in
+which the form content contains extraneous terms. Since
+our form extraction process is automated and all non-HTML
+terms within the form are considered, a non-searchable form
+may be incorrectly classiﬁed if these extraneous terms are
+representative of the database domain. Because the GFC
+
+takes structural features into account, it is able to accu-
+rately prune many irrelevant forms which might otherwise
+be misclassiﬁed as relevant by the DSFC.
+
+Another important beneﬁt of the hierarchical composition
+of classiﬁers is that we can apply to each partition a learn-
+ing technique that is best suited for the feature set of the
+partition: decision trees lead to the lowest error rates when
+applied to structural features of forms, whereas for the tex-
+tual contents, SVMs are the most eﬀective.
+
+6. EXPERIMENTAL EVALUATION
+
+In this section, we ﬁrst assess the eﬀectiveness of the hi-
+erarchical composition of the GFC and DSFC using forms
+retrieved by the FFC in a set of representative database do-
+mains. Then, to evaluate the sensitivity of our approach to
+the quality of the input set of forms, we study the perfor-
+mance of HIFI using forms retrieved by two crawlers that use
+distinct focus strategies: the FFC and the best-ﬁrst focused
+crawler [10].
+6.1 Experimental Setup
+Database Domains. In order to evaluate our solution and
+assess its generality, we selected domains with diﬀerent char-
+acteristics. The database domains used in our experiments
+are shown in Table 3. These domains present high variabil-
+ity in the size, structure, and vocabulary of their forms. As
+Table 4 shows, there are striking diﬀerences in form struc-
+ture across the domains. While Airfare, Hotel and Rental
+have a relatively large number of hidden inputs and selec-
+tion lists, Music and Movie have very few of these types of
+ﬁelds.
+In fact, Music and Movie have a much lower total
+number of attributes than the other domains.
+
+The textual content of the forms in the diﬀerent domains
+also have diﬀerent characteristics. As Table 3 shows, there
+is a wide variation in the average number of terms for forms
+in the diﬀerent database domains. Whereas domains such as
+Auto and Music have relatively small forms (with an average
+of 52 and 82 terms, respectively), others such as Airfare and
+Job have fairly large forms (with an average of 172 and 165
+terms, respectively).
+
+These domains also present a wide variation in their vo-
+cabulary. Figure 7 shows the Simpson Index [28] for the
+diﬀerent domains. The value of this index represents the
+probability that two words selected at random from distinct
+forms in a domain are the same word—thus, the higher the
+value, the more homogeneous the vocabulary is.3 The ﬁgure
+clearly shows that there is a signiﬁcant variation in vocab-
+ulary homogeneity for the diﬀerent domains. For example,
+the vocabulary of Auto is substantially more homogeneous
+than that of Movie.
+
+3The Simpson Index provides a better measure for vocabu-
+lary diversity than other measures such as vocabulary size.
+
+GFCDSFCWeb formsSearchableformsIrrelevant formsRelevantformsIrrelevant formsWWW 2007 / Track: SearchSession: Crawlers435Domain Description
+Airfare
+Auto
+Book
+Hotel
+Job
+Movie
+Music
+Rental
+
+airfare search
+new and used cars
+books for sale
+hotel availability
+job search
+movie titles and DVDs
+music titles and CDs
+car rental availability
+
+# of Forms Avg Form Size
+4729
+1930
+1672
+10228
+1674
+2313
+1129
+2702
+
+172
+52
+96
+139
+165
+115
+82
+137
+
+Table 3: Database domains used in experiments.
+The table shows for each domain, the total num-
+ber of structured forms and the average number of
+terms in the relevant forms.
+
+Domain Hidden Checkbox
+0.4
+Airfare
+0.4
+Auto
+0.9
+Book
+Hotel
+1.2
+1.2
+Job
+0.2
+Movie
+0.2
+Music
+Rental
+0.2
+
+8.3
+2.2
+1.7
+6.7
+1.7
+1.4
+1.4
+4.1
+
+Selection list Textbox
+2.5
+1.3
+3.3
+0.9
+1.7
+1.1
+1.3
+0.7
+
+9.9
+3.4
+2.0
+5.8
+3.2
+0.8
+1.1
+6.3
+
+Table 4: Variability in form structure. The ta-
+ble shows the average number of diﬀerent form at-
+tribute types in each database domain.
+
+Performance Metrics. To evaluate the performance of
+the classiﬁers, we use a confusion matrix which represents
+the relationship between actual classiﬁcation and predicted
+classiﬁcation:
+
+Actual positive
+Actual negative
+
+Predicted positive
+True Positive (TP)
+False Positive(FP)
+
+Predicted negative
+False Negative(FN)
+True Negative(TN)
+
+A commonly used measure of the performance of a classiﬁer
+is accuracy:
+
+accuracy =
+
+T P + T N
+
+T P + T N + F P + F N
+
+(1)
+
+Accuracy is a suitable measure when the input to the clas-
+siﬁer contains similar proportions of positive and negatives
+examples. Consider, for example, an input set consisting of
+1 positive example and 9 negative examples. If a classiﬁer
+labels all items as negative, its accuracy is 90%. Since dur-
+ing a Web crawl, the large majority of forms retrieved are
+irrelevant—i.e., the forms match the negative examples—we
+use three other measures of performance which better reﬂect
+the eﬀectiveness of a classiﬁer over the set of relevant forms:
+
+Recall =
+
+T P
+
+T P + F N
+
+P recision =
+
+T P
+
+T P + F P
+
+Specif icity =
+
+T N
+
+T N + F P
+
+F − measure =
+
+2 ∗ Recall ∗ P recision
+Recall + P recision
+
+(2)
+
+(3)
+
+(4)
+
+(5)
+
+Recall shows the number of relevant items retrieved as frac-
+tion of all relevant items; precision represents the number of
+
+Figure 7: Variability in the homogeneity of form
+vocabulary across domains.
+
+relevant items as a fraction all the items predicted as positive
+by the classiﬁer; and speciﬁcity is the proportion of actual
+irrelevant items predicted as irrelevant. The F-measure is
+the harmonic mean between precision and recall. A high
+F-measure means that both recall and precision have high
+values—a perfect classiﬁcation would result in an F-measure
+with value equal 1.
+6.2 Effectiveness of HIFI
+
+The eﬀectiveness of our approach depends on how the
+classiﬁers used for each partition of the search space interact
+with each other. To measure the performance of the combi-
+nation of GFC+DSFC, we performed the following experi-
+ment. First, we ran the FFC for the eight database domains.
+Among all the structured and distinct forms gathered by the
+crawler, we executed the form-ﬁltering process.
+
+As described in Section 3, the GFC splits the form space
+into searchable forms (SF) and non-searchable forms (NSF);
+and the DSFC classiﬁer further splits the space of searchable
+forms into predicted relevant forms (PRF) and predicted
+irrelevant forms (PNRF). Since for each domain, the FFC
+retrieves from hundreds to thousands of forms (see Table 3),
+we randomly selected 20% of the forms in each one of these
+sets and manually inspected them to verify whether they
+were correctly classiﬁed.
+
+As the GFC prunes the search space of forms that serve
+as input to the DSFC, we are interested in (1) evaluating its
+eﬀectiveness in removing the subset of irrelevant forms that
+are non-searchable (speciﬁcity, Equation 4); and (2) veri-
+fying whether it misclassiﬁes relevant forms (recall, Equa-
+tion 2). The speciﬁcity and recall values of GFC in the
+eight domains are given in Table 5. Note that these val-
+ues were measured taking into account only the relevant
+forms (a subset of searchable forms) and not all searchable
+forms, which are the target of the GFC. These numbers
+show that GFC eﬀectively partitions the search space: it re-
+moves a signiﬁcant percentage of irrelevant forms, which are
+non-searchable (high speciﬁcity), and misclassiﬁes only a few
+relevant forms (high recall). The domains in which the GFC
+obtained the lowest speciﬁcity values were Airfare, Hotel and
+Rental. Since the GFC is domain independent, and forms
+in these domains are often co-located in the same sites (e.g.,
+Orbitz and Travelocity), a large percentage of the forms it
+classiﬁes as searchable belong to a domain other than the
+target database domain. As we discuss below, because the
+DSFC takes the textual content of forms into account, when
+applied to the set of forms returned by the GFC, the DSFC
+is able to ﬁlter out forms that do not belong to the target
+database domain with high accuracy.
+
+00.00020.00040.00060.00080.0010.00120.00140.00160.00180.002Airfare Auto Book Hotel Job Movie Music Rental Simpson Index00.00020.00040.00060.00080.0010.00120.00140.00160.00180.002Airfare Auto Book Hotel Job Movie Music Rental Simpson Index00.00020.00040.00060.00080.0010.00120.00140.00160.00180.002Airfare Auto Book Hotel Job Movie Music Rental Simpson IndexWWW 2007 / Track: SearchSession: Crawlers436Domain Recall
+Airfare
+
+0.97
+0.90
+0.92
+0.98
+0.97
+0.95
+0.98
+0.96
+
+Speciﬁcity
+
+0.18
+0.58
+0.78
+0.30
+0.53
+0.57
+0.41
+0.34
+
+Auto
+Book
+Hotel
+Job
+
+Movie
+Music
+Rental
+
+Table 5: Eﬀectiveness of GFC in identifying relevant
+forms.
+
+Domain Recall
+Airfare
+
+0.91
+0.87
+0.90
+0.96
+0.87
+0.75
+0.73
+0.94
+
+Precision Accuracy
+
+0.91
+0.87
+0.92
+0.97
+0.95
+0.80
+0.88
+0.91
+
+0.98
+0.93
+0.96
+0.95
+0.95
+0.99
+0.89
+0.97
+
+Auto
+Book
+Hotel
+Job
+
+Movie
+Music
+Rental
+
+Table 6: Eﬀectiveness of classiﬁer composition.
+
+Recall
+
+Precision
+
+Conﬁguration 1
+Conﬁguration 2
+
+HIFI
+
+0.94
+0.49
+0.87
+
+0.72
+0.94
+0.95
+
+Table 7: Eﬀectiveness of two conﬁgurations that use
+monolithic classiﬁers.
+
+As expected, the speciﬁcity of GFC for searchable forms
+is much higher than for relevant forms. For all domains,
+speciﬁcity values were above 90%. This conﬁrms the ability
+of the GFC to accurately identify searchable forms.
+HIFI =GFC+DSFC. Table 6 shows the recall, precision
+and accuracy of the form-ﬁltering process which combines
+the GFC and the DSFC. The overall accuracy obtained by
+HIFI is high in all domains. As discussed above, since a large
+percentage of the input forms is irrelevant, it is important
+to also examine the recall and precision. For most domains
+both recall and precision are high—with precision varying
+from 0.8 to 0.97 and recall varying from 0.73 to 0.96. Note
+that these results were obtained for domains with very dif-
+ferent characteristics. For example, while the Auto domain
+has small forms and a relatively homogeneous vocabulary,
+Airfare has big and very heterogeneous forms (see Table 3
+and Figure 7). This indicates that our approach provides
+an eﬀective and general mechanism to automatically clas-
+sify online databases based on their corresponding forms.
+Classiﬁer Composition vs. Monolithic Classiﬁer. To
+verify whether the combination of classiﬁers is more eﬀective
+than a monolithic classiﬁer, we measured the recall and pre-
+cision of two conﬁgurations of monolithic classiﬁers. Conﬁg-
+uration 1 uses only the DSFC which is trained as described
+in Section 4, but executed over the entire input set provided
+by the focused crawler (not just over searchable forms). For
+Conﬁguration 2, we built a new classiﬁer which combines
+the structural features of the GFC and the form contents.
+This new classiﬁer was trained using both searchable and
+non-searchable forms, and it was executed over all the forms
+returned by the crawler. We note that, for both conﬁgura-
+tions, SVM with polynomial degree 1 obtained the highest
+accuracy. Table 7 shows the recall and precision for these
+two conﬁgurations for the Job domain—a similar behavior
+was observed in other domains.
+
+For Conﬁguration 1, the classiﬁer precision (0.72) is lower
+than the combination of classiﬁers (0.95). Since this classi-
+
+(a) F-measure
+
+(b) Precision
+
+(c) Recall
+
+Figure 8: Performance of the HIFI classiﬁcation
+strategy using forms retrieved by two diﬀerent
+crawlers: the best-ﬁrst crawler (BFC) and the form-
+focused crawler (FFC).
+
+ﬁer is trained only with searchable forms, it performs poorly
+over the non-searchable forms. Because the classiﬁer for
+Conﬁguration 2 learns features of both searchable and non-
+searchable forms, its model is more speciﬁc. Although this
+more speciﬁc model leads to a higher precision (0.94) over
+the entire input set, it also misclassiﬁes a large number of
+relevant forms, as one can be seen from the low recall (0.49).
+These results reinforce our decision to decompose the search
+space, and to use classiﬁers trained with diﬀerent sets of fea-
+tures.
+6.3 Sensitivity to Input Quality
+
+The results presented in the previous sections were ob-
+tained using forms retrieved by the FFC. To assess the sen-
+sitivity of HIFI to the quality of the input forms, we eval-
+uate the classiﬁer composition using forms gathered by a
+diﬀerent focused crawler: the best-ﬁrst crawler proposed by
+Chakrabarti et al. [10]. The best-ﬁrst crawler (BFC) uses a
+classiﬁer that learns to classify pages as belonging to topics
+in a taxonomy. During a search, the crawler only follows
+links from pages classiﬁed as being on-topic. The FFC’s
+search is more focused than that of the BFC. Like the BFC,
+
+WWW 2007 / Track: SearchSession: Crawlers437attributes.
+form features is completely automated.
+
+In contrast, in our solution, the extraction of
+
+Similar to the GFC, Cope et al. [12] try to identify search-
+able forms [24]. Although they reported high precision and
+recall for two testbeds (academic and random Web sites),
+because they construct decision trees based both on struc-
+tural features and the textual content inside form tags, their
+approach is domain-dependent, requiring the construction of
+specialized classiﬁers for diﬀerent form sets. In contrast, the
+GFC is domain-independent—it is able to accurately classify
+forms in diﬀerent domains. Although Cope’s classiﬁer has
+a domain-speciﬁc component, unlike the DSFC it considers
+only a subset of the form contents: the form structure and
+the contents inside the HTML tags. Thus, its eﬀectiveness
+is compromised for forms where the content representative
+of the database domain lies outside the HTML tags (e.g.,
+descriptive labels for text ﬁelds).
+
+The problem of classifying online databases based on the
+contents of the forms that serve as entry points to these
+databases can be seen as an instance of the problem of text
+classiﬁcation. Although there is a rich literature on combin-
+ing text classiﬁers to obtain higher classiﬁcation accuracy,
+much of this work has centered around policies for select-
+ing the most appropriate classiﬁer or on strategies to com-
+bine the output of the individual classiﬁers (see [6] for an
+overview). In contrast to prior research in combining text
+classiﬁers, to obtain higher accuracy, we partition the fea-
+ture space and combine classiﬁers in a hierarchical fashion—
+a distinct classiﬁer is applied to each partition. In this re-
+spect, our approach is similar to the approach proposed by
+Heiseler et al. [21] to classify images. While our decision
+to combine classiﬁers in a hierarchy was motivated by the
+need to obtain higher accuracy, for Heiseler et al., perfor-
+mance was a key consideration. Their application requires
+the classiﬁcation of a large number of images considering
+a very large number of features, some of which can be ex-
+pensive to identify. The classiﬁer hierarchy they proposed
+contains a coarse classiﬁer at the root which is used to re-
+move large portions of an image’s background (which is eas-
+ily and cheaply identiﬁable). The other classiﬁers that use
+features that are less common or more expensive to identify
+are placed in the bottom of the hierarchy. Our strategy for
+composing classiﬁers is also related to the sequential clas-
+siﬁer model proposed by Even-Zohar and Roth [14], who
+applied this idea to part-of-speech tagging.
+
+8. CONCLUSION
+
+This paper presents a solution to the problem of identi-
+fying online databases among a heterogeneous set of Web
+forms automatically gathered by a focused crawler. Our ap-
+proach composes two classiﬁers in a hierarchical fashion by
+partitioning the space into structural features and content.
+This composition not only allows the construction of simpler
+classiﬁers, but it also enables the use of learning techniques
+that are more eﬀective for each feature subset. In addition,
+since all the features used in the classiﬁcation process can
+be automatically extracted, our solution is scalable. Last,
+but not least, because the proposed form-ﬁltering process
+uses learning techniques, it is general and can be applied
+to many diﬀerent domains. The high precision and recall
+obtained in our experimental evaluation indicate that our
+approach is a scalable alternative to the problem of online
+database classiﬁcation. HIFI can be used as a basic building
+
+Figure 9: Percentage of relevant forms among the
+forms retrieved by the BFC and the FFC.
+
+it uses pages’ contents to focus the crawl on a topic, but
+instead of following all links in a page classiﬁed as being on-
+topic, the FFC prioritizes links that are more likely to lead
+to pages that contain searchable forms.
+
+Figure 8 shows the F-measure, recall and precision ob-
+tained by HIFI using forms gathered by the two crawlers.
+HIFI performed consistently better using the higher-quality
+inputs from the FFC. To give some insight about these re-
+sults, Figure 9 shows the percentage of relevant forms in
+the input provided by the two crawlers. In all domains, the
+percentage of relevant forms retrieved by the FFC is larger
+than that of the BFC. Furthermore, the FFC retrieves be-
+tween 40% and 220% more relevant forms than the BFC.
+Since F-measure, precision and recall are directly propor-
+tional to the number of true positives (Equations 3, 2, and
+5), it is not surprising that better performance is obtained
+using the higher-quality input produced by the FFC, that
+contains both a larger number and a larger percentage of
+relevant forms.
+
+Note that high values for F-measure, recall and precision
+were also obtained using the forms obtained by the BFC.
+The only exception is the Movie domain. A possible ex-
+planation is that the vocabulary of Movie is very heteroge-
+neous, as one can be seen from its Simpson index (Figure 7).
+As a result, the DSFC for Movies is less accurate than for
+the other domains. This is reﬂected in Figure 8, where the
+lowest F-measure values are for the Movie domain. The
+problem is compounded due to the sparseness of this do-
+main: only 2.7% of the forms retrieved by the BFC were
+relevant—a total of 102 relevant forms.
+
+The Music domain, similar to Movie, has a low Simpson
+index and its DSFC also has lower accuracy. However, Music
+is much less sparse than Movie. Around 17% of the forms
+retrieved by the BFC were relevant—a total of 284 relevant
+forms. This explains the relatively higher F-measure for
+HIFI using BFC in the Music domain. Rental, on the other
+hand, is very sparse. BFC retrieves only 96 relevant forms,
+4.6% of all forms it locates. But the vocabulary for Rental is
+much more homogeneous than the vocabulary for Movie—
+its Simpson index is over twice that of Movie.
+7. RELATED WORK
+
+Our work is closely related to pre-query approaches to
+form classiﬁcation. Hess and Kushmerick [22] use a stochas-
+tic generative model of a Web service designer creating a
+form to host a service (e.g., a query interface to an online
+database), and learn to identify forms in a domain. Al-
+though their results are promising, their solution requires
+that forms be manually pre-processed to remove irrelevant
+
+WWW 2007 / Track: SearchSession: Crawlers438block for large-scale information integration tasks. For ex-
+ample, it can be used to generate sets of homogeneous forms
+required in form-schema matching and merging [18, 20, 33];
+and it can help automate the process of constructing online
+database collections such as the one described in [15] as well
+as improve the quality of directories like BrightPlanet [8].
+
+Because HIFI relies on the form content for classiﬁcation
+purposes, it is not able to reliably identify the domain of
+simple search forms, whose contents have little or no infor-
+mation related to the database schema and contents. An
+interesting direction we plan to pursue in future work is to
+try and combine our pre-query classiﬁcation strategy with
+probing-based post-query methods.
+
+Acknowledgments. The authors thank Eun Yong Kang
+for his help in collecting and labeling the data used in the
+experiments. This work is partially supported by the Na-
+tional Science Foundation (under grants IIS-0513692, CNS-
+0524096, IIS-0534628) and a University of Utah Seed Grant.
+
+9. REFERENCES
+[1] R. A. Baeza-Yates and B. A. Ribeiro-Neto. Modern
+Information Retrieval. ACM Press/Addison-Wesley,
+1999.
+
+[2] L. Barbosa and J. Freire. Siphoning Hidden-Web Data
+through Keyword-Based Interfaces. In Proc. of SBBD,
+pages 309–321, 2004.
+
+[3] L. Barbosa and J. Freire. Searching for Hidden-Web
+
+Databases. In Proceedings of WebDB, pages 1–6, 2005.
+
+[4] L. Barbosa and J. Freire. Organizing hidden-web
+databases by clustering visible web documents. In
+Proceedings of ICDE, 2007. To appear.
+
+[5] P. Bennett, S. Dumais, and E. Horvitz. Probabilistic
+
+combination of text classiﬁers using reliability
+indicators: Models and results. In Proceedings of
+SIGIR, 2002.
+
+[6] P. N. Bennett, S. T. Dumais, and E. Horvitz. The
+
+combination of text classiﬁers using reliability
+indicators. Information Retrieval, 8(1):67–100, 2005.
+
+[7] A. Bergholz and B. Chidlovskii. Crawling for
+
+Domain-Speciﬁc Hidden Web Resources. In
+Proceedings of WISE, pages 125–133, 2003.
+
+[8] Brightplanet’s searchable databases directory.
+
+http://www.completeplanet.com.
+
+[9] S. Chakrabarti, K. Punera, and M. Subramanyam.
+
+Accelerated focused crawling through online relevance
+feedback. In Proceedings of WWW, pages 148–159,
+2002.
+
+[10] S. Chakrabarti, M. van den Berg, and B. Dom.
+
+Focused Crawling: A New Approach to Topic-Speciﬁc
+Web Resource Discovery. Computer Networks,
+31(11-16):1623–1640, 1999.
+
+[11] K. C.-C. Chang, B. He, and Z. Zhang. Toward
+
+Large-Scale Integration: Building a MetaQuerier over
+Databases on the Web. In Proc. of CIDR, pages
+44–55, 2005.
+
+[12] J. Cope, N. Craswell, and D. Hawking. Automated
+
+Discovery of Search Interfaces on the Web. In
+Proceedings of ADC, pages 181–189, 2003.
+
+[13] M. Diligenti, F. Coetzee, S. Lawrence, C. L. Giles, and
+M. Gori. Focused Crawling Using Context Graphs. In
+Proceedings of VLDB, pages 527–534, 2000.
+
+[14] Y. Even-Zohar and D. Roth. A sequential model for
+
+multi-class classiﬁcation. In Empirical Methods in
+Natural Language Processing, 2001.
+
+[15] M. Galperin. The molecular biology database
+
+collection: 2005 update. Nucleic Acids Res, 33, 2005.
+[16] S. Gangaputra and D. Geman. A design principle for
+coarse-to-ﬁne classiﬁcation. In Proceedings of CVPR,
+pages 1877–1884, 2006.
+
+[17] L. Gravano, P. G. Ipeirotis, and M. Sahami. Qprober:
+
+A system for automatic classiﬁcation of hidden-web
+databases. ACM TOIS, 21(1):1–41, 2003.
+
+[18] B. He and K. C.-C. Chang. Statistical Schema
+
+Matching across Web Query Interfaces. In Proceedings
+of ACM SIGMOD, pages 217–228, 2003.
+
+[19] B. He, T. Tao, and K. C.-C. Chang. Organizing
+
+structured web sources by query schemas: a clustering
+approach. In Proc. of CIKM, pages 22–31, 2004.
+
+[20] H. He, W. Meng, C. Yu, and Z. Wu. Wise-integrator:
+An automatic integrator of web search interfaces for
+e-commerce. In Proceedings of VLDB, pages 357–368,
+2003.
+
+[21] B. Heisele, T. Serreb, S. Prenticeb, and T. Poggiob.
+
+Hierarchical Classiﬁcation and Feature Reduction for
+Fast face Detection with Support Vector Machines.
+Pattern Recognition, 36(9), 2003.
+
+[22] A. Hess and N. Kushmerick. Automatically attaching
+semantic metadata to web services. In Proceedings of
+IIWeb, pages 111–116, 2003.
+
+[23] W. Hsieh, J. Madhavan, and R. Pike. Data
+
+management projects at Google. In Proceedings of
+ACM SIGMOD, pages 725–726, 2006.
+
+[24] T. Mitchell. Machine Learning. McGraw Hill, 1997.
+[25] S. Raghavan and H. Garcia-Molina. Crawling the
+
+Hidden Web. In Proceedings of VLDB, pages 129–138,
+2001.
+
+[26] J. Rennie and A. McCallum. Using Reinforcement
+
+Learning to Spider the Web Eﬃciently. In Proceedings
+of ICML, pages 335–343, 1999.
+
+[27] Y. Ru and E. Horowitz. Indexing the invisible Web: a
+
+survey. Online Information Review, 29(3):249–265,
+2005.
+
+[28] E. H. Simpson. Measurement of Diversity. Nature,
+
+163:688, 1949.
+
+[29] S. Sizov, M. Biwer, J. Graupmann, S. Siersdorfer,
+
+M. Theobald, G. Weikum, and P. Zimmer. The
+BINGO! System for Information Portal Generation
+and Expert Web Search. In Proc. of CIDR, 2003.
+
+[30] The UIUC Web integration repository.
+
+http://metaquerier.cs.uiuc.edu/repository.
+
+[31] I. H. Witten and E. Frank. Data Mining: Practical
+
+machine learning tools and techniques. Morgan
+Kaufmann, 2nd edition, 2005.
+
+[32] P. Wu, J.-R. Wen, H. Liu, and W.-Y. Ma. Query
+
+selection techniques for eﬃcient crawling of structured
+web sources. In Proceedings of ICDE, page 47, 2006.
+
+[33] W. Wu, C. Yu, A. Doan, and W. Meng. An
+
+Interactive Clustering-based Approach to Integrating
+Source Query interfaces on the Deep Web. In
+Proceedings of ACM SIGMOD, pages 95–106, 2004.
+
+WWW 2007 / Track: SearchSession: Crawlers439

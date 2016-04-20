@@ -1,0 +1,1389 @@
+Detecting Near-Duplicates for Web Crawling
+
+Gurmeet Singh Manku
+
+Google Inc.
+
+Arvind Jain
+Google Inc.
+
+Anish Das Sarma(cid:3)
+Stanford University
+
+manku@google.com
+
+arvind@google.com
+
+anishds@stanford.edu
+
+ABSTRACT
+Near-duplicate web documents are abundant. Two such
+documents di(cid:11)er from each other in a very small portion
+that displays advertisements, for example. Such di(cid:11)erences
+are irrelevant for web search. So the quality of a web crawler
+increases if it can assess whether a newly crawled web page
+is a near-duplicate of a previously crawled web page or not.
+In the course of developing a near-duplicate detection sys-
+tem for a multi-billion page repository, we make two research
+contributions. First, we demonstrate that Charikar’s (cid:12)nger-
+printing technique is appropriate for this goal. Second, we
+present an algorithmic technique for identifying existing f -
+bit (cid:12)ngerprints that di(cid:11)er from a given (cid:12)ngerprint in at most
+k bit-positions, for small k. Our technique is useful for both
+online queries (single (cid:12)ngerprints) and batch queries (mul-
+tiple (cid:12)ngerprints). Experimental evaluation over real data
+con(cid:12)rms the practicality of our design.
+
+Categories and Subject Descriptors
+E.1 [Data Structures]: Distributed data structures; G.2.0
+[Discrete Mathematics]: General; H.3.3 [Information
+Search and Retrieval]: Search process
+
+General Terms
+Algorithms
+
+Keywords
+Hamming distance, near-duplicate, similarity, search, sketch,
+(cid:12)ngerprint, web crawl, web document
+
+1.
+
+INTRODUCTION
+
+Web crawling is an integral piece of infrastructure for
+search engines. Generic crawlers [1, 9] crawl documents
+and links belonging to a variety of topics, whereas focused
+crawlers [27, 43, 46] use some specialized knowledge to limit
+the crawl to pages pertaining to speci(cid:12)c topics. For web
+crawling, issues like freshness and e(cid:14)cient resource usage
+have previously been addressed [15, 16, 19]. However, the
+problem of elimination of near-duplicate web documents in
+a generic crawl has not received attention.
+(cid:3)Anish worked on this problem at Google in Dec 2005.
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2007, May 8–12, 2007, Banff, Alberta, Canada.
+ACM 978-1-59593-654-7/07/0005.
+
+Documents that are exact duplicates of each other (due to
+mirroring and plagiarism) are easy to identify by standard
+checksumming techniques. A more di(cid:14)cult problem is the
+identi(cid:12)cation of near-duplicate documents. Two such docu-
+ments are identical in terms of content but di(cid:11)er in a small
+portion of the document such as advertisements, counters
+and timestamps. These di(cid:11)erences are irrelevant for web
+search. So if a newly-crawled page Pduplicate is deemed a
+near-duplicate of an already-crawled page P , the crawl en-
+gine should ignore Pduplicate and all its out-going links (in-
+tuition suggests that these are probably near-duplicates of
+pages reachable from P ). Elimination of near-duplicates1
+saves network bandwidth, reduces storage costs and im-
+proves the quality of search indexes.
+It also reduces the
+load on the remote host that is serving such web pages.
+
+A system for detection of near-duplicate pages faces a
+number of challenges. First and foremost is the issue of scale:
+search engines index billions of web-pages; this amounts to
+a multi-terabyte database. Second, the crawl engine should
+be able to crawl billions of web-pages per day. So the deci-
+sion to mark a newly-crawled page as a near-duplicate of an
+existing page should be made quickly. Finally, the system
+should use as few machines as possible.
+
+Our contributions:
+
+A. We show that Charikar’s simhash [17] is practically use-
+ful for identifying near-duplicates in web documents belong-
+ing to a multi-billion page repository. simhash is a (cid:12)nger-
+printing technique that enjoys the property that (cid:12)ngerprints
+of near-duplicates di(cid:11)er in a small number of bit positions.
+We experimentally validate that for a repository of 8B web-
+pages, 64-bit simhash (cid:12)ngerprints and k = 3 are reasonable.
+B. We develop a technique for solving the Hamming Dis-
+tance Problem: In a collection of f -bit (cid:12)ngerprints, quickly
+(cid:12)nd all (cid:12)ngerprints that di(cid:11)er from a given (cid:12)ngerprint in at
+most k bit positions, where k is a small integer. Our tech-
+nique is useful for both online queries (single (cid:12)ngerprints)
+and batch queries (multiple (cid:12)ngerprints).
+
+C. We present a survey of algorithms and techniques for
+
+duplicate detection.
+
+Road-map: In x2, we discuss simhash. In x3, we present
+a technique for tackling the Hamming Distance Problem.
+In x4, we present experimental results. In x5, we present a
+survey of duplicate-detection techniques.
+
+1In practice, presence/absence of near-duplicates may not
+translate into a binary yes/no decision for eliminating pages
+from the crawl; instead, it may be used as one of a small
+number of scoring components that set the priority of a URL
+for crawling purposes.
+
+WWW 2007 / Track: Data MiningSession: Similarity Search1412. FINGERPRINTING WITH SIMHASH
+
+Charikar’s simhash [17] is a dimensionality reduction tech-
+nique. It maps high-dimensional vectors to small-sized (cid:12)n-
+gerprints. It is applied to web-pages as follows: we (cid:12)rst con-
+vert a web-page into a set of features, each feature tagged
+with its weight. Features are computed using standard IR
+techniques like tokenization, case folding, stop-word removal,
+stemming and phrase detection. A set of weighted features
+constitutes a high-dimensional vector, with one dimension
+per unique feature in all documents taken together. With
+simhash, we can transform such a high-dimensional vector
+into an f -bit (cid:12)ngerprint where f is small, say 64.
+
+Computation: Given a set of features extracted from a
+document and their corresponding weights, we use simhash
+to generate an f -bit (cid:12)ngerprint as follows. We maintain an
+f -dimensional vector V , each of whose dimensions is initial-
+ized to zero. A feature is hashed into an f -bit hash value.
+These f bits (unique to the feature) increment/decrement
+the f components of the vector by the weight of that feature
+as follows: if the i-th bit of the hash value is 1, the i-th com-
+ponent of V is incremented by the weight of that feature;
+if the i-th bit of the hash value is 0, the i-th component
+of V is decremented by the weight of that feature. When
+all features have been processed, some components of V are
+positive while others are negative. The signs of components
+determine the corresponding bits of the (cid:12)nal (cid:12)ngerprint.
+
+Empirical results: For our system, we used the original
+C++ implementation of simhash, done by Moses Charikar
+himself. Concomitant with the development of our system in
+2004|2005, Monika Henzinger conducted a study that com-
+pared simhash with Broder’s shingle-based (cid:12)ngerprints [14].
+An excellent comparison of these two approaches appears
+in Henzinger [35]. A great advantage of using simhash over
+shingles is that it requires relatively small-sized (cid:12)ngerprints.
+For example, Broder’s shingle-based (cid:12)ngerprints [14] require
+24 bytes per (cid:12)ngerprint (it boils down to checking whether
+two or more Rabin (cid:12)ngerprints out of six are identical).
+With simhash, for 8B web pages, 64-bit (cid:12)ngerprints su(cid:14)ce;
+we experimentally demonstrate this in x4.
+
+Properties of simhash: Note that simhash possesses two
+con(cid:13)icting properties: (A) The (cid:12)ngerprint of a document is
+a \hash" of its features, and (B) Similar documents have
+similar hash values. The latter property is atypical of hash-
+functions. For illustration, consider two documents that dif-
+fer in a single byte. Then cryptographic hash functions like
+SHA-1 or MD5 will hash these two documents (treated as
+strings) into two completely di(cid:11)erent hash-values (the Ham-
+ming distance between the hash values would be large).
+However, simhash will hash them into similar hash-values
+(the Hamming distance would be small).
+
+In designing a near-duplicate detection system based on
+simhash, one has to deal with the quaintness of simhash de-
+scribed above. The strategy we employed is as follows: we
+design our algorithms assuming that Property A holds, i.e.,
+the (cid:12)ngerprints are distributed uniformly at random, and we
+experimentally measure the impact of non-uniformity intro-
+duced by Property B on real datasets.
+
+After converting documents into simhash (cid:12)ngerprints, we
+face the following design problem: Given a 64-bit (cid:12)ngerprint
+of a recently-crawled web page, how do we quickly discover
+other (cid:12)ngerprints that di(cid:11)er in at most 3 bit-positions? We
+address this problem in the next Section.
+
+3. THE HAMMING DISTANCE PROBLEM
+De(cid:12)nition: Given a collection of f -bit (cid:12)ngerprints and a
+query (cid:12)ngerprint F, identify whether an existing (cid:12)ngerprint
+di(cid:11)ers from F in at most k bits. (In the batch-mode version
+of the above problem, we have a set of query (cid:12)ngerprints
+instead of a single query (cid:12)ngerprint).
+
+As a concrete instance of the above problem2, consider a
+collection of 8B 64-bit (cid:12)ngerprints, occupying 64GB. In the
+online version of the problem, for a query (cid:12)ngerprint F, we
+have to ascertain within a few milliseconds whether any of
+the existing 8B 64-bit (cid:12)ngerprints di(cid:11)ers from F in at most
+k = 3 bit-positions. In the batch version of the problem, we
+have a set of, say, 1M query (cid:12)ngerprints (instead of a solitary
+query (cid:12)ngerprint F) and we have to solve the same problem
+for all 1M query (cid:12)ngerprints in roughly 100 seconds. This
+would amount to a throughput of 1B queries per day.
+
+Let us explore the design space by considering two simple-
+minded but impractical approaches. One approach is to
+build a sorted table of all existing (cid:12)ngerprints. Given F, we
+probe such a table with each F 0 whose Hamming distance
+from F is at most k. The total number of probes is pro-
+hibitively large: for 64-bit (cid:12)ngerprints and k = 3, we need
+= 41664 probes. An alternative is to pre-compute all
+F 0 such that some existing (cid:12)ngerprint is at most Hamming
+distance k away from F 0. In this approach, the total number
+of pre-computed (cid:12)ngerprints is prohibitively large: it could
+be as many as 41664 times the number of (cid:12)ngerprints.
+
+  64
+
+3
+
+We now develop a practical algorithm that lies in between
+the two approaches outlined above: it is possible to solve the
+problem with a small number of probes and by duplicating
+the table of (cid:12)ngerprints by a small factor.
+
+Intuition: Consider a sorted table of 2d f -bit truly ran-
+dom (cid:12)ngerprints. Focus on just the most signi(cid:12)cant d bits
+in the table. A listing of these d-bit numbers amounts to
+\almost a counter" in the sense that (a) quite a few 2d bit-
+combinations exist, and (b) very few d-bit combinations are
+duplicated. On the other hand, the least signi(cid:12)cant f (cid:0) d
+bits are \almost random".
+
+Now choose d0 such that jd0 (cid:0) dj is a small integer. Since
+the table is sorted, a single probe su(cid:14)ces to identify all (cid:12)n-
+gerprints which match F in d0 most signi(cid:12)cant bit-positions.
+Since jd0 (cid:0) dj is small, the number of such matches is also
+expected to be small. For each matching (cid:12)ngerprint, we can
+easily (cid:12)gure out if it di(cid:11)ers from F in at most k bit-positions
+or not (these di(cid:11)erences would naturally be restricted to the
+f (cid:0) d0 least-signi(cid:12)cant bit-positions).
+
+The procedure described above helps us locate an existing
+(cid:12)ngerprint that di(cid:11)ers from F in k bit-positions, all of which
+are restricted to be among the least signi(cid:12)cant f (cid:0) d0 bits of
+F. This takes care of a fair number of cases. To cover all
+the cases, it su(cid:14)ces to build a small number of additional
+sorted tables, as formally outlined in the next Section.
+3.1 Algorithm for Online Queries
+
+We build t tables: T1; T2; : : : ; Tt. Associated with table Ti
+are two quantities: an integer pi and a permutation (cid:25)i over
+the f bit-positions. Table Ti is constructed by applying
+permutation (cid:25)i to each existing (cid:12)ngerprint; the resulting
+set of permuted f -bit (cid:12)ngerprints are sorted. Further, each
+table is compressed (see x3.2) and stored in main-memory
+
+2Please note that the numerical values chosen for the online
+and the batch versions are for illustrative purposes only.
+
+WWW 2007 / Track: Data MiningSession: Similarity Search142
+of a set of machines. Given (cid:12)ngerprint F and an integer k,
+we probe these tables in parallel:
+
+Step 1: Identify all permuted (cid:12)ngerprints in Ti whose top
+pi bit-positions match the top pi bit-positions of (cid:25)i(F).
+
+Step 2: For each of the permuted (cid:12)ngerprints identi(cid:12)ed in
+Step 1, check if it di(cid:11)ers from (cid:25)i(F) in at most k bit-
+positions.
+
+In Step 1, identi(cid:12)cation of the (cid:12)rst (cid:12)ngerprint in table Ti
+whose top pi bit-positions match the top pi bit-positions of
+(cid:25)i(F) can be done in O(pi) steps by binary search. If we as-
+sume that each (cid:12)ngerprint were truly a random bit sequence,
+interpolation search shrinks the run time to O(log pi) steps
+in expectation [52].
+
+3.1.1 Exploration of Design Parameters
+
+Let us see how a reasonable combination of t and pi can be
+(cid:12)xed. We have two design goals: (1) a small set of permuta-
+tions to avoid blowup in space requirements; and (2) large
+values for various pi to avoid checking too many (cid:12)ngerprints
+in Step 2. Recall that if we seek all (permuted) (cid:12)ngerprints
+which match the top pi bits of a given (permuted) (cid:12)nger-
+print, we expect 2d(cid:0)pi (cid:12)ngerprints as matches. Armed with
+this insight, we present some examples for f = 64 and k = 3.
+We present an analytic solution in x3.1.2.
+
+Example 3.1. Consider f = 64 (64-bit (cid:12)ngerprints), and
+k = 3 so near-duplicates’ (cid:12)ngerprints di(cid:11)er in at most 3 bit-
+positions. Assume we have 8B = 234 existing (cid:12)ngerprints,
+i.e. d = 34. Here are four di(cid:11)erent designs, each design has
+a di(cid:11)erent set of permutations and pi values.
+
+11, 10 and 10 bits respectively. There are   6
+
+20 tables: Split 64 bits into 6 blocks having 11, 11, 11,
+= 20
+ways of choosing 3 out of these 6 blocks. For each
+such choice, permutation (cid:25) corresponds to making the
+bits lying in the chosen blocks the leading bits (there
+are several such permutations; we choose one of them
+uniformly at random). The value of pi is the total
+number of bits in the chosen blocks. Thus pi = 31; 32
+or 33. On average, a probe retrieves at most 234(cid:0)31 =
+8 (permuted) (cid:12)ngerprints.
+
+3
+
+1
+
+There are   4
+  4
+
+16 tables: Split 64 bits into 4 blocks, each having 16 bits.
+= 4 ways of choosing 1 out of these 4
+blocks. For each such choice, we divide the remaining
+48 bits into four blocks having 12 bits each. There are
+= 4 ways of choosing 1 out of these 4 blocks. The
+1
+permutation for a table corresponds to placing the bits
+in the chosen blocks in the leading positions. The value
+of pi is 28 for all blocks. On average, a probe retrieves
+234(cid:0)28 = 64 (permuted) (cid:12)ngerprints.
+
+and 12 bits respectively. There are   5
+
+10 tables: Split 64 bits into 5 blocks having 13, 13, 13, 13
+= 10 ways of
+choosing 2 out of these 5 blocks. For each such choice,
+permutation (cid:25) corresponds to making the bits lying in
+the chosen blocks the leading bits. The value of pi is
+the total number of bits in the chosen blocks. Thus
+pi = 25 or 26. On average, a probe retrieves at most
+234(cid:0)25 = 512 (permuted) (cid:12)ngerprints.
+
+2
+
+4 tables: Split 64 bits into 4 blocks, each having 16 bits.
+= 4 ways of choosing 1 out of these
+
+There are   4
+
+1
+
+4 blocks. For each such choice, permutation (cid:25) corre-
+sponds to making the bits lying in the chosen blocks
+the leading bits. The value of pi is the total number of
+bits in the chosen blocks. Thus pi = 16. On average,
+a probe retrieves at most 234(cid:0)16 = 256K (permuted)
+(cid:12)ngerprints.
+
+3.1.2 Optimal Number of Tables
+
+Example 3.1 shows that many di(cid:11)erent design choices are
+possible for a (cid:12)xed choice of f and k. Increasing the number
+of tables increases pi and hence reduces the query time. De-
+creasing the number of tables reduces storage requirements,
+but reduces pi and hence increases the query time.
+
+A reasonable approach to (cid:12)x the trade-o(cid:11) between space
+and time is to ask the following question: How many ta-
+bles do we need if we restrict the minimum value of pi to
+some constant? For a (cid:12)xed number of documents 2d, size of
+(cid:12)ngerprint f , and maximum allowed hamming distance k,
+the general solution to the problem is given by the following
+expression:
+
+X(f; k; d) =   1
+
+minr>k
+
+r
+k
+
+(cid:1) X( f k
+
+r ; k; d (cid:0)
+
+(r(cid:0)k)f
+
+r
+
+)
+
+if d < (cid:28)
+otherwise
+
+where X(f; k; d) represents the number of tables required,
+and the threshold (cid:28) is determined by the minimum value
+allowed value of pi:
+If the minimum value is pmin, (cid:28) =
+d (cid:0) pmin.
+
+Alternately, one could ask what the maximum value of pi
+is if we restrict the total number of tables to some number.
+This problem can be solved similarly.
+3.2 Compression of Fingerprints
+
+Compression can shrink the sizes of individual tables. For
+example, table sizes for 8B documents and 64-bit (cid:12)nger-
+prints can be shrunk to approximately half their sizes.
+
+The main insight is that successive (cid:12)ngerprints share the
+top d bits in expectation. We exploit this fact as follows.
+Let h denote the position of the most-signi(cid:12)cant 1-bit in
+the XOR of two successive (cid:12)ngerprints. Thus h takes values
+between 0 and f (cid:0) 1. For a given table, we (cid:12)rst compute
+the distribution of h values and then compute a Hu(cid:11)man
+code [37] over [0; f (cid:0)1] for this distribution. Next, we choose
+a parameter B denoting the block size. A typical value for
+B would be 1024 bytes. A block with B bytes has 8B bits.
+We scan the sorted sequence of (permuted) (cid:12)ngerprints in a
+table and populate successive blocks as follows:
+
+Step 1: The (cid:12)rst (cid:12)ngerprint in the block is remembered in
+its entirety. This consumes 8f bits. Thereafter, Step
+2 is repeated for successive (cid:12)ngerprints until a block is
+full, i.e., we cannot carry out Step 2 without needing
+8B + 1 bits or more.
+
+Step 2: Compute the XOR of the current (cid:12)ngerprint with
+the previous (cid:12)ngerprint. Find the position of the most-
+signi(cid:12)cant 1-bit. Append the Hu(cid:11)man code for this
+bit-position to the block. Then append the bits to the
+right of the most-signi(cid:12)cant 1-bit to the block.
+
+The key associated with a block is the last (cid:12)ngerprint that
+was remembered in that block. When a (permuted) (cid:12)nger-
+print arrives, an interpolation search [52] on the keys helps
+us (cid:12)gure out which block to decompress. Depending upon
+the value of pi and d, and on the distribution of (cid:12)ngerprints
+(simhash tends to cluster similar documents together), we
+occasionally have to decompress multiple blocks.
+
+WWW 2007 / Track: Data MiningSession: Similarity Search143
+
+
+
+
+
+
+3.3 Algorithm for Batch Queries
+
+As mentioned at the beginning of x3, in the batch version
+of the Hamming Distance Problem, we have a batch of query
+(cid:12)ngerprints instead of a solitary query (cid:12)ngerprint.
+
+Assume that existing (cid:12)ngerprints are stored in (cid:12)le F and
+that the batch of query (cid:12)ngerprints are stored in (cid:12)le Q. With
+8B 64-bit (cid:12)ngerprints, (cid:12)le F will occupy 64GB. Compression
+(see x3.2) shrinks the (cid:12)le size to less than 32GB. A batch
+has of the order of 1M (cid:12)ngerprints, so let us assume that (cid:12)le
+Q occupies 8MB.
+
+At Google, for example, (cid:12)les F and Q would be stored in a
+shared-nothing distributed (cid:12)le system called GFS [29]. GFS
+(cid:12)les are broken into 64MB chunks. Each chunk is replicated
+at three (almost) randomly chosen machines in a cluster;
+each chunk is stored as a (cid:12)le in the local (cid:12)le system.
+
+Using the MapReduce framework [24], the overall compu-
+tation can be split conveniently into two phases. In the (cid:12)rst
+phase, there are as many computational tasks as the number
+of chunks of F (in MapReduce terminology, such tasks are
+called mappers). Each task solves the Hamming Distance
+Problem over some 64-MB chunk of F and the entire (cid:12)le Q
+as inputs. A list of near-duplicate (cid:12)ngerprints discovered
+by a task is produced as its output. In the second phase,
+MapReduce collects all the outputs, removes duplicates and
+produces a single sorted (cid:12)le.
+
+We would like to mention a couple of points about e(cid:14)-
+ciency. First, MapReduce strives to maximize locality, i.e.,
+most mappers are co-located with machines that hold the
+chunks assigned to them; this avoids shipping chunks over
+the network. Second, (cid:12)le Q is placed in a GFS directory
+with replication factor far greater than three. Thus copy-
+ing (cid:12)le Q to various mappers does not become a bottleneck
+(please see the GFS paper for a discussion of this issue).
+
+How do we solve the Hamming Distance Problem with
+(cid:12)le Q and a 64-MB chunk of (cid:12)le F? We build tables, as
+outlined in x3.1, corresponding to (cid:12)le Q (note that for the
+online mode, the tables were built for (cid:12)le F). Since each
+individual uncompressed table occupies 8MB, we can eas-
+ily build 10 such tables in main memory, without worrying
+about compression. After building the tables, we scan the
+chunk sequentially, probing the tables for each (cid:12)ngerprint
+encountered in the scan.
+
+3.4 Previous Work
+
+A generalized version of the Hamming Distance Problem
+was (cid:12)rst proposed by Minsky and Papert [44]: Given a set
+of n f -bit strings (chosen by an adversary), and a string F,
+the goal is to identify strings in the set which di(cid:11)er from F
+in at most d bit-positions. No e(cid:14)cient solutions are known
+for general n, f and d. A theoretical study was initiated
+by Yao and Yao [53], who developed an e(cid:14)cient algorithm
+for d = 1. Their algorithm was improved by Brodal and
+G(cid:24)asienec [10] and Brodal and Venkatesh [11]. For large d,
+some progress is reported by Greene, Parnas and Yao [31],
+Dolev et al
+
+[28] and Arslan and E(cid:21)gecio(cid:21)glu [3].
+
+Our problem di(cid:11)ers from the one addressed by the theory
+community in two aspects. First, we assume that the in-
+put consists of bit-strings chosen uniformly at random (with
+some non-uniformity introduced by simhash which hashes
+similar documents to similar values). Second, we deal with
+a very large number of bit-strings that do not (cid:12)t in the main
+memory of one machine; this limits us to simple external
+memory algorithms that work well in a distributed setting.
+
+l
+l
+
+a
+c
+e
+R
+d
+n
+a
+
+ 
+
+ 
+
+i
+
+i
+
+n
+o
+s
+c
+e
+r
+P
+
+Precision-Recall Graph Varying ’k’ for 64-bit SimHash
+
+ 1
+
+ 0.9
+
+ 0.8
+
+ 0.7
+
+ 0.6
+
+ 0.5
+
+ 0.4
+
+ 0.3
+
+ 0.2
+
+Precision
+Recall
+
+ 1
+
+ 2
+
+ 3
+
+ 4
+
+ 5
+
+ 6
+
+ 7
+
+ 8
+
+ 9
+
+ 10
+
+Hamming Distance (hd) ’k’
+
+Figure 1: Precision vs recall for various k.
+
+4. EXPERIMENTAL RESULTS
+
+No previous work has studied the trade-o(cid:11) between f and
+k for the purpose of detection of near-duplicate web-pages
+using simhash. So our (cid:12)rst goal was to ascertain whether
+simhash is a reasonable (cid:12)ngerprinting technique for near-
+duplicate detection in the (cid:12)rst place. We study simhash in
+x4.1. Next, we wanted to make sure that the clusters pro-
+duced by simhash do not impact our algorithms signi(cid:12)cantly.
+We analyze distributions of (cid:12)ngerprints in x4.2. Finally, we
+touch upon running times and scalability issues in x4.3.
+4.1 Choice of Parameters
+
+We experimented with 234 = 8B simhash (cid:12)ngerprints. We
+varied k from 1 to 10. For each k, we randomly sampled an
+equal number of pairs of (cid:12)ngerprints that are at Hamming
+distance exactly k. We manually tagged each pair as: (1)
+true positive; (2) false positive; or (3) unknown. We used
+guidelines from [35] for deciding which of the three categories
+to put a pair in | radically di(cid:11)erent pairs are false positive;
+pages that di(cid:11)er slightly, such as only in counters, ads, or
+timestamps are true positive; and, pages that cannot be
+evaluated, e.g., because of content in non-English language,
+or because a login is needed to access the page, are tagged
+as unknown.
+
+Figure 1 plots the precision-recall graph for our experi-
+ments. Precision is de(cid:12)ned as the fraction of reported near-
+duplicates (i.e., having hamming distance at most k) that
+are true positives. Recall denotes the fraction of the total
+number of near-duplicate pairs (in our sample) that get de-
+tected with Hamming distance at most k.
+
+Figure 1 clearly shows the trade-o(cid:11)s for various values of
+k: A very low value misses near-duplicates (false negatives),
+and a very high value tags incorrect pairs as near-duplicates
+(false positives). Choosing k = 3 is reasonable because both
+precision and recall are near 0:75. So, for 64-bit (cid:12)ngerprints,
+declaring two documents as near-duplicates when their (cid:12)n-
+gerprints di(cid:11)er in at most 3 bits gives fairly high accuracy.
+4.2 Distribution of Fingerprints
+
+We designed our algorithm assuming that simhash (cid:12)nger-
+prints of documents over the web are uniformly random.
+However, simhash tends to cluster similar documents to-
+
+WWW 2007 / Track: Data MiningSession: Similarity Search144n
+o
+i
+t
+c
+a
+r
+F
+
+ 0.18
+
+ 0.16
+ 0.14
+
+ 0.12
+
+ 0.1
+ 0.08
+
+ 0.06
+
+ 0.04
+ 0.02
+
+ 0
+
+ 0
+
+Distribution of leading 1-bit positions
+
+ 10
+
+ 40
+
+ 20
+
+ 50
+Bit-position of leading 1-bit in XOR
+
+ 30
+
+ 0.014
+
+ 0.012
+
+ 0.01
+
+ 0.008
+
+ 0.006
+
+ 0.004
+
+ 0.002
+
+y
+c
+n
+e
+u
+q
+e
+r
+F
+
+ 60
+
+ 0
+
+ 0
+
+ 20
+
+Distribution of 64-bit fingerprints
+
+Bucket Frequency
+
+ 60
+
+ 40
+Fingerprint mod 128
+
+ 80
+
+ 100
+
+ 120
+
+(a) Distribution of leading 1-bit positions
+
+of exclusive-OR of successive (cid:12)ngerprints.
+
+(b) Bucketization of (cid:12)ngerprints.
+
+Figure 2: Analysis of (cid:12)ngerprint distributions.
+
+gether. Figure 2(a) illustrates this phenomenon quantita-
+tively. In Figure 2(a), we plot the distribution of bit-positions
+of the leading 1-bit in XOR’s of successive (cid:12)ngerprints. If the
+(cid:12)ngerprints were truly random, we would have seen a sym-
+metric distribution which would decay exponentially (the y-
+value would diminish by half for every increment/decrement
+of the x-value). Note that the right-half of the distribution
+indeed exhibits this behavior. However, the left-half of the
+distribution does not drop o(cid:11) rapidly; there is signi(cid:12)cant
+density. This is clearly due to clustering of documents; there
+are pairs of documents whose simhash values di(cid:11)er by a mod-
+erate number of bits because they contain similar content.
+In Figure 2(b), we plot the distribution of (cid:12)ngerprints
+in 128 buckets; bucket boundaries are de(cid:12)ned by dividing
+the space of 2f (cid:12)ngerprints into 128 equi-sized contiguous
+intervals. Fingerprints are more or less equally spaced out.
+Curiously, some spikes exist. These occur due to a variety
+of reasons. Some examples: (i) several pages are empty;
+all of these have simhash value of 0, (ii) there are several
+instances of \File not Found" pages, and (iii) many websites
+use the same bulletin board software; the login pages for
+these websites are similar.
+4.3 Scalability
+
+For the batch mode algorithm, a compressed version of
+File Q occupies almost 32GB (as compared with 64GB un-
+compressed). With 200 mappers, we can scan chunks at a
+combined rate of over 1GBps. So the overall computation
+(cid:12)nishes in fewer than 100 seconds. Compression plays an
+important role in speedup because for a (cid:12)xed number of
+mappers, the time taken is roughly proportional to the size
+of (cid:12)le Q.
+
+5. DUPLICATE DETECTION: A SURVEY
+
+A variety of techniques have been developed to identify
+pairs of documents that are \similar" to each other. These
+di(cid:11)er in terms of the end goal, the corpus under consider-
+ation, the feature-set identi(cid:12)ed per document and the sig-
+nature scheme for compressing the feature-set. In this Sec-
+
+tion, we present a comprehensive review of near-duplicate
+detection systems. In the process of summarizing the over-
+all design-space, we highlight how our problem di(cid:11)ers from
+earlier work and why it merits a simhash-based approach.
+
+5.1 The nature of the corpus
+
+Broadly speaking, duplicate-detection systems have been
+
+developed for four types of document collections:
+a) Web Documents: Near-duplicate systems have been
+developed for (cid:12)nding related-pages [25], for extracting
+structured data [2], and for identifying web mirrors [6,7].
+b) Files in a (cid:12)le system: Manber [42] develops algorithms
+for near-duplicate detection to reduce storage for (cid:12)les.
+The Venti (cid:12)le system [48] and the Low-bandwidth (cid:12)le
+system [45] have similar motivations.
+
+c) E-mails: Kolcz et al
+
+[40] identify near-duplicates for
+
+spam detection.
+
+d) Domain-speci(cid:12)c corpora: Various groups have de-
+veloped near-duplicate detection systems for legal doc-
+uments (see Conrad and Schriber [22]), TREC bench-
+marks, Reuters news articles, and Citeseer data.
+
+Our work falls into the (cid:12)rst category (Web Documents).
+We experimented with 8B pages { this is way larger than
+collection sizes tackled by previous studies: web-clustering
+by Broder et al
+[14] (30M URLs in 1996), \related pages"
+by Dean and Henzinger [25] (180M URLs in 1998), web-
+clustering by Haveliwala et al
+
+[33] (35M URLs in 2000).
+
+5.2 The end goal: why detect duplicates?
+a) Web mirrors: For web search, successful identi(cid:12)cation
+
+of web mirrors results in smaller crawling/storage/indexing
+costs in the absence of near-duplicates, better top-k re-
+sults for search queries, improvement in page-rank by re-
+ducing the in-degree of sites resulting from near-duplicates,
+cost-saving by not asking human evaluators to rank near-
+duplicates. See Bharat et al
+[6, 7] for a comparison of
+techniques for identifying web-mirrors.
+
+WWW 2007 / Track: Data MiningSession: Similarity Search145b) Clustering for \related documents" query: For ex-
+ample, given a news article, a web-surfer might be inter-
+ested in locating news articles from other sources that
+report the same event. The notion of \similarity" is at
+a high level { one could say that the notion of similar-
+ity is \semantic" rather than \syntactic", quite di(cid:11)er-
+ent from the notion of duplicates or near-duplicates dis-
+cussed above. One approach is to use Latent Semantic
+Indexing [26]. Another approach is to exploit the link-
+age structure of the web (see Dean and Henzinger [25]
+who build upon Kleinberg’s idea of hubs and authori-
+ties [39]). Going further along these lines, Kumar et al
+[41] have proposed discovering \online communities" by
+identifying dense bipartite sub-graphs of the web-graph.
+c) Data extraction: Given a moderate-sized collection of
+similar pages, say reviews at www.imdb.com, the goal is
+to identify the schema/DTD underlying the collection
+so that we can extract and categorize useful informa-
+tion from these pages. See Joshi et al
+[38] (and refer-
+ences therein) for a technique that clusters web-pages on
+the basis of structural similarity. See Arasu and Garcia-
+Molina [2] for another technique that identi(cid:12)es templates
+underlying pages with similar structure. Also note that
+metadata (HTML tags) was ignored in a) and b) above.
+
+d) Plagiarism: Given a set of reports, articles or assignment-
+
+submissions (both source-code and textual reports), the
+goal is to identify pairs of documents that seem to have
+borrowed from each other signi(cid:12)cantly. For some early
+work in this area, see articles by Baker [4, 5], the COPS
+system by Brin et al
+[8] and SCAM by Shivakumar and
+Garcia-Molina [51].
+
+e) Spam detection: Given a large number of recently-
+received e-mails, the goal is to identify SPAM before
+depositing the e-mail into recipients’ mailboxes. The
+premise is that spammers send similar e-mails en masse,
+with small variation in the body of these e-mails. See
+Kolcz et al [40], who build upon previous work by Chowd-
+hury et al
+
+[20].
+
+f) Duplicates in domain-speci(cid:12)c corpora: The goal is
+to identify near-duplicates arising out of revisions, modi-
+(cid:12)cations, copying or merger of documents, etc. See Con-
+rad and Schriber [22] for a case-study involving legal doc-
+uments at a (cid:12)rm. Manber [42] initiated an investigation
+into identi(cid:12)cation of similar (cid:12)les in a (cid:12)le system.
+
+Our near-duplicate detection system improves web crawling,
+a goal not shared with any of the systems described above.
+5.3 Feature-set per document
+a) Shingles from page content: Consider the sequence
+of words in a document. A shingle is the hash-value of
+a k-gram which is a sub-sequence of k successive words.
+The set of shingles constitutes the set of features of a
+document. The choice of k is crucial3. Hashes of succes-
+sive k-grams can be e(cid:14)ciently computed by using Ra-
+bin’s (cid:12)ngerprinting technique [49]. Manber [42] created
+shingles over characters. The COPS system by Brin et
+al
+[8] used sentences for creating shingles. Broder et al
+[12, 14] created shingles over words. The total number
+of shingles per document is clearly large. Therefore, a
+
+3Small k makes dissimilar documents appear similar. Large
+k makes similar documents appear dissimilar.
+
+small-sized signature is computed over the set of shin-
+gles, as described in the next sub-section.
+
+b) Document vector from page content: In contrast
+to shingles, a document can be characterized by deploy-
+ing traditional IR techniques. The idea is to compute its
+\document-vector" by case-folding, stop-word removal,
+stemming, computing term-frequencies and (cid:12)nally, weigh-
+ing each term by its inverse document frequency (IDF).
+Next, given two documents, a \measure" of similarity
+is de(cid:12)ned. Hoad and Zobel [36] argue that the tradi-
+tional cosine-similarity measure is inadequate for near-
+duplicate detection. They de(cid:12)ne and evaluate a vari-
+ety of similarity measures (but they do not develop any
+signature-scheme to compress the document-vectors).
+
+A di(cid:11)erent approach is taken by Chowdhury et al
+[20]
+who compute a lexicon (the union of all terms existing
+in the collection of documents). The lexicon is then
+pruned (a variety of schemes are studied by the au-
+thors). Each document-vector is then modi(cid:12)ed by re-
+moving terms that have been pruned from the lexicon.
+The resulting document-vectors are (cid:12)ngerprinted. Two
+documents are said to be near-duplicates i(cid:11) their (cid:12)n-
+gerprints match. This scheme is rather brittle for near-
+duplicate detection { a follow-up paper [40] ameliorates
+the problem by constructing multiple lexicons (these are
+random subsets of the original lexicon). Now multiple
+(cid:12)ngerprints per document are computed and two docu-
+ments are said to be duplicates i(cid:11) most of their (cid:12)nger-
+prints match.
+An issue to keep in mind when dealing with document-
+vectors is that the IDF of any term is global information
+which changes as the collection changes.
+
+c) Connectivity information: For the purpose of (cid:12)nding
+\related pages", Dean and Henzinger [25] exploited the
+linkage structure of the web. The premise is that simi-
+lar pages would have several incoming links in common.
+Haveliwala et al
+[34] point out that the quality of dupli-
+cate detection is poor for pages with very few incoming
+links. This can be ameliorated by taking anchor text and
+anchor windows into account.
+
+d) Anchor text, anchor window: Similar documents
+should have similar anchor text. Haveliwala et al
+[34]
+study the impact of anchor-text and anchor-windows,
+where an anchor-window is the text surrounding the anchor-
+text, for example, the paragraph it belongs to. The
+words in the anchor text/window are folded into the
+document-vector itself. A weighing function that dimin-
+ishes the weight of words that are farther away from the
+anchor text is shown to work well.
+
+e) Phrases: Cooper et al
+
+[23] propose identi(cid:12)cation of
+phrases using a phrase-detection system and computing
+a document-vector that includes phrases as terms. They
+have tested their ideas on a very small collection (tens
+of thousands). The idea of using phrases also appears
+in the work of Hammouda and Kamel [32] who build
+sophisticated indexing techniques for web-clustering.
+
+We chose to work with the document vector model; simhash
+converts document vectors into (cid:12)ngerprints. Augmenting
+the document vector by other signals (anchor text and con-
+nectivity information, for example) might improve the qual-
+ity of our system. We leave these possibilities as future work.
+
+WWW 2007 / Track: Data MiningSession: Similarity Search1465.4 Signature schemes
+a) Mod-p shingles: A simple compression scheme for shingle-
+
+based (cid:12)ngerprints is to retain only those (cid:12)ngerprints
+whose remainder modulus p is 0, for a su(cid:14)ciently large
+value of p. The number of (cid:12)ngerprints retained is variable-
+sized. Moreover, it is important to ignore commonly-
+occurring (cid:12)ngerprints since they contribute to false-matches.
+A drawback of this scheme is that the distance between
+successive shingles that are retained, is unbounded. This
+problem has been ameliorated by the \winnowing" tech-
+nique by Schliemer et al
+[50]. Hoad and Zobel [36]
+compare a variety of other ideas for pruning the set of
+shingle-based (cid:12)ngerprints.
+
+b) Min-hash for Jaccard similarity of sets: For two
+sets A and B, let the measure of similarity be jA\Bj
+jA[Bj ,
+also known as the Jaccard measure. Interestingly, it is
+possible to devise a simple signature scheme such that
+the probability that the signatures of A and B match is
+exactly the Jaccard measure [13, 14].
+Several experimental studies have tested the e(cid:14)cacy of
+min-hash in various settings (Cohen et al [21] for association-
+rule mining, Chen et al
+boolean queries, Gionis et al
+predicates and Haveliwala [33] for web-clustering).
+
+[18] for selectivity estimation of
+[30] for indexing set-value
+
+c) Signatures/(cid:12)ngerprints over IR-based document
+vectors: Charikar’s simhash [17] is a (cid:12)ngerprinting tech-
+nique for compressing document vectors such that two
+(cid:12)ngerprints are similar i(cid:11) the document vectors are sim-
+ilar. Another technique for computing signatures over
+document-vectors is the I-Match algorithm by Chowd-
+hury et al
+[20] that we described earlier. An improved
+I-Match algorithm appears in [40]. These algorithms
+have been tested on small document-collections (of the
+order of tens of thousands) and appear fairly brittle.
+
+d) Checksums: Pugh and Henzinger’s patent [47] contains
+the following idea: we divide words in a document into k
+buckets (by hashing the words, for example), and com-
+pute a checksum of each bucket. The set of checksums
+of two similar documents should agree for most of the
+buckets.
+
+We chose to work with simhash primarily because it allows
+us to work with small-sized (cid:12)ngerprints.
+Summary
+Most algorithms for near-duplicate detection run in batch-
+mode over the entire collection of documents. For web crawl-
+ing, an online algorithm is necessary because the decision
+to ignore the hyper-links in a recently-crawled page has
+to be made quickly. The scale of the problem (billions of
+documents) limits us to small-sized (cid:12)ngerprints. Luckily,
+Charikar’s simhash technique with 64-bit (cid:12)ngerprints seems
+to work well in practice for a repository of 8B web pages.
+
+6. FUTURE EXPLORATIONS
+
+Using simhash is a good (cid:12)rst step for solving the near-
+duplicate detection problem. Many other ideas hold promise
+of improving the quality of near-duplicate detection, and/or
+making the system more e(cid:14)cient. We list a few:
+A. Document size has been shown to play an important role
+in near-duplicate detection in certain contexts. For ex-
+
+ample, in Conrad and Schriber [22], two legal documents
+are deemed to be duplicates i(cid:11) they have 80% overlap in
+terminology and (cid:6)20% variation in length (these were
+arrived at by consulting the Library Advisory Board
+who are trained in the (cid:12)eld of Library Science). Per-
+haps we should devise di(cid:11)erent techniques for small and
+large documents. Or perhaps, we should reserve a few
+bits of the 64-bit (cid:12)ngerprint to hold document length.
+
+B. Is it possible to prune the space of existing (cid:12)ngerprints by
+asserting that certain documents never have duplicates?
+C. Could we categorize web-pages into di(cid:11)erent categories
+(for example, by language type), and search for near du-
+plicates only within the relevant categories.
+
+D. Is it feasible to devise algorithms for detecting portions
+of web-pages that contains ads or timestamps? Perhaps
+such portions can be automatically removed so that ex-
+act checksums over the remaining page su(cid:14)ce for dupli-
+cate detection.
+
+E. How sensitive is simhash-based near-duplicate detection
+to changes in the algorithm for feature-selection and as-
+signment of weights to features?
+
+F. How relevant are simhash-based techniques for focused
+crawlers [27, 43, 46] which are quite likely to crawl web
+pages that are similar to each other.
+
+G. Can near-duplicate detection algorithms be developed
+
+further to facilitate clustering of documents?
+
+7. ACKNOWLEDGEMENTS
+
+We thank Corinna Cortes for a quick review of our paper
+close to the submission deadline. We thank an anonymous
+referee for pointing out prior work related to the Hamming
+Distance Problem; that constitutes x3.4 now. Thanks to
+the same referee for reminding us that the word \(cid:12)nger-
+printing" was introduced by Rabin [49] to denote a scheme
+where di(cid:11)erent objects map to di(cid:11)erent (cid:12)ngerprints with
+high probability. So synonymizing \(cid:12)ngerprinting" with
+simhash (which maps similar objects to similar bit-strings)
+is in con(cid:13)ict with the original intent (cid:127)^
+
+8. REFERENCES
+[1] A. Arasu, J. Cho, H. Garcia-Molina, A. Paepcke, and
+
+S. Raghavan. Searching the web. ACM Transactions
+on Internet Technology, 1(1):2{43, 2001.
+
+[2] A. Arasu and H. Garcia-Molina. Extracting structured
+
+data from web pages. In Proc. ACM SIGMOD 2003,
+pages 337{348, 2003.
+
+[3] A. N. Arslan and (cid:127)O. E(cid:21)gecio(cid:21)glu. Dictionary look-up
+within small edit distance. In Proc. 8th Annual Intl.
+Computing and Combinatorics Conference
+(COCOON’02), pages 127{136, 2002.
+
+[4] B. S. Baker. A theory of parameterized pattern
+
+matching algorithms and applications. In Proc. 25th
+Annual Symposium on Theory of Computing (STOC
+1993), pages 71{80, 1993.
+
+[5] B. S. Baker. On (cid:12)nding duplication and
+
+near-duplication in large software systems. In Proc.
+2nd Working Conference on Reverse Engineering,
+page 86, 1995.
+
+[6] K. Bharat and A. Broder. Mirror, mirror on the Web:
+A study of hst pairs with replicated content. In Proc.
+
+WWW 2007 / Track: Data MiningSession: Similarity Search1478th International Conference on World Wide Web
+(WWW 1999), pages 1579{1590, 1999.
+
+[7] K. Bharat, A. Broder, J. Dean, and M. R. Henzinger.
+A comparison of techniques to (cid:12)nd mirrored hosts on
+the WWW. J American Society for Information
+Science, 51(12):1114{1122, Aug. 2000.
+
+[8] S. Brin, J. Davis, and H. Garcia-Molina. Copy
+
+detection mechanisms for digital documents. In Proc.
+ACM SIGMOD Annual Conference, pages 398{409,
+May 1995.
+
+Knowledge Management (CIKM 2002), pages
+245{251, Nov. 2002.
+
+[24] J. Dean and S. Ghemawat. MapReduce: Simpli(cid:12)ed
+
+data processing on large clusters. In Proc. 6th
+Symposium on Operating System Design and
+Implementation (OSDI 2004), pages 137{150, Dec.
+2004.
+
+[25] J. Dean and M. Henzinger. Finding related pages in
+
+the World Wide Web. Computer Networks,
+31(11{16):1467{1479, 1999.
+
+[9] S. Brin and L. Page. The anatomy of a large-scale
+
+[26] S. Deerwester, S. T. Dumais, G. W. Furnas, T. K.
+
+hypertextual Web search engine. Computer Networks
+and ISDN Systems, 30(1{7):107{117, 1998.
+
+[10] G. S. Brodal and L. G(cid:24)asieniec. Approximate
+
+dictionary queries. In Proc 7th Combinatorial Pattern
+Matching Symposium, pages 65{74, 1996.
+
+[11] G. S. Brodal and S. Venkatesh. Improved bounds for
+
+dictionary look-up with one error. Information
+Processing Letters, 75(1-2):57{59, 2000.
+
+[12] A. Broder. On the resemblance and containment of
+
+documents. In Compression and Complexity of
+Sequences, 1998.
+
+[13] A. Broder, M. Charikar, A. Frieze, and
+
+M. Mitzenmacher. Min-wise independent
+permutations. In Proc. 30th Annual Symposium on
+Theory of Computing (STOC 1998), pages 327{336,
+1998.
+
+[14] A. Broder, S. C. Glassman, M. Manasse, and
+
+G. Zweig. Syntactic clustering of the web. Computer
+Networks, 29(8{13):1157{1166, 1997.
+
+[15] A. Z. Broder, M. Najork, and J. L. Wiener. E(cid:14)cient
+
+URL caching for World Wide Web crawling. In
+International conference on World Wide Web, 2003.
+
+[16] S. Chakrabarti. Mining the Web: Discovering
+
+Knowledge from Hypertext Data. Morgan-Kau(cid:11)man,
+2002.
+
+[17] M. Charikar. Similarity estimation techniques from
+
+rounding algorithms. In Proc. 34th Annual Symposium
+on Theory of Computing (STOC 2002), pages
+380{388, 2002.
+
+[18] Z. Chen, F. Korn, N. Koudas, and S. Muthukrishnan.
+
+Selectivity estimation for boolean queries. In Proc.
+PODS 2000, pages 216{225, 2000.
+
+[19] J. Cho, H. Garc(cid:19)(cid:16)a-Molina, and L. Page. E(cid:14)cient
+
+crawling through URL ordering. Computer Networks
+and ISDN Systems, 30(1{7):161{172, 1998.
+
+[20] A. Chowdhury, O. Frieder, D. Grossman, and M. C.
+
+McCabe. Collection statistics for fast duplicate
+document detection. ACM Transactions on
+Information Systems, 20(2):171{191, 2002.
+
+[21] E. Cohen, M. Datar, S. Fujiwara, A. Gionis, P. Indyk,
+
+R. Motwani, J. D. Ullman, and C. Yang. Finding
+interesting associations without support pruning. In
+Proc. 16th Intl. Conf. on Data Engineering (ICDE
+2000), pages 489{499, 2000.
+
+[22] J. G. Conrad and C. P. Schriber. Constructing a text
+corpus for inexact duplicate detection. In SIGIR 2004,
+pages 582{583, July 2004.
+
+[23] J. W. Cooper, A. R. Coden, and E. W. Brown.
+
+Detecting similar documents using salient terms. In
+Proc. 1st International Conf. on Information and
+
+Landauer, and R. Harshman. Indexing by latent
+semantic analysis. J American Society for Information
+Science, 41(6):391{407, 1990.
+
+[27] M. Diligenti, F. Coetzee, S. Lawrence, C. L. Giles, and
+
+M. Gori. Focused crawling using context graphs. In
+26th International Conference on Very Large
+Databases, (VLDB 2000), pages 527{534, sep 2000.
+
+[28] D. Dolev, Y. Harari, M. Linial, N. Nisan, and
+
+M. Parnas. Neighborhood preserving hashing and
+approximate queries. In Proc. 5th ACM Symposium
+on Discrete Algorithms (SODA 1994), 1994.
+
+[29] S. Ghemawat, H. Gobio(cid:11), and S.-T. Leung. The
+
+Google File System. In 19th ACM Symposium on
+Operating Systems Principles (SOSP 2003), pages
+29{43, Oct. 2003.
+
+[30] A. Gionis, D. Gunopulos, and N. Koudas. E(cid:14)cient
+and tunable similar set retrieval. In Proc. SIGMOD
+2001, pages 247{258, 2001.
+
+[31] D. Greene, M. Parnas, and F. Yao. Multi-index
+hashing for information retrieval. In Proc. 35th
+Annual Symposium on Foundations of Computer
+Science (FOCS 1994), pages 722{731, 1994.
+
+[32] K. M. Hammouda and M. S. Kamel. E(cid:14)cient
+
+phrase-based document indexing for web document
+clustering. IEEE Transactions on Knowledge and
+Data Engineering, 16(10):1279{1296, Aug. 2004.
+
+[33] T. H. Haveliwala, A. Gionis, and P. Indyk. Scalable
+techniques for clustering the web. In Proc. 3rd Intl.
+Workshop on the Web and Databases (WebDB 2000),
+pages 129{134, May 2000.
+
+[34] T. H. Haveliwala, A. Gionis, D. Klein, and P. Indyk.
+
+Evaluating strategies for similarity search on the Web.
+In Proc. 11th International World Wide Web
+Conference, pages 432{442, May 2002.
+
+[35] M. R. Henzinger. Finding near-duplicate web pages: a
+
+large-scale evaluation of algorithms. In SIGIR 2006,
+pages 284{291, 2006.
+
+[36] T. C. Hoad and J. Zobel. Methods for identifying
+
+versioned and plagiarised documents. J of the
+American Society for Information Science and
+Technology, 54(3):203{215, Feb. 2003.
+
+[37] D. A. Hu(cid:11)man. A method for the construction of
+minimum-redundancy codes. In Proc. Institute of
+Radio Engineering, volume 40, pages 1098{1102, Sept.
+1952.
+
+[38] S. Joshi, N. Agrawal, R. Krishnapuram, and S. Negi.
+
+A bag of paths model for measuring structural
+similarity in Web documents. In Proc. 9th ACM Intl.
+Conf. on Knowledge Discovery and Data Mining
+(SIGKDD 2003), pages 577{582, 2003.
+
+WWW 2007 / Track: Data MiningSession: Similarity Search148[39] J. M. Kleinberg. Authoritative sources in a
+
+[46] S. Pandey and C. Olston. User-centric web crawling.
+
+hyperlinked environment. Journal of the ACM,
+46(5):604{632, Sept. 1999.
+
+[40] A. Kolcz, A. Chowdhury, and J. Alspector. Improved
+
+robustness of signature-based near-replica detection
+via lexicon randomization. In SIGKDD 2004, pages
+605{610, Aug. 2004.
+
+[41] R. Kumar, P. Raghavan, S. Rajagopalan, and
+
+A. Tomkins. Trawling the Web for emerging
+cyber-communities. Computer Networks: The Intl. J
+of Computer and Telecommunications Networks,
+31:1481{1493, 1999.
+
+[42] U. Manber. Finding similar (cid:12)les in a large (cid:12)le system.
+
+In Proc. 1994 USENIX Conference, pages 1{10, Jan.
+1994.
+
+[43] F. Menczer, G. Pant, P. Srinivasan, and M. E. Ruiz.
+Evaluating topic-driven web crawlers. In Proc. 24th
+Annual International ACM SIGIR Conference On
+Research and Development in Information Retrieval,
+pages 241{249, 2001.
+
+[44] M. Minsky and S. Papert. Perceptrons. MIT Press,
+
+1969.
+
+[45] A. Muthitacharoen, B. Chen, and D. Mazi(cid:18)eres. A
+low-bandwidth network (cid:12)le system. In Proc. 18th
+ACM Symposium on Operating System Principles
+(SOSP 2001), pages 174{187, Oct. 2001.
+
+In Proc. WWW 2005, pages 401{411, 2005.
+
+[47] W. Pugh and M. R. Henzinger. Detecting duplicate
+
+and near-duplicate (cid:12)les. United States Patent
+6,658,423, granted on Dec 2, 2003, 2003.
+
+[48] S. Quinlan and S. Dorward. Venti: A new approach to
+archival storage. In First USENIX Conference on File
+and Storage Technologies, pages 89{101, 2002.
+
+[49] M. O. Rabin. Fingerprinting by random polynomials.
+
+Technical Report Report TR-15-81, Center for
+Research in Computing Techonlogy, Harvard
+University, 1981.
+
+[50] S. Schleimer, D. S. Wilkerson, and A. Aiken.
+Winnowing: Local algorithms for document
+(cid:12)ngerprinting. In Proc. SIGMOD 2003, pages 76{85,
+June 2003.
+
+[51] N. Shivakumar and H. Garcia-Molina. SCAM: A copy
+
+detection mechanism for digital documents. In
+Proceedings of the 2nd International Conference on
+Theory and Practice of Digital Libraries, 1995.
+
+[52] A. Yao and F. Yao. The complexity of searching in an
+
+ordered random table. In Proc. 17th Annual
+Symposium on Foundations of Computer Science
+(FOCS 1976), pages 173{177, 1976.
+
+[53] A. C. Yao and F. F. Yao. Dictionary look-up with one
+
+error. J of Algorithms, 25(1):194{202, 1997.
+
+WWW 2007 / Track: Data MiningSession: Similarity Search149

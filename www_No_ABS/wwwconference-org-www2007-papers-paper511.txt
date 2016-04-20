@@ -1,0 +1,502 @@
+In recent years, Peer-to-Peer (P2P)  le-exchange applications have overtaken Web applications as the major contributor of tra c on the Internet.
+Recent estimates put the volume of P2P tra c at 70% of the total broadband traf- c [3,22].
+P2P is often used for illegally sharing copyrighted music, video, games, and software; P2P tra c can cause network congestion and performance degradation of traditional client-server applications such as the Web.
+The legal rami cations of this tra c combined with its aggressive use of network resources has necessitated a strong need for iden-ti cation of network tra c by application type.
+This task, Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+Distribution of these papers is limited to classroom use, and personal use by others.
+referred to as tra c classi cation, is a prerequisite to many network management and tra c engineering problems.
+The classical tra c classi cation approach of mapping tra c to applications based on port numbers is now ineffective [18, 19, 22, 30].
+This ine ectiveness arises because applications such as network games, multimedia streaming, and Peer-to-Peer  le sharing use dynamic ports for communication.
+Some P2P applications are also masking their identity by using port numbers reserved for other applications.
+For example, KaZaA is known to use port 80, which is reserved for Web tra c.
+An alternative approach is payload-based analysis where packet payloads are searched for characteristic signatures of known applications [4, 15, 24, 30].
+Application-layer analysis of packet contents is employed by some commercial bandwidth management tools [2,26].
+This general approach, however, poses several technical challenges.
+First, these techniques identify only tra c for which signatures are available; maintaining an up-to-date list of signatures is a daunting task.
+Second, these techniques typically require increased processing and storage capacity.
+Solutions such as capturing only a few payload bytes are not as e ective because many applications intentionally use variable-length padding to obscure application signatures.
+Finally, these techniques fail to detect encrypted tra c; many P2P applications are now moving towards using encryption.
+The diminished e ectiveness of the aforementioned techniques motivate use of  ow statistics for classifying network tra c [1, 25, 29].
+There are at least three reasons why this approach is recommended.
+First, di erent applications manifest dissimilar behaviors and thus exhibit di erent  ow statistics.
+For instance, a large  le transfer using FTP would have higher average packet size and smaller mean packet interarrival time than an instant messaging client sending short, occasional, messages to other clients.
+Second, although obfuscation of  ow statistics is also possible, it is generally much harder to implement.
+Third, classi cation based on  ow statistics can bene t from the large body of work on scalable  ow sampling/estimation techniques [5,7,8,13,21].
+In this paper, we propose and evaluate a machine learning approach for identifying and grouping network tra c according to tra c classes (e.g., Web, P2P, FTP, Others) at egress and ingress points of core networks.
+Recent traf- c classi cation e orts, including those that leverage  ow statistics, are developed and evaluated assuming that the observation point is the network edge, where packet transmissions in both directions of a  ow can possibly be observed.
+directions of a  ow may not be possible because of routing asymmetries.
+This poses two challenges.
+First, important statistics for the satisfactory classi cation of a  ow may not be available.
+Second, classi cation can only use per ow information and cannot rely on additional information such as communication pattern between hosts.
+In light of the above, our goal is to achieve rich tra c classi cation using only unidirectional  ow records.
+Speci -cally, we propose and evaluate a clustering based framework for classifying network tra c using only unidirectional  ow statistics.
+Our work is facilitated by recent full-payload Internet packet traces.
+We identi ed the applications corresponding to individual  ows in the traces and used these pre-classi ed traces as the  base truth  to evaluate the clas-si cation accuracy of our approach.
+One of the objectives of this work is to study the in uence of directionality of  ow statistics in classifying tra c.
+From our performance evaluation, we  nd that  ow statistics for the server-to-client direction of TCP connections achieve, on average, classi cation accuracies of 95% for  ows and 80% for bytes; in contrast, using the client-to-server  ow statistics yields, on average, classi cation accuracies of 93% for  ows and 60% for bytes.
+Based on our results, we hypothesize that statistics for the server-to-client direction can better discriminate between  ows than statistics for the client-to-server direction, since for many common network applications the  ow of application payload data is greater in the server-to-client direction.
+The server-to-client statistics of a  ow may not always be available at the network core.
+Motivated by our observations regarding the predictive power of server-to-client statistics, we developed and veri ed an algorithm that uses the packets seen along one direction of a  ow to estimate statistics for the direction that is not observed.
+To the best of our knowledge, this is the  rst work to explore tra c/ ow classi cation using unidirectional  ows (as typically seen at the network core).
+In this paper, we summarize our experience with a clustering-based classi cation framework.
+Because server-to-client statistics are typically available at the network edge, our approach can also be applied to classify tra c at the network edge.
+The contributions of this paper are summarized as follows:   We propose and evaluate a machine learning based classi cation technique that only takes  ow statistics as input.
+  The comparison of predictive capability of di erent unidirectional  ow statistics (e.g., packets originating only from the client, server, and combinations of both).
+  We develop an algorithm capable of estimating statistics from an unidirectional traces such as number of bytes and the number of packets of the unseen portions of the  ow.
+  We brie y discuss the longevity of the models used in our classi er, and the possible modi cations that can be made to use our classi er in real-time.
+The remainder of this paper is structured as follows.
+Section 2 describes the classi cation framework considered in this paper.
+Section 3 describes our methodology.
+Results for classi cation with unidirectional statistics are provided in Section 4.
+The  ow statistics estimation algorithm, its validation, and the classi cation results obtained with estimated statistics are presented in Section 5.
+Section 6 discusses the longitudinal accuracy of our classi cation models, and possible modi cation for real-time classi cation.
+Section 7 overviews related work in light of ours.
+Section 8 concludes the paper.
+The goal of tra c classi cation is to map network  ows into prede ned application types or tra c classes.
+In this paper, our goal is to achieve tra c classi cation using only unidirectional  ow statistics as input.
+Formally, the tra c classi cation problem can be de ned as follows: Given a set of  ows X = {f1, f2,  , fN}, where at-each  ow vector fi tributes {xi1, xi2,  , xip}, and a set of tra c classes C = {C1, C2,  , Cm}, the goal of tra c classi cation is to de- ne a mapping f : X   C such that each  ow fi is assigned to only one tra c class [9].
+Examples of  ow attributes include average packet size, average  ow duration, and  ow size, whereas examples of possible tra c classes include Web, Peer-to-Peer, and FTP.
+is characterized by a set of p Machine learning techniques can be used to solve the aforementioned tra c classi cation problem.
+In the model building step, training data (e.g., a collection of  ow records) are used to learn the characteristics of the (desired) classes; this step provides the basis for designing a classi er.
+The remainder of this section discusses details of the model building and classi er design.
+Machine learning techniques for model building may be broadly categorized as either supervised or unsupervised [9].
+Supervised learning produces a model that  ts the training data, where the training data is labeled a priori.
+In contrast, unsupervised learning uses unlabeled training data to  nd similarities or patterns among objects in the data set.
+Typically, model building is achieved using supervised learning techniques.
+In the tra c classi cation context, however, we believe that unsupervised learning can o er certain advantages compared to supervised learning approaches.
+A key bene t is that new applications can be identi ed by examining the  ows that are grouped to form a new cluster.
+The supervised approach can only classify tra c for which it has labeled training data, and cannot discover new applications [11].
+In this paper, we consider a speci c type of unsupervised learning called clustering [9].
+Clustering is the partitioning of previously unlabeled objects into disjoint groups, referred to as  clusters , such that objects within a group are similar according to chosen criteria.
+Formally, the clustering of training  ows can be described as follows: Given a set of training  ows D = {t1, t2,  , tn} and the desired number of clusters, k, the task of clustering is to de ne a mapping f : D   {1, 2,  , k} where each  ow is assigned to only one cluster Yi, 1   i   k, such that D =  k j=1Yj and Yi   Yj =  , i (cid:54)= j [9, 16, 17].
+The goal of clustering is to group together objects that are similar.
+This grouping is achieved using a similarity metric.
+In the machine learning literature, several similarity metrics have been de ned.
+Without loss of generality, we use the Euclidean distance to measure the similarity between two sim(fi, fj) = (cid:118)(cid:117)(cid:117)(cid:116) p(cid:88) (xik   xjk)2.
+k=1 The smaller the Euclidean distance between two  ow vectors is, the greater is the similarity between them.
+There are many di erent clustering algorithms in the literature [16, 17].
+In this paper, we use the K-Means [9] algorithm.
+Our choice of K-Means is guided by our previous work [10] where we found that K-Means is one of the quickest and simplest algorithms for clustering of Internet  ows; furthermore, our work also showed that K-Means can generate very  pure  clusters (i.e., clusters that consist largely of a single application type).
+The K-Means algorithm belongs to the partition-based class of clustering algorithms.
+The algorithm begins by randomly choosing cluster centroids  i, i = 1, 2,  , k, from within the training samples.
+The  ows in the training data set are then partitioned into the nearest cluster centroids using the Euclidean distance metric.
+K-Means iteratively computes new centroids of the clusters that are formed and then repartitions the  ows based on the new centroids.
+This process continues until a convergence criterion is met.
+In our implementation, the convergence criterion is to minimize the sum of the squared error for the clusters.
+The complexity of the clustering step is O(knm) where k is the number of clusters, n is the number of training  ows, and m is the number of iterations.
+There are some known di culties with K-Means.
+For instance, the algorithm often  nds a local optimum instead of a global optimum.
+This necessitates running K-Means multiple times to obtain a reasonable partition of the training  ows, as done in this work.
+In practice, partitioning of the training  ows is expected to be undertaken infrequently, and we do not expect this problem to signi cantly add to the cost of model building.
+In our experiments, we  nd that the classi cation models generated by running K-Means multiple times have similar performance.
+We also note that our overall approach is not speci c to K-Means.
+Other clustering algorithms may be used; investigation of classi cation performance with other algorithms is left for future work.
+In most classi cation problems, selection of features (or attributes) plays an important role.
+Many statistics can be obtained from a  ow.
+Following extensive experimentation with over 25 di erent statistics using standard feature selection algorithms [14], we reduced the set of  ow features to the following: total number of packets, mean packet size, mean payload size excluding headers, number of bytes transferred,  ow duration, and mean inter-arrival time of packets.
+Due to the heavy-tailed distribution of many of these features, we found it necessary to transform the  ow features [28].
+Our experiments with many commonly used transformations indicated that logarithmic transformations yield the best results.
+Our classi er is distance-based [9].
+A new  ow is assigned to the cluster to which it is most similar.
+The K-Means algorithm produces clusters that are spherical in shape and thus well-represented by the cluster centroids.
+Thus, a new  ow f is assigned to cluster Yj such that: Yj = arg min j sim(f,  j).
+The above is equivalent to maximum likelihood cluster assignment for partitions generated by the K-Mean algorithm.
+The complexity of classi cation of each  ow is O(k), where k is the total number of clusters.
+The aforementioned operation automatically assigns  ows to the clusters.
+To assign tra c classes to  ows, a mapping between clusters and tra c classes is required.
+Clearly, the task of mapping the clusters obtained in the model building step to the tra c classes requires identi cation of (some of the) individual  ows in the training data set.
+Training  ows may be labeled using techniques including payload analysis, port-based analysis, heuristics, expert knowledge, experimentation, manual classi cation, or a combination thereof.
+Identi cation of training  ows is expected to be time consuming; however, we also expect that once completed, the training data set can be used for a reasonably long period of time.
+Furthermore, it may not be necessary to identify each  ow in the training data set.
+We have found that clustering generates partitions with high purity and thus identi cation of a small portion of the  ows in a cluster may be su -cient to map a cluster to a tra c class with a high degree of con dence [10].
+In this work, we assume that labels for all training  ows are available, and map a cluster to the tra c class that makes up the majority of  ows in that cluster.
+Our ongoing work is studying issues pertaining to labeling clusters and mapping clusters to tra c classes [12].
+This section outlines our experimental methodology.
+Section 3.1 describes the empirical traces used in this work.
+Section 3.2 discusses the process by which we established base truth for the traces.
+The testing scenarios are outlined in Section 3.3.
+Section 3.4 de nes the performance metrics used in this study.
+To facilitate our work, we required traces of recent Internet tra c.
+Although the classi cation framework requires only transport-layer information, application-layer information is required to validate the results.
+Thus, we decided to collect full packet traces from a monitor attached to our campus Internet link.
+We collected eight 1-hour traces between April 6-9, 2006.
+Speci cally, we collected traces on (Thursday) April 6 from
+
+ and on (Sunday) April 9 from 9-10 am and 9-10 pm.
+We were limited to capturing only one hour of continuous full-packet traces owing to the disk capacity of our network monitor.
+Nevertheless, we expect our traces to cover some typical cases such as the noticeable di erences in usage between the morning and evening hours, and the noticeable di erences in usage between weekdays and weekends.
+Of the total trace data collected, approximately 85% of the packets, and approximately 90% of the bytes were transferred using TCP.
+Thus, we focus exclusively on applications that use TCP for the remainder of the paper.
+Classi cation of UDP  ows is left for future work.
+A TCP  ow, also referred to as a connection, consists of start of a  ow is determined when SYN/SYNACK packets are received.
+Flows are (typically) terminated when either a FIN or RST packet is received; in addition, we assume that a  ow terminates if it was idle for 900 seconds.
+For each  ow, we designate the host that initiated the connection (i.e., sent the SYN packet) as the client, and the host that responds to the connection initiation (i.e., sends the SYNACK) as the server.
+We classify the TCP  ows in the traces using a three step process that consists of payload-based signature matching, heuristics, and HTTPS identi cation.
+The heuristics and HTTPS identi cation steps deal with encrypted tra c that cannot be identi ed using payload signature matching.
+Manual classi cation served as a validation tool for our clas-si cation process.
+Our payload-based classi cation uses many of the same methods and signatures described by Sen et al. [30] and Karagiannis et al. [20].
+We augmented some of their P2P signatures to account for protocol changes and some new P2P applications.
+This step uses Bro [27], whose signature matching engine generates a signature match event when the packet payload matches a regular expression that is speci ed for a particular rule.
+Some P2P applications are now using encryption.
+For example, BitTorrent is using a technique called Message Stream Encryption (MSE) and Protocol Encryption (PE).
+The MSE/PE technique uses a Di e-Hellman exchange that is combined with the infohash of the torrent to establish the key for the connection.1 After this exchange has occurred, the clients use RC4 to encrypt the data packets.
+We developed a heuristic to identify some of the aforementioned encrypted P2P tra c.
+Speci cally, we maintain a lookup table of IP address and port number tuples from  ows that have recently been identi ed as using P2P.
+If a  ow is unlabeled and there is a match in our P2P lookup table, we label it as possible P2P.
+This mechanism works on the basis that some P2P clients use both encryption and plaintext.
+In general, heuristics such as these may be used to assign labels to any encrypted P2P  ow in the training data set.
+We also analyzed unlabeled tra c on port 443, to determine whether or not this tra c is indeed HTTPS.
+This veri cation was done using an experimental version of Bro with this detection capability.
+In addition, automated random checks were performed to determine whether or not  ows labeled as HTTPS involved at least one host that was a Web server.
+These tests, however, were not done in an exhaustive fashion.
+Table 1 summarizes the classi cation results for our traces.
+Over 29 di erent protocols were identi ed; these include BB, BitTorrent, DirectConnect, eDonkey, FTP, Gnutella-based P2P programs (e.g., LimeWire, BearShare, Gnucleus, Morpheus, FreeWire), GoToMyPC, HTTP, ICQ, IDENT, IMAP, IMAP SSL, JetDirect, KaZaA, MySQL, MSSQL, MSN Messenger, MSN Web Cam, NNTP, POP3, POP3 SSL, RTSP, Samba, SIP, SMTP, SOAP, SpamAssassin, SSH, SSL, VNC, and Z3950 Client.
+We grouped these protocols according to application categories.
+For example, the P2P category includes positively identi ed P2P tra c from 1http://en.wikipedia.org/wiki/protocol encryption Table 1: Summary Statistics of the Empirical Traces Tra c Class Web
+
+
+ P2P (Encrypted)
+
+
+
+
+
+ UNKNOWN(Others) Total
+
+
+
+
+
+
+
+
+
+
+
+
+ Flows % Flows
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Bytes % Bytes
+
+
+
+
+
+
+
+
+
+
+
+
+ protocols including BitTorrent, Gnutella, and KaZaA.
+Encrypted P2P  ows identi ed using heuristics are labeled P2P (Encrypted).
+The OTHER category contains various identi- ed applications that were not part of a larger group and did not account for many  ows.
+The tables also list three categories of UNKNOWN  ows.
+The UNKNOWN(NP) refers to  ows with no payloads.
+Most of these are failed TCP connections, while some are port scans.
+The UNKNOWN(443) are  ows on port 443; they are likely to be HTTPS tra c.
+The third category is simply labeled as UNKNOWN(Others) to re ect the fact that we were not able to determine the applications that generated this tra c.
+From the table, we see that Web and P2P tra c account for a majority of the campus Internet tra c.
+Note that although P2P accounts for only 4% of the  ows, it still accounts for approximately 36% of the total bytes transferred.
+In our classi cation experiments, we classify  ows into one of the 8 tra c classes shown in Table 1.
+For the purpose of classi cation, P2P and P2P (Encrypted) are grouped together to form the P2P tra c class.
+We exclude all unknown  ows as we do not have base truth for these.
+The empirical traces at our disposal have both directions of a  ow.
+Our goal is to study how the directionality (i.e., client-to-server or server-to-client) of a  ow impacts classi- cation results.
+We generated from each empirical trace a  server-to-client  data set and a  client-to-server  data set that for each  ow in the trace records only the packets seen in the server-to-client direction or the client-to-server direction, respectively.
+To represent the typical case of tra c seen at the network core, we selected for each  ow in an empirical trace either the client-to-server direction packets or the server-to-client direction packets.
+We refer to this third category of data sets as  random directionality .
+We use four metrics in our evaluation, namely  ow accuracy, byte accuracy, precision, and recall.
+Flow accuracy is the number of correctly classi ed  ows divided by the total number of  ows in the test data set.
+Byte accuracy is the amount of correctly classi ed bytes divided by the total number of bytes in the test trace.
+Both metrics are important to maximize because having a few  ows misclassi ed could result in a many bytes being clas-si ed incorrectly.
+While these traditional metrics are useful, the accuracy measures neglect the fact that there might be consequences associated with incorrect classi cation of a  ow.
+For ex-tive data set.
+We report the average results and the 95% con dence intervals for the 10 models.
+The K-Means algorithm requires the number of clusters as an input.
+Here we describe how we selected k; in general, k can be considered a tuning knob that needs adjustment based on the type of tra c we are trying to classify.
+In our experiments, we found that both  ow and byte accuracies improved as we increased k from 25 to 400.
+The  ow accuracy shows an incremental improvement of 5% to 8% for all three types of data sets.
+However, in terms of byte accuracy, the classi cation using server-to-client data sets shows the greatest improvement, from 59% accuracy to 80%.
+With the client-to-server data sets the improvement in byte accuracy is only 10%, and with the random data sets it is only
+ data sets is because P2P tra c is being correctly identi ed.
+When the value of k used is 25, P2P  ows are almost always incorrectly classi ed as Web because there is only a single cluster representing P2P.
+However, when k increases to 400 there are normally 12 to 15 clusters representing P2P, and the byte accuracy, on average, improves to 80%.
+In general, we expect k to be larger than the number of tra c classes or applications we are trying to classify.
+For example, we expect to form more than one cluster for Web tra c to capture its various characteristics, including well-known heavy-tailed  le transfer sizes.
+With larger values for k we are able to capture more of the application characteristics within our clusters in the model.
+For the remainder of the evaluations, we used k equal to 400.
+Figure 1 shows the classi cation accuracy results for data sets derived from each trace.
+Overall, we found that the server-to-client data sets consistently give the best classi- cation accuracy achieving, on average, 95% and 79% in terms of  ows and bytes, respectively.
+With the random data sets, the average  ow and byte accuracy was 91% and
+ the  ows were correctly classi ed, on average, for an average byte accuracy of 57%.
+In general, using the client-to-server data sets resulted in the worst byte accuracies in all traces, except for the April 9, 9 pm trace.
+Figure 2 shows the  ow and byte accuracies achieved for the four most signi cant applications (in terms of number of  ows).
+We found that all three types of data sets have a high  ow accuracy for the Database, Email, and Web traf- c, with both client-to-server and server-to-client data sets achieving, on average, accuracies in excess of 90% for all three applications.
+The application type that proved the most di cult to classify was P2P.
+The server-to-client data sets achieved a 77%  ow accuracy; this is 20% greater than the accuracies with client-to-server and random data sets.
+Table 2: Confusion Matrix of Flows with Server-to-Client Data Sets (April 6, 9 am trace) Actual Class WEB
+
+
+
+
+
+
+
+
+
+ Classi cation
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ (a) Flow Accuracy (b) Byte Accuracy Figure 1: Classi cation accuracy (all traces).
+ample, classi cation of Web  ows as P2P might result in blocking or lower priority assignment for the Web  ows.
+We use precision and recall to quantify the impacts of incorrect classi cation.
+Precision of a tra c class is de ned as the ratio of the number of true positives to the sum of true and false positives for the class under consideration.
+If there is risk associated with misclassi cation of  ows, a higher precision value is desired.
+Recall measures the fraction of relevant  ows in a tra c class that have been correctly classi ed.
+It is de ned as the ratio of the number of true positives to the sum of true positives and false negatives for the class under consideration.
+A high recall value implies that there are very few relevant  ows that are misclassi ed as another tra c type.
+For example, if we want to assign high priority to Web  ows, we need to achieve high recall values for this tra c class.
+This section evaluates the e ectiveness of using di erent unidirectional data sets in our classi cation framework.
+As discussed in Section 3.3, we consider three test scenarios: data sets containing only client-to-server packets, data sets containing only server-to-client packets, and data sets that contain a random mixture of each directionality.
+From each data set, we generated 10 di erent training data sets, each generated by selecting 64,000 random sample  ows.
+A sample size of 64,000 represents a good compromise between the model s ability to represent di erent applications and the computational cost of building the model.2 After the clustering was complete, we used each of these
+ ranges between 500,000 to 1,000,000.
+To help illustrate the accuracy of the classi cation, Table 2 shows the  confusion matrix  [9] for the classi er when
+ In the random directionality case, SMTP did not form many clusters, which resulted in SMTP being misclassi ed most of the time.
+P2P  ows are classi ed more e ectively for the server-to-client data sets than the other data sets.
+With the server-to-client data sets, byte accuracy of approximately 83% is achieved, which represents a 30% increase over client-to-server and random data sets.
+This higher classi cation accuracy is because 20% more P2P  ows are correctly classi ed using the server-to-client data sets.
+This marked di erence from the other data sets is one of the main reasons why server-to-client data sets achieve the best  ow and bytes ac-curacies in Figure 1.
+If server-to-client  ow statistics are used for discriminating between P2P and Web  ows, encouraging results would be attained.
+Overall, in the server-to-client models Web  ows have precision and recall values of 97%; P2P  ows have precision of 82% and a recall of 77%.
+If a Quality-of-Service policy of assigning lower priority to P2P  ows than to Web  ows is implemented, 77% of the P2P would be correctly given a lower priority and at the same time less than 3% of the Web  ows would be mistakenly given a lower priority.
+Such a deployed (real-time) system could ease the strain that P2P puts on many networks.
+While we have advocated the discrimination of P2P and Web tra c in the above example we are, however, not limited to just these two types of applications.
+If reducing P2P was not the concern and instead prioritizing mission-critical business tra c was the focus then our classi cation system could be used just as successfully.
+Business-critical tra c from a Database achieves a high accuracy as well.
+The confusion matrix provides further evidence of this fact with a precision of almost 98% and a recall of 94% when classifying Database  ows.
+In this section we introduce and use our  ow statistic estimation algorithm.
+This algorithm uses the packets of an unidirectional  ow to estimate the  ow statistics of the unobserved direction.
+The estimation algorithm is based on the syntax and semantics of the TCP protocol and thus, would not work for other transport protocols such as UDP.
+We  rst introduce the algorithm in Section 5.1.
+Section 5.2 discusses some of the assumptions.
+In Section 5.3, we empirically verify our estimation algorithm s predictions.
+Last, in Section 5.4 we test the classi cation accuracy using the estimated statistics.
+The statistics of interest to us can be divided into three general categories: duration, number of bytes, and number of packets.
+After we obtain the data for these three general categories we can calculate other statistics such as average throughput, mean packet interarrival time, and packet average size.
+The duration of a  ow is the amount of time from when the  rst packet of a  ow is sent until the last packet of the  ow is sent.
+This statistic is fairly easy to calculate; we can use the  rst and last packet sent in the observed direction as a good estimate of the  ow duration.
+This works well (a) Flow Accuracy (b) Byte Accuracy Figure 2: Classi cation accuracy by application (April 6, 9 am trace).
+using a server-to-client data set.
+In this m   m matrix, the data value ci,j indicates the number of  ows from class i that were classi ed as class j.
+Obviously, we want values along the diagonal to be much larger than the others which is what we observe.
+By looking across the row of the confusion matrix at a given class i we can calculate the recall for that class.
+Likewise, by looking down a column at a given class j we can calculate the precision of that class.
+The per-application byte accuracy for Database and Web is high with all three types of data sets.
+However, for Email and P2P  ows the accuracies vary considerably between the di erent data sets.
+For Email  ows, the client-to-server data sets provide 86% accuracy, but the random and server-to-client data sets have extremely low accuracies of 7% and 23%, respectively.
+While it is di cult for us to make a generalization to encompass every model and trace, in the models where we did extensive analysis of the results, the reason why the client-to-server data sets classi ed Email so well was that SMTP  ows were being correctly classi ed.
+In the client-to-server models, SMTP  ows were put into a few large clusters that classi ed most of the SMTP tra c, with one of these clusters normally capturing most of the large SMTP  ows (in terms of bytes).
+However, in the server-to-client models the SMTP clusters were more fragmented and generally formed many small clusters.
+The smaller clusters were generally for SMTP  ows with few bytes transferred (less than 2000 bytes).
+The larger SMTP  ows that accounted for most of the Email bytes generally did not form a cluster and were included in clusters labeled either as P2P or Web.
+The confusion matrix in Table 2 further con rms that these misclassi cations
+ packet that is sent receives a corresponding acknowledgment from the other host.
+The packet exchanges typically occurring at the beginning and at the end of a  ow have the SYN and FIN packets, respectively.
+In cases where we did not see the SYN and/or FIN exchange, such as when the tra c monitor drops packets, we calculate the duration with the  rst or last exchange of data packet and acknowledgment packets, which may result in a less accurate estimate of the  ow duration.
+The second category of statistics is concerned with the number of bytes transmitted.
+Our approach for calculating the number of bytes is similar to the technique developed by Smith et al. [31].
+In the TCP protocol, the host responds to reception of TCP segments (packets) by sending acknowledgments (ACKs) with the sequence number  eld (SEQ) in the TCP header set to indicate the next expected in-order byte.
+By using these ACK numbers we can estimate the amount of data that has been received by calculating the o set between the highest ACK number and the lowest ACK number seen.
+This works fairly well for most TCP connections.
+However, it does not work reliably for connections that were closed using TCP resets (RST).
+For TCP RST packets, the ACK number may not correspond to the in-order byte sequence received.
+Instead, some TCP implementations assign a random value.
+To combat this problem, we exclude the ACK numbers from RST packets when we calculate the highest and lowest ACK numbers.
+The last category of statistics, the number of packets sent, is the most di cult to estimate.
+We derive a set of heuristics that estimate, for each TCP  ow, the number of packets that could potentially be received in the other direction between transmission of two successive packets.
+We assume that if a SYN packet is seen, then we are seeing the client-to-server packets of a  ow.
+Otherwise, we assume we are seeing the server-to-client packets.
+Algorithm 1 shows the rules that we de ned.
+We track the last sequence number (PrevSeq) and acknowledgment number (PrevAck) seen in the  ow; these values are initialized to zero before a  ow starts.
+We also calculate the change in the sequence number (SeqChg) and acknowledgment number (AckChg) between the packets observed.
+In the event that we do not receive a SYN or a SYNACK packet at the beginning (or at all), our algorithm processes the  rst data packet with either our  rst (line 5) or second rule (line 7), and then works correctly afterward.
+We explain the remainder of this algorithm using examples.
+Let us assume that we are seeing the client-to-server packets, that one packet (for the  ow of interest) had a sequence number of 100 and an acknowledgment number of 200, and that the next packet has a sequence number of
+ in sequence number indicates that the most recent packet carried some payload data.
+However, since the acknowledgment number has not increased we infer that the missing server-to-client packets for this interval had no payload data and would most likely be ACKs corresponding to the payload in the last packets sent.
+This case would be caught by our third rule (line 9) where we check to see if the sequence number has increased and the acknowledgment number has not.
+We calculate the number of ACKs as the sequence number change divided by the expected maximum segment size (MSS).
+Conversely, if the sequence number does not increase but the acknowledgment number does increase we infer that Algorithm 1 Packet Estimation Algorithm
+
+ 3: for each packet do
+
+
+
+ continue Calculate(SeqChg, AckChg) if SeqChg > 0 and AckChg = 0 and P revSeq = 0 then (cid:46) SYN packet sent and nothing is missed else if SeqChg > 0 and AckChg > 0 and P revAck = 0 then missed M issedAcks   M issedAcks + 1 (cid:46) SYNACK or SYN else if SeqChg > 0 and AckChg = 0 then else if SeqChg = 0 and AckChg > 0 then M issedAcks   M issedAcks + (cid:100)SeqChange/M SS(cid:101) M issedData   M issedData + (cid:100)AckChange/M SS(cid:101) M issedData   M issedData + (cid:100)AckChange/M SS(cid:101) else if SeqChg > 0 and AckChg > 0 then else if SeqChg   0 or AckChg   0 then continue (cid:46) Nothing has been missed from last packet
+
+
+
+
+
+
+
+
+ seen
+ 18: end for end if in this interval packets that were sent in the other direction contained a total payload size directly proportional to the change in the acknowledgment numbers.
+To calculate the number of data packets, we divide the acknowledgment number change by the MSS.
+This case is handled by our fourth rule (line 11).
+The  fth rule (line 13) handles cases where data are being sent simultaneously in both directions.
+The sixth rule (line 15) handles retransmissions and packets that are received out of order.
+In our rules we make three general assumptions, the  rst pertaining to the expected MSS of packets, the second pertaining to the ACK-ing policy of the TCP stacks, and the last in regards to retransmissions and packet loss.
+We use MSS in our calculations for the number of packets sent.
+The MSS can be estimated from the options  eld in the SYN/SYNACK packets of a connection.
+A MSS announcement is made by each host at the beginning of a TCP connection with the lowest value typically being used.
+In a unidirectional trace it would be possible on a per ow basis to estimate MSS based on any announcements seen.
+However, to be more computationally e cient to determine the expected MSS, we analyzed the empirical distribution of MSS in our traces.
+Our analysis showed that 95% of the connections had a MSS of 1460 bytes.
+Approximately 5% had a MSS of 1380 and some other minor groupings at 512 and 1260.
+Therefore, we used 1460 bytes as the expected MSS in our veri cation and results.
+How TCP acknowledges segments depends on the TCP In some cases, stacks of both the client and the server.
+an ACK is sent for every packet, while in other cases an ACK is sent for every other packet.
+Our heuristics assume a simple acknowledgment strategy of an ACK (with 40 bytes of header data and no payload) for every data packet in the  ow.
+We realize that this may over estimate the number of ACKs.
+We also assume there are no packet losses, and therefore, our statistics do not take into account any retransmis-sions.
+We make this assumption because retransmissions re ect network congestion and transmission errors, rather than application-speci c behaviour of the  ows that we want to classify.
+However, this does make our estimations lower than what the actual numbers should be but this has the duration.
+Figure 4: Estimation of the number of bytes.
+Figure 5: Estimation of the number of packets.
+number of packets for 80% of the  ows, and within 20% of the actual number of bytes, for 90% of the  ows.
+Looking solely at the percentage error is somewhat misleading, since the high error cases often correspond to  ows with few packet transmissions (less than 10).
+The main source of inaccuracy are  ows that after the TCP handshake had occurred saw a single reject or RST packet from the server.
+The client in such cases attempts to send the initial data packets several times.
+This typically occurred in P2P connections that were refused.
+If our algorithm sees the server side of such  ows it estimates it missed either 0 or 1 packets because we ignore RST packets.
+Otherwise, if it sees the client side of the  ow it thinks it missed several ACKs because we assume all packets are acknowledged.
+In both cases, the algorithm is o  by a couple packets but the percentage error is large.
+We found that overall average error per  ow is 2.4 packets, and that 87% of  ows are within 5 packets of the actual number.
+In terms of bytes, the overall average error is 120 bytes, and 92% of the  ows are within 500 bytes of the actual number.
+We examine the classi cation accuracy of our classi er if we use the estimation algorithm described in the previous section to estimate server-to-client statistics for our traces when only the client-to-server or random directionalities are seen.
+Figures 7 and 8 show the classi cation accuracy.
+These experiments are similar to those reported in Figure 1, except that both model building and the subsequent classi er use the estimated statistics when necessary.
+As seen in these  gures, we  nd that when we use the estimation algorithm to estimate the server-to-client statistics the  ow accuracy and byte accuracy achieved using the client-to-server and random directionality is very close to the actual accuracy we achieved when using the actual server-to-client statistics obtained from the empirical traces.
+Interestingly, our classi cation accuracies are largely unaffected by the potential errors in our estimated  ow statistics.
+We think this robustness is due to the fact we use the logarithm of the  ow statistics (as mentioned in Section 2.1).
+The magnitude of di erence of the  ow statistics has a much greater impact in the classi cation than the small errors in the estimations.
+This makes us believe it is possible to use our estimation technique to calculate the di erent statistics that allow the best classi cation, even though only partial information is available.
+Figure 6: CDF of the per ow percentage error.
+positive e ect of balancing the overestimation of the number of ACKs.
+Estimating  ow duration is easy, and overall the error in the duration estimation is low.
+The average  ow duration was 27.5 seconds, with an error of 7.3%.
+In our estimation results shown in Figure 3, we found that normally 90% of the  ows had duration errors less than 1 msec.
+In most cases where there was a high error in the duration, we found that the error was caused by a RST or FIN packet being sent well after the rest of the  ow s packets were sent.
+Figure 4 shows a scatter plot of the actual number of bytes versus the estimated number of bytes for the random data set generated from the April 6, 9 am trace.
+The scatter plot shows strong agreement between the actual and estimated amount of bytes.
+For our traces, the algorithm was always within within 0.4% and 1.4% of the actual number of bytes.
+Figure 5 shows a scatter plot of the actual number of packets versus the estimated number of packets for the random data set generated from the April 6, 9 am trace.
+As seen in the scatter plot, the estimated number of packets closely follows the actual number of packets; the estimate inaccuracy appears to be somewhat larger when there are more packet transfers along the missing direction of the  ow.
+Experiments with the remaining traces showed that the packet estimate was, on average, within -5.3% and 1.6% of the actual number of packets.
+On a per  ow basis, Figure 6 shows the distribution of the per ow percentage error for both packet and byte estimation.
+It shows that our estimate is within 30% of the actual
+ estimation algorithm estimating Server-to-Client statistics.
+Figure 8: Byte accuracy with estimation algorithm to estimating Server-to-Client statistics.
+Figure 9: Longitudinal classi cation accuracy using a single model on all traces.
+We found in our experimentation that increasing the sample size between 2000 and 128,000 does not signi cantly improve our classi cation results.
+However, we did  nd that a larger sample size had a higher degree of con dence of covering the sample space of tra c characteristics.
+Figure 9 shows that a single model (built by drawing samples from one trace) is fairly resilient over a longer period of time.
+For this particular experiment, we used a model built from the (Friday) April 7, 9 am trace; our results show that this model is applicable on other days and times.
+This shows that a generic model could be built to classify tra c for long periods of time.
+This would reduce the frequency at which the expensive step of model building (i.e., clustering and labeling) would need to be repeated.
+We think that the classi cation framework we use could be adapted in several ways.
+One example could be to build several models to re ect the characteristics of  ows after certain packet milestones (e.g., 8, 32, and 64 packets).
+Then, a  ow currently in-progress could be classi ed using the di er-ent models as it reaches the preset packet milestones.
+This approach can facilitate real-time classi cation of  ows and is an idea that we are currently exploring [12].
+The use of  ow statistics for clustering network tra c has received some attention in the literature [10, 23, 33].
+These prior works only considered the model building stage and did not evaluate the predictive power of classi ers obtained from clustering.
+The classi er proposed by Bernaille et al.
+is the closest to our work [1].
+The classi er similarly uses the K-Means algorithm and a minimum distance measure to assign  ow to an application label.
+Their work uses bidirectional  ow statistics derived from the  rst P packet exchanges, and is not applicable to the more challenging tra c classi cation setting considered in this paper.
+Some non-clustering, machine learning-based, techniques also use  ow statistics for classifying tra c [25,29].
+Roughan et al. [29] use three algorithms from the data mining literature, namely Nearest Neighbour, Linear Discriminate Analysis, and Quadratic Discriminate Analysis, to classify  ows into four predetermined tra c classes.
+They study the use of di erent statistics such as duration and average packet size of a  ow for classifying tra c into four distinct classes.
+Moore et al. [25] use a supervised machine learning algorithm called Na ve Bayes as a classi er.
+Using a  hand clas-si ed  trace, they show that the Na ve Bayes approach has a high accuracy classifying tra c.
+These prior e orts did not consider classi cation at the network core.
+Our work on the use of clustering techniques for classi cation at the network core complements these prior e orts.
+Tra c identi cation approaches that rely on application-level behaviors such as the number of concurrent TCP/UDP connections to an IP address have also been developed [6,19,
+ italize on the unique behaviors (e.g., concurrent use of both TCP and UDP by a source/destination host pair) of P2P applications when they are transferring data or establishing connections to identify this tra c.
+Their results show that this approach is comparable in terms of accuracy to payload-based identi cation.
+In earlier work, a similar approach was used to identify chat tra c [6].
+More recently, Karagiannis et al. [20] developed another method that uses the social, functional, and application behaviors to identify all types of tra c.
+Concurrent to [20], Xu et al. [32] develop a methodology, based on data mining and information-theoretic techniques, to discover functional and application behavioral patterns of hosts and the services used by the hosts.
+They subsequently use these patterns to build general tra c pro les, for example,  servers or services ,  heavy hitter hosts , and  scans or exploits .
+In contrast, our approach uses only  ow characteristics to classify network tra c, and achieves comparable or better accuracies when classifying tra c, including tra c originating from P2P applications.
+This paper considered the problem of classifying network tra c when only one direction of network  ows are observed, as may be the case when the point-of-observation is the network core.
+To address this problem, we developed a clustering-based machine learning framework for classifying network tra c using only unidirectional  ow statistics.
+We evaluated the aforementioned classi cation framework using a set of full-payload packet traces.
+The results show that, in general, rich tra c classi cation using only unidirectional statistics is feasible, with our experiments showing accuracies of 95% in terms of  ows and 80% in terms of bytes.
+We also found better classi cation performance is achieved when statistics for the server-to-client direction are used than when statistics for the client-to-server direction are used.
+Because collection of the server-to-client statistics
+ algorithm that can estimate the missing statistics from a unidirectional packet trace.
+Acknowledgments This work was supported by the Natural Sciences and Engineering Research Council (NSERC) of Canada and Infor-matics Circle of Research Excellence (iCORE) of the province of Alberta.
+We thank the anonymous reviewers for their comments on the original version of this paper.

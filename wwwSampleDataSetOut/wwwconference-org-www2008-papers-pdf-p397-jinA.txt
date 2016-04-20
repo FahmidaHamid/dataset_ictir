@@ -1,0 +1,1767 @@
+Ranking Reﬁnement and Its Application to
+
+Information Retrieval
+
+Rong Jin
+
+Computer Science and
+
+Engineering
+
+Michigan State University
+East Lansing, MI 48824
+rongjin@cse.msu.edu
+
+Hamed Valizadegan
+Computer Science and
+
+Engineering
+
+Michigan State University
+East Lansing, MI 48824
+
+valizade@cse.msu.edu
+
+Hang Li
+
+Microsoft Research Asia
+
+4F, Sigma Center
+
+No.49 Zhichun Road, Haidian
+
+Beijing, 100080, China
+
+hangli@microsoft.com
+
+ABSTRACT
+We consider the problem of ranking reﬁnement, i.e., to
+improve the accuracy of an existing ranking function with
+a small set of labeled instances. We are, particularly, inter-
+ested in learning a better ranking function using two comple-
+mentary sources of information, ranking information given
+by the existing ranking function (i.e., the base ranker) and
+that obtained from users’ feedbacks. This problem is very
+important in information retrieval where feedbacks are grad-
+ually collected. The key challenge in combining the two
+sources of information arises from the fact that the rank-
+ing information presented by the base ranker tends to be
+imperfect and the ranking information obtained from users’
+feedbacks tends to be noisy. We present a novel boosting
+algorithm for ranking reﬁnement that can eﬀectively lever-
+age the uses of the two sources of information. Our empiri-
+cal study shows that the proposed algorithm is eﬀective for
+ranking reﬁnement, and furthermore it signiﬁcantly outper-
+forms the baseline algorithms that incorporate the outputs
+from the base ranker as an additional feature.
+
+Categories and Subject Descriptors: H.3.3 [Infor-
+mation Systems]: Information Search and Retrieval; I.2.6
+[Artiﬁcial Intelligence]: Learning
+
+General Terms: Design, Experimentation, Theory.
+
+Keywords: Learning to Rank, Background Information,
+Boosting, Incremental Learning.
+
+1.
+
+INTRODUCTION
+
+Learning to rank is a relatively new area of study in ma-
+chine learning. It aims to learn an assignment of scores to
+objects and rank the objects on the basis of the scores. It has
+received much attention in recent years because of its impor-
+tant role in information retrieval. Most research in learning
+to rank is conducted in the supervised fashion, in which a
+ranking function is learned from a given set of training in-
+stances. The drawback with the supervised approach is that
+they tend to fail when the number of training instances is
+small.
+
+In several real-world applications, in addition to the la-
+beled training instances, a base ranker is available that can
+be used to rank the objects. Then, the research question
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2008, April 21–25, 2008, Beijing, China.
+ACM 978-1-60558-085-2/08/04.
+
+is how to exploit the outputs from the base ranker when
+learning a ranking function from a small number of labeled
+instances. We refer to this problem as Ranking Reﬁne-
+ment to distinguish it from supervised learning for ranking.
+Below we show two examples for the application of ranking
+reﬁnement:
+
+Relevance feedback In information retrieval, documents are
+often ordered by a predeﬁned relevance ranking func-
+tion, such as BM25 [1] and Language Model for IR [2],
+that assesses the relevancy of documents to a given
+query. Relevance feedback techniques are proposed to
+improve the retrieval accuracy by allowing users to pro-
+vide relevance judgments for the ﬁrst a few retrieved
+documents. The research question here is how to en-
+hance the accuracy of relevance feedback by combin-
+ing the uses of the two types of information. In this
+case, the base ranker is the relevance ranking function,
+and the training instances are the documents that are
+judged by the users.
+
+Recommender system The goal of a recommender system is
+to rank the items according to the interest of an active
+user (i.e., the test user). Usually, a few rated items are
+provided to indicate the preference of the active user.
+Using the collaborative ﬁltering techniques [3], we can
+come up with a preliminary list of items ranked by
+using the preference information of other users. The
+research question here is how to enhance the ﬁnal rank-
+ing accuracy by leveraging the two types of informa-
+tion. In this case, the base ranker is the collaborative
+ﬁltering algorithm, and the labeled instances are the
+items labeled by the active user.
+
+Furthermore, any online learning of ranking functions can
+be viewed as a ranking reﬁnement problem in that the rank-
+ing function is updated iteratively with new training in-
+stances collected on the ﬂy.
+
+A straightforward approach toward ranking reﬁnement is
+to view the scores of the base ranker as an additional fea-
+ture, and learn a ranking function over the augmented fea-
+tures. As will be shown in the experiments, this is not the
+best approach for exploiting the information hidden in the
+base ranking function. We believe that the most valuable
+information behind the base ranker is not its scores but the
+ranked list of objects it produces. We therefore view the
+base ranker and the labeled instances as two complemen-
+tary sources of information. The key challenge in combin-
+ing these two sources of information is that the ranked list
+
+397WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, Chinagenerated by the base ranker tends to be imperfect while
+the labeled instances tend to be noisy.
+In this paper, we
+present a boosting algorithm for ranking reﬁnement that can
+eﬀectively utilize the two types of information. Our empiri-
+cal study with relevance feedback and recommender system
+show that the proposed algorithm is eﬀective for ranking
+reﬁnement, and it signiﬁcantly outperforms the baseline al-
+gorithms that incorporate the outputs from the base ranker
+as an additional feature for the objects.
+
+2. RELATED WORK
+
+Most learning to rank algorithms are designed for the
+setting of supervised learning, in which a ranking function
+is learned from labeled instances. The problem of learn-
+ing to rank is often cast as a classiﬁcation problem where
+the goal is to correctly classify the ordering relationship be-
+tween any two instances. Three well-known approaches in
+this category are Ranking-SVM [4, 5], RankBoost [6], and
+RankNet [7]. Ranking-SVM minimizes the number of incor-
+rectly ordered pairs within the maximum margin framework.
+Several variants [8, 9] are developed to further enhance the
+performance of Ranking-SVM. RankBoost learns a ranking
+model based on the same consideration, but by means of
+Boosting. RankNet [7] is a neural network based approach
+that uses cross entropy as its loss function. Recently, Xu
+et al. [10] proposed another approach that is aimed at di-
+rectly optimizing the performance measures in information
+retrieval, such as Mean Average Precision (MAP) and Nor-
+malized Discounted Cumulative Gain (NDCG). A special
+group of ranking problem is called ordinal regression [4], in
+which the output of the ranking function is restricted to a
+few ordinal categories. Example algorithms for ordinal re-
+gression include the maximum margin based approach [11]
+and the Gaussian process based approach [12]. The rank-
+ing reﬁnement problem diﬀers from the supervised ranking
+problem in that an imperfect base ranker is provided in ad-
+dition to the labeled training instances.
+
+The ranking problem is essential to information retrieval,
+whose goal is to rank a collection of documents by their
+relevance to a given query.
+In particular, relevance feed-
+back techniques [13] are developed to improve the accuracy
+of the existing retrieval algorithms. There are two types of
+relevance feedback. The ﬁrst type, termed user relevance
+feedback, enhances the retrieval accuracy by collecting the
+user relevance judgments for the documents that are ranked
+on the top of the list. As pointed out in the introduction
+section, the user relevance feedback problem can be treated
+as a problem of ranking reﬁnement. In the empirical study,
+we will show that the proposed algorithm for ranking re-
+ﬁnement signiﬁcantly outperforms the standard relevance
+feedback algorithm (i.e., the Rocchio algorithm) over sev-
+eral datasets. The second type of relevance feedback, often
+termed pseudo relevance feedback, does not explicitly col-
+lect the user relevance judgments.
+Instead, it treats the
+top ranked documents as relevant to the given query, and
+the documents ranked at the bottom as irrelevant. These
+pseudo relevance judgments are used to improve the existing
+ranking function. It is well known in information retrieval
+that pseudo relevance feedback may result in degradation of
+retrieval performance given the high probability of errors in
+pseudo relevance judgments [13]. This is similar to the noise
+of training instances in ranking reﬁnement.
+
+3. RANKING REFINEMENT
+3.1 Problem Deﬁnition
+Let D = (x1, x2, . . . , xn) denote the set of instances to
+be ordered, where each instance xi ∈ Rd is a vector of d
+dimensions. Let G : Rd → R denote the base ranking func-
+tion (base ranker), and gi = G(xi) denote the ranking score
+assigned to xi by the base ranking function G. Instance xi
+is ranked before xj if gi > gj. To make our problem gen-
+eral, we assume the label information collected from user
+feedback is presented as a set of ordered pairs, denoted by
+O = {(xik (cid:194) xjk )|k = 1, . . . , m} where each pair xi (cid:194) xj
+1. The goal of
+indicates that instance xi is ranked before xj
+ranking reﬁnement is to learn a ranking function F : Rd → R
+by exploiting both the labeled pairs in O and the ranking
+information given by G.
+3.2 Encoding Ranking Information
+
+The ﬁrst important question for ranking reﬁnement is how
+to encode the ranking information provided by the base
+ranking function G. A straightforward approach is to use
+the ranking scores computed by G as an additional feature,
+and apply the existing algorithms, such as RankBoost and
+Ranking-SVM, to learn a ranking function from the labeled
+instances. The drawback of this approach is twofold:
+
+• First, this approach only utilizes the ranking scores of
+the labeled instances. The ranking information gen-
+erated by the base ranking function for the unlabeled
+instances is completely ignored by this approach. Since
+the number of labeled instances collected from users’
+feedbacks is considerably smaller than the number of
+unlabeled instances, this approach is not optimal in ex-
+ploiting the information provided by the base ranking
+function.
+
+• Second, we believe that the ranking orders generated
+by the base ranking function is substantially more re-
+liable than the numerical values of the ranking scores.
+Similar observation is found in the study of meta search
+whose goal is to combine the retrieval results of multi-
+ple search engines to create a better ranking list [14].
+Empirical studies [14] showed that the meta search
+algorithms based on the document ranks often out-
+perform the algorithms that directly use the relevance
+scores.
+
+To address the above problems, we encode the order in-
+formation generated by the base ranking function G with
+matrix W ∈ [0, 1]n×n. Each Wi,j in the matrix represents
+the probability of ranking xi before xj and is deﬁned as
+follows
+
+Wi,j =
+
+exp(λgi)
+
+exp(λgi) + exp(λgj)
+
+(1)
+
+In the above, Wi,j is deﬁned by a softmax function and
+the parameter λ ≥ 0 represents the conﬁdence of the base
+ranking function. To see the eﬀect of λ, we consider two
+extreme cases:
+
+• λ = 0. In this case, we have Wi,j = 0.5, which indi-
+cates that the ordering information generated by the
+base ranker is completely ignored.
+
+1This is because any labeled instances can be converted into
+ordered pairs while the converse is not true.
+
+398WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, China 1
+
+gi > gj
+0.5 gi = gj
+0
+gi < gj
+
+Wi,j =
+
+(2)
+
+Thus, W is almost a binary matrix, which implies that
+we completely trust ranked list generated by the base
+ranking function.
+
+(cid:189)
+
+By varying the parameter λ, we are able to alleviate the
+negative eﬀect from the base ranking function. In our ex-
+periment, we set λ to be inverse to the standard deviation
+of ranking scores of the ﬁrst 10 retrieved documents.
+set O with matrix T as follows:
+
+Similarly, we encode the ordering information inside the
+
+1 − η/2 (xi (cid:194) xj) ∈ O
+η/2
+
+otherwise
+
+Ti,j =
+
+(3)
+where parameter η ∈ [0, 1]. Ti,j represents the probability
+of ranking ranking xi before xj in the training data. The
+parameter η reﬂects the error rate of training data, and is
+particularly useful when the labeled instances are derived
+from implicit user feedback that is usually noisier. In our
+experiment, we set η = 1/2.
+3.3 Objective Function
+The goal of ranking reﬁnement is to learn a ranking func-
+tion F : Rd → R from matrix W and T that produces a
+more accurate ranked list than the base ranking function
+G. In particular, the optimal ranking function F should be
+consistent with the ranking information in W and T . To
+this end, we measure the ranking errors of F with respect
+to both W and F , i.e.,
+
+errw =
+
+errt =
+
+Wi,jI(Fj ≥ Fi)
+
+Ti,jI(Fj ≥ Fi)
+
+(4)
+
+(5)
+
+i,j=1
+
+In the above, we introduce Fi = F (xi) and the indicator
+function I(x) that outputs 1 when the input boolean vari-
+able x is true and zero otherwise. There are two problems
+with directly using the ranking errors errw and errt as the
+objective function:
+
+• First, both error functions are non-smooth functions
+since the indicator function I(x) is non-smooth.
+It
+is well know that optimizing a non-smooth function
+is computationally more challenging than optimizing
+a smooth function because the derivative of a non-
+smooth function is not well deﬁned [15].
+
+• Second, with two objectives at hand, the problem is
+essentially a multi-objective optimization problem [16].
+Thus, another important question is how to combine
+multiple objectives into one single objective.
+
+n(cid:88)
+n(cid:88)
+
+i,j=1
+
+• λ = ∞. In this case, we have
+
+y). The resulting new objective functions are:
+
+n(cid:88)
+n(cid:88)
+
+i,j=1
+
+(cid:99)errw =
+(cid:99)errt =
+
+Wi,j exp(Fj − Fi)
+
+Ti,j exp(Fj − Fi)
+
+(6)
+
+(7)
+
+i,j=1
+
+Note that since exp(x − y) ≥ I(x ≥ y), by minimizing the
+
+errors (cid:99)errw and (cid:99)errt, we are eﬀective in reducing the orig-
+using (cid:99)errw and (cid:99)errt comes from the theoretic result of Ad-
+
+inal ranking errors errw and errt. Another advantage of
+
+Remark: It is interesting to examine the eﬀect of the
+
+aBoost [17], i.e., by minimizing the exponential loss func-
+tion, the resulting classiﬁer will not only reduce the training
+errors but also maximize the classiﬁcation margin. The en-
+larged classiﬁcation margin is the key to guarantee a low
+generalization error for testing instances [17].
+
+smoothing parameter η on the ranking error (cid:99)errt. By sub-
+stituting the expression (3) for Ti,j in (7), we have (cid:99)errt ex-
+(cid:99)errt = (1 − η)
+n(cid:88)
+
+(xi(cid:194)xj )∈O
+[exp(Fi − Fj) + exp(Fj − Fi)]
+
+exp(Fj − Fi)
+
+pressed as follows:
+
+(cid:88)
+
++
+
+η
+2
+
+i,j=1
+
+≈ (1 − η)
+
+= (1 − η)
+
+(cid:88)
+ (cid:88)
+
+(xi(cid:194)xj )∈O
+
+(xi(cid:194)xj )∈O
+
+n(cid:88)
+
+i,j=1
+
+exp(Fj − Fi) +
+
+η
+2
+
+(Fi − Fj)2
+
+exp(Fj − Fi) +
+
+η
+
+2(1 − η)
+
+(cid:107)F(cid:107)2
+
+S
+
+ (8)
+
+where (cid:107)F(cid:107)2
+follows:
+
+S is a norm of vector F = (F1, . . . , Fn) deﬁned as
+
+(cid:107)F(cid:107)2
+
+S = F
+
+(cid:62)
+
+(nI − ee)F
+
+where I is the identity matrix and e is a vector of all ones.
+The approximation of the second step in the above deriva-
+tion follows the Taylor expansion of the exponential func-
+S/2(1 − η),
+tion. Clearly, the second term in (8), i.e., η(cid:107)F(cid:107)2
+is similar to the regularization term used by Support Vector
+Machines (SVM) [18]. Thus, the parameter η plays the role
+
+of coeﬃcient in the regularized ranking error (cid:99)errt.
+
+3.3.2 Combination of Two Objectives
+The problem of optimizing multiple objectives is usually
+called multi-objective optimization problem [16]. The most
+common approach is to linearly combine objectives, which
+in our case is to linearly combine the two error functions,
+i.e.,
+
+La = γ(cid:99)errw + (cid:99)errt =
+
+n(cid:88)
+
+i,j=1
+
+(γWi,j + Ti,j) exp(Fj − Fi)
+
+(9)
+
+In the following subsections, we will address these two ques-
+tions separately.
+3.3.1 Relaxation with Exponential Functions
+To address the problem with non-smooth objective func-
+tions, we follow the idea of boosting by replacing the indica-
+tor function I(x ≥ y) with an exponential function exp(x −
+
+where parameter γ is used to combine two classiﬁcation er-
+rors. We refer to the approach based on the above objective
+function as “Linear Ranking Reﬁnement”, or LRR, for
+short. The main problem with using the linearly combined
+objectives is how to decide an appropriate value for γ. In
+our experiments, we will show that diﬀerent γ could result
+in very diﬀerent performance in information retrieval.
+
+399WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, ChinaTo resolve the diﬃculty, we consider another approach
+which makes combination of the two errors by their prod-
+ucts, i.e.,
+
+Lp = (cid:99)errw × (cid:99)errt
+(cid:195)
+n(cid:88)
+
+(cid:33)(cid:195)
+
+n(cid:88)
+
+=
+
+Ti,j exp(Fj − Fi)
+
+Wi,j exp(Fj − Fi)
+
+(10)
+
+(cid:33)
+
+Algorithm 1 Boosting algorithm for minimizing Lp
+1: Compute Wi,j and Ti,j based on the ranked list and the
+
+set of labeled pairs
+
+2: Initialize F (x) = 0 for all instances
+3: repeat
+4:
+
+Compute γi,j for each instance pair as
+
+i,j=1
+
+i,j=1
+
+γi,j = ai,j + bi,j
+
+(13)
+
+We refer to the approach as “Multiplicative Ranking Re-
+ﬁnement”, or MRR for short.
+
+that is either
+
+The ﬁrst concern on using the product is whether the
+resulting solution is Pareto eﬃcient [16]. A solution F =
+1, . . . , F (cid:48)
+n)
+
+(F1, . . . Fn) is Pareto eﬃcient for the objectives (cid:99)errw and
+(cid:99)errt if there does not exist any other solution F(cid:48) = (F (cid:48)
+1. (cid:99)errw(F (cid:48)) < (cid:99)errw(F ) and (cid:99)errt(F (cid:48)) ≤ (cid:99)errt(F ), or
+2. (cid:99)errw(F (cid:48)) ≤ (cid:99)errw(F ) and (cid:99)errt(F (cid:48)) < (cid:99)errt(F ).
+
+In other words, if F is Pareto eﬃcient, it guarantees that
+no solution is able to further reduce the two objectives si-
+multaneously than F. It is well known that, according to
+multi-objective optimization theory [16], the solution found
+by minimizing La is guaranteed to be Pareto eﬃcient. Re-
+garding the Pareto eﬃciency when minimizing Lp in (10),
+we have the following theorem:
+
+Theorem 1. The optimal solution F = (F1, . . . , Fn) found
+
+by minimizing the objective function Lp is Pareto eﬃcient.
+
+The proof of this theorem can be found in Appendix A.
+The main advantage of using Lp rather than La is that it
+does not need a weight parameter. This will be revealed
+in our empirical studies in that minimization of Lp usually
+signiﬁcantly outperforms minimization of La even when the
+optimal combination weight γ is used for La.
+
+In order to compare the properties of the two diﬀerent
+approaches for combination, we examine their ﬁrst order
+derivatives. Let ξ denote the parameters used by the ranking
+function F (x). Then, the ﬁrst order derivatives of La and
+Lp with respect to ξ are given as follows:
+∇ξLa =
+
+(Ti,j + γWi,j) exp(Fj − Fi)(∇ξF (xj) − ∇ξF (xi))
+
+n(cid:88)
+(cid:195)(cid:88)
+
+i,j=1
+
+Lp
+
+∇ξLp =
+
+(ai,j + bi,j) exp(Fj − Fi)(∇ξF (xj) − ∇ξF (xi))
+
+i,j=1
+
+where
+
+ai,j =
+
+bi,j =
+
+(cid:80)n
+Wi,j exp(Fj − Fi)
+i,j=1 Wi,j exp(Fj − Fi)
+(cid:80)n
+Ti,j exp(Fj − Fi)
+i,j=1 Ti,j exp(Fj − Fi)
+
+(11)
+
+(12)
+
+Note that both derivative shares similar structures. The key
+diﬀerence between ∇ξLa and ∇ξLp is that in ∇ξLp, ai,j and
+bi,j are used to weight the contribution from W and T for
+instance pair (xi, xj) when computing the derivative. This
+is in contrast to ∇ξLa where the weights for instance pair
+(xi, xj) are γWi,j exp(Fj − Fi) and Ti,j exp(Fj − Fi). The
+
+(cid:33)
+
+n(cid:88)
+
+j=1
+
+n(cid:88)
+
+i=1
+
+(cid:80)n
+(cid:80)n
+
+where ai,j and bi,j are deﬁned in (11) and (12).
+Compute the weight for each instance as
+
+4:
+
+wi =
+
+γi,j − γj,i
+
+(14)
+
+4: Assign each instance the class label yi = sign(wi).
+5:
+
+Train a classiﬁer f (x) : Rd → {0, 1} that maximizes
+the following quantity
+
+θ =
+
+|wi|f (xi)yi
+
+(15)
+
+(16)
+
+6:
+7:
+
+Predict fi for all instances in D
+Compute combination weight α as follows:
+
+α =
+
+1
+2
+
+log
+
+i,j=1 γi,jδ(fi, 1)δ(fj, 0)
+i,j=1 γi,jδ(fj, 1)δ(fi, 0)
+
+where fi = f (xi). δ(x, y) outputs 1 if x = y and zero
+otherwise. Break the loop if α ≤ 0
+
+8: Update the ranking function as
+
+F (x) ← F (x) + αf (x)
+
+(17)
+
+9: until reach the maximum number of iterations
+
+(cid:80)n
+
+(cid:80)n
+
+main advantage of using ai,j and bi,j comes from the fact
+i,j=1 bi,j = 1,
+that they are normalized, i.e.,
+and therefore the contributions from W and T are naturally
+balanced when calculating the derivative.
+3.4 Boosting Algorithm for Ranking Reﬁne-
+
+i,j=1 ai,j =
+
+ment
+
+In this section, we will consider algorithms for learning
+the ranking function F (x) by respectively minimizing the
+objective function La and Lp. The objective function La is
+similar to the objective function used by Rank-Boost except
+that a weight (Ti,j +γWi,j) is used for each instance pair. We
+thus can simply modify the Rank-Boost algorithm to learn
+the optimal ranking function F (x). Hence, in the sequel, we
+will focus on the boosting algorithm for minimizing Lp.
+
+To learn the optimal ranking function F (x), we follow
+the greedy approach of boosting algorithms. Since the in-
+formation for training is a set of labeled instance pairs, a
+straightforward boosting approach is to iteratively update
+the weights of instance pairs and train a new ranking func-
+tion for the given weighted pairs. This is the strategy em-
+ployed in the Rank-Boost algorithm [6]. However, since the
+number of instance pairs is O(n2), this approach could be
+computationally expensive when the number of instance n
+is large.
+
+To address the above problem, we present a new boost-
+ing algorithm that converts the weights of instance pairs
+into weights for individual instances. The key idea behind
+the new boosting algorithm is to derive an upper bound
+
+400WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, Chinalearned in that iteration. The objective function after T it-
+erations, denoted by LT
+
+p , is bounded as follows:
+
+Ti,j
+
+Wi,j
+
+exp
+
+√
+(
+
+µk − √
+
+νk)2
+
+(18)
+
+(cid:33)
+
+(cid:195)
+− T(cid:88)
+
+(cid:33)
+
+(cid:195)
+
+n(cid:88)
+
+p ≤
+LT
+
+where
+
+i,j=1
+
+n(cid:88)
+n(cid:88)
+n(cid:88)
+
+i,j=1
+
+i,j=1
+
+µk =
+
+νk =
+
+k=1
+
+γk
+i,jδ(f k(xi), 1)δ(f k(xj), 0)
+
+γk
+i,jδ(f k(xi), 0)δ(f k(xj), 1)
+
+Figure 1: Reduction of the objective function Lp
+using the OHSUMED Data Set
+
+for the target objective that decouples functions for pairs of
+instances into functions for individual instances. It is this
+decoupling that makes it possible to infer weights for individ-
+ual instances from weights for instance pairs. In addition,
+the new boosting algorithm is able to derive an appropri-
+ate binary class label for each instance using the computed
+weights. Using both the weights and the class labels of in-
+stances, we can train a binary classiﬁer f : Rd → {0, +1} and
+update the overall ranking function by F (cid:48)(x) = F (x)+αf (x)
+where α is the combination weight. Note that by convert-
+ing a ranking problem into a series of binary classiﬁcation
+problems, the new boosting algorithm avoids the high com-
+putational cost arising from the large number of instance
+pairs.
+
+Algorithm 1 summarizes the overall procedures for the
+proposed boosting algorithm minimizing Lp. As the ﬁrst
+step in the iteration, we compute γi,j for every pair of in-
+(cid:80)n
+stances that measures the uncertainty of ranking instance xi
+ahead of xj. Next, we calculate the weight for instance xi as
+j=1 γi,j − γj,i. It is important to note that wi can be
+wi =
+both positive and negative. In particular, wi > 0 indicates
+that it is more likely to have xi ranked on the top of the
+ranked list than on the bottom of the list; wi ≤ 0 indicates
+the opposite. Hence, we can derive the class label yi for xi
+based on the sign of wi: a positive class for placing instances
+on the top of the ranked list, and a negative class for placing
+instances on the bottom of the list. Since |wi| indicates the
+overall conﬁdence in deciding the ranking position of xi in
+the list, it is used to weight the importance of individual
+instances. With this information, we will train a classiﬁer
+that maximizes θ in (15), which can be interpreted as a sort
+of classiﬁcation accuracy. Since most binary classiﬁers are
+unable to take weights into consideration, we will divide the
+training procedure into two steps: in the ﬁrst step, we sam-
+ple s instances according to the distribution that is propor-
+tional to the weights |wi|; we then train a binary classiﬁer
+f : Rd → {0, +1} using the sampled instances. We manu-
+ally set s = max(20, n/5) in our empirical study. A similar
+strategy is employed in the AdaBoost algorithm [6] and its
+eﬀectiveness has been veriﬁed in empirical studies.
+
+In the remaining of this section, we will give justiﬁcation
+to the proposed algorithm described in Table 1. The main
+result is summarized in Theorem 2.
+
+i,j=1
+
+The above theorem essentially shows that by using the pro-
+posed algorithm, the objective function Lp will be reduced
+exponentially.
+
+The key to proving Theorem 2 is to establish the relation-
+ship between the objective function Lp of two consecutive
+iterations. This is because by upper bounding the log-ratio
+between Lp of two consecutive iterations, i.e.,
+
+rt ≥ log Lt
+
+p − log Lt−1
+
+p
+
+we will have
+
+LT
+
+p = L0
+p
+
+T(cid:89)
+
+t=1
+
+Lt
+p
+Lt−1
+
+p
+
+≤ L0
+
+p exp
+
+,
+
+(cid:195)
+
+T(cid:88)
+
+(19)
+
+(cid:33)
+
+rt
+
+(20)
+
+t=1
+
+For the convenience of presentation, in the following, we only
+consider two consecutive iterations without specifying the
+index of iteration. Instead, we denote the quantities of the
+current iteration by symbol˜to diﬀerentiate the quantities of
+the previous iteration. In order to establish an upper bound
+for the log ratio, we ﬁrst introduce the following lemma
+
+Lemma 1. Assume ˜F (x) = F (x)+αf (x) where ˜F (x) and
+F (x) are the ranking functions of two consecutive iterations,
+respectively. f : Rd → {0, 1} is a binary classiﬁer and α is
+the combination weight. We have the following inequality
+hold for any F , f , and α:
+
+log
+
+˜Lp
+Lp
+
+≤ −2 +
+
+(ai,j + bi,j) exp(α(fj − fi)) (21)
+
+n(cid:88)
+
+i,j=1
+
+where ai,j and bi,j are deﬁned (11) and (12), respectively.
+
+The proof of Lemma 1 can be found in Appendix B. Us-
+ing the Lemma 1, we present the proof of Theorem 2 in
+Appendix C.
+
+Finally, we can show the relationship between the objec-
+tive function Lp and the quantity θ (in (15)) that is used
+to guide the training of binary classiﬁers in iterations. This
+result is summarized in the following theorem:
+
+Theorem 3. Let θk denote the value of the quantity θ
+(in (15)) that is maximized by the binary classiﬁer f k(x)
+learned in the kth iteration. Assume that θk ≥ 0 for each
+iteration. Then, the objective function after T iterations,
+denoted by LT
+
+p , is bounded as follows:
+
+(cid:195)
+
+n(cid:88)
+
+(cid:33)(cid:195)
+
+n(cid:88)
+
+(cid:33)
+
+(cid:33)
+
+(cid:195)
+
+− T(cid:88)
+
+Ti,j
+
+Wi,j
+
+exp
+
+θk
+
+(22)
+
+i,j=1
+
+i,j=1
+
+k=1
+
+p ≤
+LT
+
+Theorem 2. Let f k(x) denote the binary classiﬁcation
+i,j denote γi,j
+
+function obtained in the kth iteration, and γk
+
+The proof of the above theorem can be found in Appendix D.
+Theorem 3 provides a theoretical justiﬁcation for Algorithm 1.
+
+0102030405077.588.599.51010.5x 105IterationObject Function Value401WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, ChinaIn particular, by maximizing θ, Algorithm 1 eﬀectively re-
+duces the objective function Lp. This is further conﬁrmed
+by our empirical study. Figure 1 shows an example of re-
+duction in the objective function Lp. We clearly see that
+the objective function is reduced exponentially and receives
+the largest reduction during the ﬁrst few iterations.
+
+4. EXPERIMENTS
+
+In this section, we evaluate the proposed algorithm for
+ranking reﬁnement by two tasks, i.e., user relevance feed-
+back and recommender system. The objectives of our ex-
+periments are: (1) to compare the proposed algorithm for
+ranking reﬁnement to the existing ranking algorithms, (2)
+to examine the performance of the proposed algorithm for
+ranking reﬁnement with diﬀerent numbers of training in-
+stances, (3) to examine the eﬀect of diﬀerent base rankers
+on the performance of the proposed algorithm, and (4) to
+examine the time eﬃciency of the proposed algorithm for
+ranking reﬁnement.
+4.1 Datasets
+
+For the Relevance Feedback experiment, we used the
+LETOR testbed [20] that includes the OHSUMED dataset
+and the datasets from TREC 2003 and 2004. The OHSUMED
+dataset consists of 106 queries. For each query, a number
+of documents are retrieved and their relevance to the query
+is given at three levels: deﬁnitely (2), possibly (1), or ir-
+relevant (0). There are a total of 16, 140 query-document
+relevance judgments. For each query-document pair, a total
+of 25 ranking features are extracted. There are 50 queries
+in the dataset of TREC 2003, and 75 queries in TREC
+2004. For each query, about 1000 documents are retrieved,
+which amounts to a total of 49, 171 query-document pairs for
+TREC 2003 and 74, 170 query-document pairs for TREC
+2004. A binary relevance judgment is provided for each
+query-document pair. There are 44 features extracted for
+each query-document pair. The detailed information about
+OHSUMED and TREC data sets are available in [20].
+
+For the Recommender System experiment, we used
+the MovieLens dataset, available at [19], contains 100, 000
+ratings (from 1 to 5) for 1682 movies given by 943 users.
+Each movie is represented by 51 binary features: 19 features
+are derived from the genres of movies and the rest 32 features
+are derived from the keywords that are used to describe the
+content of movies2.
+4.2 Experimental Setup
+4.2.1 Algorithms
+To examine the eﬀectiveness of the proposed algorithm
+for ranking reﬁnement, we compared the following ranking
+algorithms:
+
+Base Ranker: It is the base ranker used in the ranking
+
+reﬁnement.
+
+Rocchio: This algorithm extends the standard Rocchio al-
+gorithm for user relevance feedback and it creates a
+new query vector by linearly combining the query vec-
+tor and vectors of feedback documents. Given the ini-
+tial query Q0, the relevant documents (R1, R2, ..., Rn1 )
+2We downloaded the keywords of each movie from the online
+movie database IMBD. The 32 most popular keywords used
+by the 1682 movies were selected.
+
+and non-relevant documents (S1, S2, ..., Sn2 ), the new
+query according to Rocchio is:
+
+n1(cid:88)
+
+i=1
+
+n2(cid:88)
+
+i=1
+
+Q = Q0 + α
+
+− β
+
+Ri
+n1
+
+Si
+n2
+
+(23)
+
+Note, in our case, that each document is not repre-
+sented by a vector of word frequency, but a vector of
+features that are computed based on its match to the
+query. Hence, we don’t have Q0, i.e., the representa-
+tion vector for query itself. We therefore set Q0 to be a
+vector of all zeros. We used the inner product between
+the new query and documents as the scores to rank the
+documents. To obtain the best performance, we vary
+α and β from 1 to 10 and choose the best setting.
+
+SVM: This implements the Ranking-SVM algorithm using
+the SVM light package. Note that it is commonly be-
+lieved that Rank-Boost performs equally well as Rank-
+ing SVM. The experimental results provided in the
+LETOR collection also conﬁrm this. Hence, we only
+compare the proposal algorithm with Ranking-SVM,
+but not Rank-Boost.
+
+MRR: This is the Multiplicative Ranking Reﬁnement al-
+
+gorithm that minimizes Lp in (10).
+
+LRR: This is the Linear Ranking Reﬁnement algorithm
+that minimizes La in (9). Since the performance of
+LRR depends on the parameter γ, we run LRR with
+100 diﬀerent values from 0.1 to +10 and choose the
+best and worst performance. We referred them to as
+LRR-Worst and LRR-Best, respectively.
+
+For a fair comparison, the output from the base ranker
+is used as an extra feature when using SVM (i.e., Ranking-
+SVM) and Rocchio.
+
+4.2.2 Evaluation Metrics
+To evaluate the performance of diﬀerent algorithms, we
+used precision and normalized discounted cumulative gain
+(NDCG) at rank position k. Let (dR1 , dR2 , ..., dRn ) denote
+the top ranked documents according to the ranker R, and
+(rR1 , rR2 , .., rRn ) denote their binary judgments. The preci-
+sion at rank position k measures the relevancy of the ﬁrst k
+documents and is deﬁned as follows
+
+k(cid:88)
+
+PR@k =
+
+rRi /k
+
+i=1
+
+For the OHSUMED dataset, a document is deemed relevant
+when its score is two.
+In the case of MovieLense data, a
+movie is deemed to be interesting to a test user when its
+rating is no less than 43. Since the ﬁrst top documents are
+more important than the other documents, we also employ
+the NDCG metric [21] that is deﬁned as follows:
+
+N DCGR@k =
+
+DCGR@k
+DCGT @k
+
+3We have experimented with other thresholds and ﬁnd simi-
+lar results in our empirical study. We did not present results
+for the other thresholds due to the space limitation.
+
+402WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, Chinawhere T stands for the oracle ranker and DCGX @k is de-
+ﬁned as follows [21]:
+
+(cid:40)
+
+(cid:80)k
+
+rX1
+
+DCGX @k =
+
+rX1 +
+
+if k = 1
+if k > 1
+
+rXi
+log2 i
+
+i=2
+
+4.2.3 Evaluation Protocol
+Unless speciﬁed, for all the experiments with relevance
+feedback, we used the standard BM25 retrieval algorithm
+(i.e., the 21st feature in OHSUMED data set and 16th in
+TREC data sets) as the base ranker. We followed the com-
+mon practice of user relevance feedback by collecting the
+relevance judgments for the ﬁrst 10 retrieved documents.
+These user relevance judgments served as labeled instances
+in ranking reﬁnement.
+
+For the experiment with recommender system, the base
+ranker was created by applying a collaborative ﬁltering al-
+gorithm, more speciﬁcally, the Personality Diagnosis algo-
+rithm [3], to the user rating data.
+In particular, 20 users
+were randomly selected as the training users, and the re-
+maining 923 users were used for testing. For each test user,
+10 rated movies were randomly selected and were used by the
+collaborative ﬁltering algorithm to identify the 20 training
+users who share the common interests with the test user.
+Note that we did not compare the proposed algorithm to
+other information ﬁltering algorithms because the focus of
+this study is to examine the eﬀectiveness and the generality
+of the proposed approach for ranking reﬁnement.
+4.3 Results for Relevance Feedback
+
+Figure 2 and 3 show the performance results of diﬀerent
+algorithms in terms of precision and NDCG for the ﬁrst 25
+ranked documents. First, by comparing the performance of
+the two variants of ranking reﬁnement, we observed that
+the Multiplicative Ranking Reﬁnement (MRR) algorithm is
+signiﬁcantly more eﬀective than the Linear Ranking Reﬁne-
+ment (LLR) algorithm. Indeed, MRR performs signiﬁcantly
+better than the best case of LRR (i.e., LRR-best). The
+key diﬀerence between MRR and LRR is that MRR min-
+imizes the product of the two error functions while LRR
+minimizes the weighted sum. We believe it is the normal-
+ization scheme brought by MRR (see equations in (11) and
+(12)) that makes it performing better than LRR. Second,
+comparing to the other three baseline algorithms, i.e., the
+base ranker, Rocchio, Ranking-SVM, we observed that MRR
+always signiﬁcantly outperforms the baseline algorithms in
+all the cases. More noticeable is the improvement made by
+the ranking reﬁnement over the ﬁrst a few ranking positions.
+We thus conclude that Multiplicative Ranking Reﬁnement
+is more eﬀective than the baseline algorithms for user rele-
+vance feedback in information retrieval.
+4.4 Effect of Quality of Base Rankers
+
+To examine the robustness of the proposed algorithm with
+respect to the imperfectness of the base ranker, we tested
+the MRR algorithms with three diﬀerent base rankers. We
+plotted the results of all diﬀerent features and selected three
+features which cover a good range of ranking quality. The
+chosen base rankers for OHSUMED data set are the features
+7, 11, and 21 and those for the TREC data sets are features
+16, 21, and 36. Figure 4 shows how the MRR algorithm
+performs using diﬀerent base rankers (NDCG shows similar
+results). The result indicates that the quality of base rankers
+
+has a direct impact on the performance of the MRR algo-
+rithm. We also observed that the proposed algorithm is able
+to signiﬁcantly improve the performance even with a poor
+base ranker. More impressively, by comparing Figure 4 to
+Figure 2, we observed that even using the worst base ranker
+(i.e., feature 7 for OHSUMED, 21 for TREC 2003 ,and 36
+for TREC 2004), the retrieval accuracy of MRR is compara-
+ble to the other methods using the best base ranker (i.e., the
+BM25 retrieval algorithm). We thus conclude that the MRR
+algorithm is resilient to the imperfectness of base rankers.
+4.5 Effect of Size of Feedback Data
+
+To investigate the eﬀect of the number of feedback doc-
+uments on the performance, we ran the MRR algorithm by
+varying the number of feedback documents from 5 to 20.
+Figure 5 shows the result using varied number of feedback
+documents. We clearly observed that the number of feed-
+back documents have a direct eﬀect on the performance of
+ranking reﬁnement. However, even with a small amount of
+feedback, MRR is able to improve the retrieval performance
+considerably, particularly for the accuracy of the ﬁrst few
+ranked documents. We thus conclude that the proposed al-
+gorithm for ranking reﬁnement is robust to the size of feed-
+back data.
+4.6 Results for Recommender System
+
+We evaluated the generality of the proposed algorithm
+by applying it to recommender system (movie recommenda-
+tion). Figure 6(a) and Figure 6(b) show the results of diﬀer-
+ent algorithms when applied on the MovieLens dataset. It
+is surprising to observe that the results of LRR, the linear
+ranking reﬁnement algorithm, even with the tuned param-
+eter γ, is not even comparable to the the performance of
+the base ranker.
+In contrast, the MRR algorithm is able
+to signiﬁcantly improve the accuracy of the base ranker and
+outperform the other baseline algorithms considerably. This
+result further indicates the importance of appropriately com-
+bining the two information sources, i.e., the ranking infor-
+mation behind the base ranker and the feedback information
+provided by users.
+
+Figure 6(c) shows the sensitivity of MRR to the size of
+feedback data by varying the number of rated movies by the
+test user from 5 to 20. Similar to the result for relevance
+feedback, we observed that the size of feedback data aﬀects
+the performance of MRR considerably. However, even with
+5 rated movies, the MRR algorithm is able to make a no-
+ticeable improvement in the prediction accuracy compared
+to the base ranker. This result further conﬁrms the robust-
+ness of the proposed algorithm for ranking reﬁnement with
+respect to the size of feedback data.
+4.7 Time Efﬁciency of Ranking Reﬁnement
+
+Figure 7 shows the eﬃciency of the MRR algorithm in
+terms of the running time for diﬀerent numbers of rated
+movies for each test user. We chose movies data set for the
+experiment because it provides a good range for the number
+of objects. We partitioned the test users into groups where
+each group of users has a diﬀerent number of rated movies.
+The running time of MRR for each group is calculated by
+averaging it across all the users in the group. As pointed in
+Section 3.4 and seen in Figure 7, the running time is linear
+in the number of instances. Note that the relatively long
+running time is due to the MATLAB implementation.
+
+403WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, China(a) OHSUMED
+
+(b) TREC 2003
+
+(c) TREC 2004
+
+Figure 2: Precision of relevance feedback for diﬀerent algorithms
+
+(a) OHSUMED
+
+(b) TREC 2003
+
+(c) TREC 2004
+
+Figure 3: NDCG of relevance feedback for diﬀerent algorithms
+
+of the proposed algorithm.
+
+6. ACKNOWLEDGEMENTS
+
+The work was supported by the National Science Founda-
+tion (IIS-0643494) and National Institute of Health (1R01-
+GM079688-01). Any opinions, ﬁndings, and conclusions or
+recommendations expressed in this material are those of the
+authors and do not necessarily reﬂect the views of NSF and
+NIH.
+
+7. REFERENCES
+[1] S. Robertson and D. A. Hull. The trec-9 ﬁltering track ﬁnal
+
+report. In TREC9, pages 25–40, 2000.
+
+[2] J. Laﬀerty and C. Zhai. Document language models, query
+models, and risk minimization for information retrieval. In
+SIGIR, pages 111–119, 2001.
+
+[3] D. M. Pennock, E. Horvitz, S. Lawrence, and C. L. Giles.
+
+Collaborative ﬁltering by personality diagnosis. In UAI,
+2000.
+
+[4] R. Herbrich, T. Graepel, and K. Obermayer. Large margin
+
+rank boundaries for ordinal regression. In Advances in
+Large Margin Classiﬁers, pages 115–132, 2000.
+
+[5] T. Joachims. Optimizing search engines using clickthrough
+
+data. In SIGKDD, pages 133–142, 2002.
+
+[6] Y. Freund, R. Iyer, R. Schapire, and Y. Singer. An eﬃcient
+
+boosting algorithm for combining preferences. J. Machine
+Learning Research, 4:933–969, 2003.
+
+[7] C. J. C. Burges, T. Shaked, E. Renshaw, A. Lazier,
+
+M. Deeds, N. Hamilton, and G. N. Hullender. Learning to
+rank using gradient descent. In ICML, pages 89–96, 2005.
+[8] J. Gao, H. Qi, X. Xia, and J.-Y. Nie. Discriminant model
+for information retrieval. In SIGIR, pages 290–297, 2005.
+
+Figure 7: Running time of the MMR algorithm for
+diﬀerent numbers of movies rated by test users
+
+5. CONCLUSION
+
+In this paper, we propose the problem of ranking reﬁne-
+ment, whose goal is to improve a given ranking function
+by a small number of labeled instances. The key challenge
+in combining the ranking information from the base ranker
+and the labeled instances arises from the fact that the in-
+formation in the base ranker tends to be inaccurate and the
+information from the training data tends to be noisy. We
+present a boosting algorithm for ranking reﬁnement that is
+resilient to the errors. Empirical studies with relevance feed-
+back and recommender system show promising performance
+
+05101520250.10.20.30.40.50.60.70.8Top DocumentsPrecisionBase RankerRocchioSVMMRRLRR−WorstLRR−Best051015202500.10.20.30.40.50.60.7Top DocumentsPrecisionBase RankerRocchioSVMMRRLRR−WorstLRR−Best051015202500.10.20.30.40.50.60.7Top DocumentsPrecisionBase RankerRocchioSVMMRRLRR−WorstLRR−Best05101520250.30.40.50.60.70.80.91Top DocumentsNDCGBase RankerRocchioSVMMRRLRR−WorstLRR−Best051015202500.10.20.30.40.50.60.7Top DocumentsNDCGBase RankerRocchioSVMMRRLRR−WorstLRR−Best051015202500.10.20.30.40.50.60.7Top DocumentsNDCGBase RankerRocchioSVMMRRLRR−WorstLRR−Best0501001502002503003504004500.511.522.533.5Number of MoviesTime (Seconds)404WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, China(a) OHSUMED data set
+
+(b) Trec 2003 data set
+
+(c) Trec 2004 data set
+
+Figure 4: Precision of MRR with diﬀerent base rankers for relevance feedback
+
+(a) OHSUMED data set
+
+(b) Trec 2003 data set
+
+(c) Trec 2004 data set
+
+Figure 5: Precision of MRR with diﬀerent numbers of feedback documents for relevance feedback
+
+[9] Y. Cao, J. Xu, H. Li, Y. Huang, and H.-W. Hon. Adapting
+
+ranking svm to document retrieval. In SIGIR, pages
+186–193, 2006.
+
+[10] J. Xu and H. Li. A boosting algorithm for information
+
+retrieval. In SIGIR, pages 473–480, 2007.
+
+[11] A. Shashua and A. Levin. Ranking with large margin
+
+principle: Two approaches. In NIPS, 2003.
+
+[12] W. Chu and Z. Ghahramani. Gaussian processes for ordinal
+
+regression. Technical report, 2004.
+
+[13] D. Harman. Relevance feedback revisited. In SIGIR, 1992.
+[14] Mark Montague and Javed A. Aslam. Condorcet fusion for
+
+improved retrieval. In CIKM ’02: Proceedings of the
+eleventh international conference on Information and
+knowledge management, pages 538–548. ACM, 2002.
+
+[15] R.T. Rockafellar. Convex analysis. Princeton University
+
+Press, Princeton, N.J., 1970.
+
+[16] R. E. Steuer. Multiple Criteria Optimization: Theory,
+
+Computation and Application. John Wiley, 546 pp, 1986.
+
+[17] Robert E. Schapire. Theoretical views of boosting and
+
+applications. In Algorithmic Learning Theory, 10th
+International Conference, ALT ’99, volume 1720, pages
+13–25. Springer, 1999.
+
+[18] Christopher J. C. Burges. A tutorial on support vector
+
+machines for pattern recognition. Data Min. Knowl.
+Discov., 2(2):121–167, 1998.
+
+[19] GroupLens. MovieLens Data sets.
+
+http://www.grouplens.org/node/12, 2006.
+
+[20] Microsoft Research Asia. LETOR: Benchmark Datasets for
+
+Learning to Rank.
+http://research.microsoft.com/users/tyliu/letor/, 2006.
+
+[21] Kalervo J¨arvelin and Jaana Kek¨al¨ainen. Cumulated
+
+gain-based evaluation of ir techniques. ACM Trans. Inf.
+Syst., 20(4):422–446, 2002.
+
+APPENDIX
+A. PROOF OF THEOREM 1
+
+Proof. First, note that the objective function Lp is con-
+vex in terms of F. This is because Lp can be expanded as
+follows:
+
+n(cid:88)
+
+Lp =
+
+Ti,jWi,j exp(Fj − Fi + Fk − Fl)
+
+i,j,k,l=1
+
+Since exp(Fj − Fi + Fk − Fl) is a convex function, Lp is
+convex. Since Lp is a convex function, the solution found
+by minimizing Lp will always be global optimal, instead of
+local optimal.
+Second, to show that the optimal solution found by min-
+imizing Lp is Pareto eﬃcient, we prove by contradiction.
+Let F∗ denote the global minimizer of function Lp. By
+assuming that Theorem 1 is not correct, there will exist
+
+a solution F (cid:54)= F∗ that either (1) (cid:99)errw(F) < (cid:99)errw(F∗)
+and (cid:99)errt(F) ≤ (cid:99)errt(F∗), or (2) (cid:99)errw(F) ≤ (cid:99)errw(F∗) and
+(cid:99)errt(F) < (cid:99)errt(F∗). We can easily infer Lp(F) < Lp(F∗)
+since (1) both (cid:99)errw and (cid:99)errt are non-negative for any solu-
+tion F, and (2) Lp = (cid:99)errw × (cid:99)errt. Clearly, this conclusion
+
+contracts the fact that F∗ is a global minimizer of Lp.
+
+051015202500.10.20.30.40.50.60.70.8Top DocumentsPrecisionBase Ranker−7MRR−7Base Ranker−11MRR−11Base Ranker−21MRR−21051015202500.10.20.30.40.50.60.7Top DocumentsPrecisionBase Ranker−16MRR−16Base Ranker−21MRR−21Base Ranker−36MRR−36051015202500.10.20.30.40.50.60.7Top DocumentsPrecisionBase Ranker−16MRR−16Base Ranker−21MRR−21Base Ranker−36MRR−3605101520250.20.30.40.50.60.70.80.91Top DocumentsPrecisionBase RankerMRR−5MRR−10MRR−15MRR−20051015202500.10.20.30.40.50.60.7Top DocumentsPrecisionBase RankerMRR−5MRR−10MRR−15MRR−20051015202500.10.20.30.40.50.60.70.8Top DocumentsPrecisionBase RankerMRR−5MRR−10MRR−15MRR−20405WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, China(a) Precision chart
+
+(b) NDCG chart
+
+(c) Robustness
+
+Figure 6: Precision and NDCG of recommender system for diﬀerent algorithms
+
+(cid:33)
+(cid:33)
+
+(cid:33)
+
+(cid:33)
+
+(cid:33)
+
+(cid:33)
+
+Using the deﬁnition of α in (16), we have
+
+(cid:33)(cid:195)
+
+˜Lp
+Lp
+
+≤ −2+
+
+(cid:118)(cid:117)(cid:117)(cid:116)(cid:195)
+
+2
+
+i,j=1
+
+i,j=1
+
+log
+
+γi,jδ(fj, 0)δ(fi, 1)
+
+√
+µν
+
+n(cid:88)
+
+γi,jδ(fj, 1)δ(fi, 0)
+
+= −2 + 2
+
+n(cid:88)
+(cid:80)n
+In the above, we use the deﬁnitions of µ and ν in Theorem 1
+i,j=1 γi,j ≥ µ + ν,
+to simplify the expression. Since 2 =
+we have
+µν = −(cid:161)√
+µt − √
+
+≤ −2 + 2
+µν
+√
+≤ −µ − ν + 2
+
+√
+≤ rt = − (
+
+µ − √
+
+We thus have
+
+(cid:162)2
+
+˜Lp
+Lp
+
+νt)2
+
+√
+
+log
+
+log
+
+ν
+
+Lt
+p
+Lt−1
+
+p
+
+Substituting the above expression for rt into (20), and fur-
+ther using the fact
+
+n(cid:88)
+
+L0 =
+
+Ti,j + Wi,j,
+
+(ai,j + bi,j) exp(α(fj − fi))
+
+we obtain the result in Theorem 2.
+
+i,j=1
+
+B. PROOF OF LEMMA 1
+
+Proof. Since ˜F (x) = F (x) + αf (x), we have
+
+(cid:195)
+(cid:195)
+(cid:195)
+
+i,j=1
+
+n(cid:88)
+n(cid:88)
+n(cid:88)
+
+i,j=1
+
+˜Lp
+Lp
+
+=
+
+=
+
+Wi,j exp(Fj − Fi + α(fj − fi))
+
+×
+
+Ti,j exp(Fj − Fi + α(fj − fi))
+
+(cid:33)(cid:195)
+
+n(cid:88)
+
+ai,j exp(α(fj − fi)
+
+bi,j exp(α(fj − fi)
+
+i,j=1
+
+i,j=1
+
+where ai,j and bi,j are deﬁned in (11) and (12). Thus, we
+have an upper bound of the log ratio as follows
+
+log
+
+˜Lp
+L
+
+= log
+
+ai,j exp(α(fj − fi))
+
+bi,j exp(α(fj − fi))
+
+(cid:195)
+
+n(cid:88)
+(cid:195)
+n(cid:88)
+n(cid:88)
+
+i,j=1
+
+i,j=1
+
++ log
+
+≤ −2 +
+
+i,j=1
+
+The second inequality follows the concaveness of the loga-
+rithm function, i.e., log x ≤ x − 1 for any x > 0.
+
+C. PROOF OF THEOREM 2
+
+Proof. Using the upper bound expressed in Lemma 1,
+
+we have
+
+log
+
+˜Lp
+Lp
+
++ 2 ≤
+
+=
+
+i,j=1
+
+n(cid:88)
+(cid:195)
+n(cid:88)
+(cid:195)
+n(cid:88)
+
+i,j=1
+
++
+
+i,j=1
+
+γi,j exp(α(fj − fi))
+
+γi,jδ(fj, 1)δ(fi, 0)
+
+exp(α)
+
+(cid:33)
+
+(cid:33)
+
+D. PROOF OF THEOREM 3
+
+Proof. We rewrite the quantity θ as follows:
+
+=
+
+fi
+
+i=1
+
+i=1
+
+θ =
+
+(cid:33)
+
+fiyi|wi|
+
+γi,j − γj,i
+
+(cid:195)
+n(cid:88)
+
+n(cid:88)
+n(cid:88)
+n(cid:88)
+(cid:161)√
+≥ (cid:161)√
+µ − √
+µ − ν =
+(cid:162)2. Substituting this result into the
+µ − √
+µ − √
+
+γi,j(fi − fj) = µ − ν
+
+(cid:162)(cid:161)√
+(cid:162)2 ,
+
+√
+ν
+
+(cid:162)
+
+µ +
+
+i,j=1
+
+j=1
+
+=
+
+ν
+
+ν
+
+ν
+
+Since
+
+we have θ ≥(cid:161)√
+
+γi,jδ(fj, 0)δ(fi, 1)
+
+exp(−α)
+
+expression of Theorem 2, we have Theorem 3.
+
+05101520250.20.30.40.50.60.70.80.9Top DocumentsPrecisionBase RankerRocchioSVMMRRLRR−WorstLRR−Best05101520250.740.760.780.80.820.840.860.880.90.92Top DocumentsNDCGBase RankerRocchioSVMMRRLRR−WorstLRR−Best05101520250.30.350.40.450.50.550.60.650.70.750.8Top DocumentsPrecisionBase RankerMRR−5MRR−10MRR−15MRR−20406WWW 2008 / Refereed Track: Search - Ranking & Retrieval EnhancementApril 21-25, 2008 · Beijing, China

@@ -1,0 +1,2055 @@
+Researcher Homepage Classiﬁcation using Unlabeled Data
+
+Sujatha Das G.1,3, Cornelia Caragea1,4, Prasenjit Mitra1,2,3, C. Lee Giles1,2,3
+
+1Computer Science and Engineering
+2Information Sciences and Technology
+
+3The Pennsylvania State University, University Park, PA-16803
+
+4University of North Texas, Denton, TX-76203
+
+gsdas@cse.psu.edu, ccaragea@unt.edu, pmitra@ist.psu.edu, giles@ist.psu.edu
+
+ABSTRACT
+A classiﬁer that determines if a webpage is relevant to a
+speciﬁed set of topics comprises a key component for focused
+crawling. Can a classiﬁer that is tuned to perform well on
+training datasets continue to ﬁlter out irrelevant pages in
+the face of changed content on the Web? We investigate this
+question in the context of researcher homepage crawling.
+
+We show experimentally that classiﬁers trained on exist-
+ing datasets for homepage identiﬁcation underperform while
+classifying “irrelevant” pages on current-day academic web-
+sites. As an alternative to obtaining datasets to retrain the
+classiﬁer for the new content, we propose to use eﬀectively
+unlimited amounts of unlabeled data readily available from
+these websites in a co-training scenario. To this end, we de-
+sign novel URL-based features and use them in conjunction
+with content-based features as complementary views of the
+data to obtain remarkable improvements in accurately iden-
+tifying homepages from the current-day university websites.
+In addition, we propose a novel technique for “learning a
+conforming pair of classiﬁers” using mini-batch gradient de-
+scent. Our algorithm seeks to minimize a loss (objective)
+function quantifying the diﬀerence in predictions from the
+two views aﬀorded by co-training. We demonstrate that tun-
+ing the classiﬁers so that they make “similar” predictions on
+unlabeled data strongly corresponds to the eﬀect achieved by
+co-training algorithms. We argue that this loss formulation
+provides insight into understanding the co-training process
+and can be used even in absence of a validation set.
+Categories and Subject Descriptors
+H.3.3 [Information Search and Retrieval]: Miscella-
+neous
+General Terms
+Algorithms
+Keywords
+co-training, consensus maximization, gradient descent
+1. MOTIVATION
+
+Professional homepages of researchers, which typically sum-
+
+marize research interests, publications and other metadata
+related to researchers, are shown to be rich sources of in-
+formation for digital libraries [12]. Researchers’ homepages
+
+Copyright is held by the International World Wide Web Conference
+Committee (IW3C2). IW3C2 reserves the right to provide a hyperlink
+to the author’s site if the Material is used in electronic media.
+WWW 2013, May 13–17, 2013, Rio de Janeiro, Brazil.
+ACM 978-1-4503-2035-1/13/05.
+
+(also referred to as academic homepages or simply home-
+pages in this paper) have been successfully employed in tasks
+such as expertise search [2], extraction of academic networks,
+author proﬁle extraction and disambiguation [40] as they
+provide crucial evidence for improving these tasks in digital
+libraries.
+
+Furthermore, digital library systems such as CiteSeer1,
+ArnetMiner2, and Google Scholar3 are primarily interested
+in obtaining and tracking researchers’ homepages in order to
+retrieve appropriate scientiﬁc research publications. Given
+the infeasibility of collecting the entire content on the Web,
+a focused crawler aims to minimize the use of network band-
+width and hardware by selectively crawling only pages rel-
+evant to a (speciﬁed) set of topics [7]. A key component
+for such a crawler is a classiﬁcation module that identiﬁes
+whether a webpage being accessed during the crawl process
+is potentially useful to the collection. For digital libraries,
+the “yield” of such crawlers highly depends on the accuracy
+of researcher homepage classiﬁcation.
+
+Supervised methods for learning homepage classiﬁers rely
+on the availability of large amounts of labeled data. A widely
+used labeled dataset for webpage classiﬁcation is the We-
+bKB dataset4 that is built in 1997. However, due to recent
+changes in the information content on academic websites,
+this dataset is becoming outdated. For example, there are
+now pages on academic websites that are related to vari-
+ous activities such as invited talks, news, events that do not
+occur in the WebKB dataset. We refer to university, depart-
+ment and research center websites as “academic websites” in
+this paper. Compared to few decades back, it is easier now to
+ﬁnd faculty information, links to their homepages, informa-
+tion on research groups, course related notes and documents,
+and research papers from academic websites. Similarly, job
+postings, seminar announcements and notices are also being
+uploaded onto departmental websites in recent times [35].
+
+How can a homepage classiﬁer keep up in the face of
+rapidly changing types of pages on the Web? Speciﬁcally,
+given a classiﬁer that identiﬁes homepages with reasonable
+accuracy (as measured on the training datasets), how does
+it perform in the potentially diﬀerent deployment environ-
+ment? Semi-supervised methods that can exploit large amounts
+of unlabeled data together with limited amounts of labeled
+data for learning accurate classiﬁers have received signiﬁ-
+cant attention in recent research in machine learning due to
+
+1
+
+2
+
+3
+
+4
+
+http://citeseerx.ist.psu.edu
+
+http://arnetminer.org/
+
+http://scholar.google.com/
+
+http://www.cs.cmu.edu/∼webkb/
+
+471the fact that labeling examples for any supervised learning
+problem requires intensive human labor [33].
+
+Against this background, one question that can be raised
+
+is: Can we design techniques to eﬀectively adjust the previously-
+trained classiﬁer to the changed content on the Web, while
+minimizing the human eﬀort required for labeling new data,
+and under what conditions, can such an adjustment be pos-
+sible? The research that we describe in this paper addresses
+speciﬁcally this question.
+
+Contributions and Organization. We present two ap-
+proaches to researcher homepage classiﬁcation using unla-
+beled data readily available from academic websites. More
+precisely, we ﬁrst adapt the well-known co-training approach
+[4] to reﬂect the change in the data distribution over time.
+Second, we design an iterative algorithm based on the Mini-
+batch Gradient Descent technique for learning a conform-
+ing pair of predictors using two diﬀerent views of the data.
+We restrict ourselves to homepages of researchers in Com-
+puter Science since training datasets are available for this
+discipline. To the best of our knowledge, the problem of re-
+searcher homepage classiﬁcation using unlabeled data avail-
+able during focused crawling was not addressed in previous
+research. The contributions of this work are as follows:
+
+• We show that with the classiﬁers trained on existing
+datasets for researcher homepage classiﬁcation we in-
+correctly identify pages of types not seen in the train-
+ing datasets as homepages. This results in unaccept-
+able yield from the perspective of a focused crawler.
+• We design novel features based on URL surface pat-
+terns and terms to complement term and HTML fea-
+tures extracted from the content of homepages and
+show that these two sets of features can be treated as
+two “views” for a researcher homepage instance.
+
+• We show that the URL and content-based views can be
+used successfully in a co-training setup to adapt clas-
+siﬁers to the changing academic environments using
+unlabeled data. This ﬁnding enables us to accurately
+crawl the new academic website content without hav-
+ing to label a new dataset for re-training the classiﬁer.
+
+• Inspired by the success of co-training on this prob-
+lem, we investigate loss functions that capture the dis-
+parity between the classiﬁers’ predictions on the two
+views aﬀorded by co-training. We design an iterative
+algorithm based on the Mini-batch Gradient Descent
+technique for minimizing this loss and learning a con-
+forming pair of predictors with the two views.
+
+• Finally, we show that minimizing our proposed loss
+function on unlabeled data closely corresponds to the
+eﬀect demonstrated by co-training techniques. We posit
+that this loss can, therefore, be used as a measure, for
+tracking the progress of co-training schemes even in
+the absence of a validation dataset.
+
+Although in this paper we focus on the design of accurate
+approaches for researcher homepage classiﬁcation, our ob-
+jective is to integrate this classiﬁcation component in the
+context of focused crawling, to improve retrieval and index-
+ing of scientiﬁc publications in digital libraries such as Cite-
+Seer and ArnetMiner.
+In these usage environments, since
+maintaining up-to-date collections of research literature is
+of primary importance, having an accurate list of homepage
+
+URLs for frequent, periodic tracking is both feasible and
+scalable, compared to examining the entire content at aca-
+demic websites each time.
+
+The rest of this paper is organized as follows: We brieﬂy
+summarize closely related work in Section 2. Researcher
+homepage classiﬁcation is discussed in Section 3. We elab-
+orate on details of our co-training experiments and learning
+conforming predictor pairs in Section 4. Experimental setup,
+datasets and results are discussed in Section 5, followed by
+a summary and future extensions to our work.
+2. RELATED WORK
+
+Researcher homepage classiﬁcation is a well-studied web-
+page classiﬁcation problem in context of digital libraries such
+as CiteSeer [22] and ArnetMiner [40]. Typically, content-
+based term features and HTML structure-based features are
+used for classifying webpages [36]. We propose the use of
+URL features as additional evidence for homepage identi-
+ﬁcation. A smaller set (compared to ours) of URL-based
+features (presence of part of the name, presence of the char-
+acter ‘∼’, etc.), was used in isolating homepages among the
+search engine results for researcher name queries by Tang, et
+al [40]. URL-based features are widely used in tasks related
+to the Web. For example, URL strings were used for extract-
+ing rules to solve the webpage de-duplication problem [21].
+Shih and Karger [38] used URL features, the visual place-
+ments of links in the referring pages to a URL for improv-
+ing applications such as ad-blocking and recommendation,
+whereas a preliminary study by Kan and Thi [20] illustrates
+the use of URLs in performing fast webpage classiﬁcation.
+
+The problem of collecting a high-quality researcher home-
+page collection was studied for Japanese websites by Wang,
+et al. using on-page and anchor text features [42]. Tang, et
+al. studied homepage acquisition from search engine results
+using researcher names as queries [40]. In contrast, we seek
+to apply focused crawling using a seed list of academic web-
+sites (where researcher homepages are typically hosted) to
+acquire such a collection. Focused crawling ﬁrst proposed
+by Bra, et al. is a rich area of research on the Web [5, 19].
+Chakrabarti, et al. [7] present a discussion on the main com-
+ponents involved in building a focused crawler. Although
+focused crawling is our motivating application, this paper
+deals with the classiﬁer component of the crawler and not
+with the crawler itself.
+
+We show that the focused crawling scenario presents novel
+challenges in using a pre-trained homepage classiﬁer in iden-
+tifying relevant pages. Speciﬁcally, the classiﬁer needs to be
+attuned to the changing types of pages on the Web. Co-
+training is proposed as a solution for addressing this chal-
+lenge for homepage classiﬁcation. Blum and Mitchell [4]
+ﬁrst proposed co-training, an approach for semi-supervised
+learning when the number of labeled examples available for
+training is limited, and applied it to webpage classiﬁcation.
+This approach requires having two views of features for the
+instances and has been shown to work well when the two
+views satisfy certain assumptions on “suﬃciency” and “in-
+dependence” [30]. Recent research addresses techniques for
+decomposing the feature set into two views when such a split
+is not naturally available [9, 15].
+
+Multiview learning (of which co-training is a special case,
+with two views) is typically addressed by maximizing “con-
+sensus” or agreement among the diﬀerent views [39, 24, 10].
+Most solutions to multiview learning tend to frame the prob-
+lem in terms of a global optimization problem and simulta-
+
+472neously learn classiﬁers for all the underlying views. In some
+cases, the solutions depend on underlying classiﬁcation algo-
+rithm used [17, 6]. Although our proposed algorithm based
+on mini-batch gradient descent seeks to maximize consensus
+as well, our approach is a generic technique assuming only
+that the underlying classiﬁers output initial “parameter vec-
+tors” that are altered using a simple, iterative algorithm.
+3. FEATURES FOR HOMEPAGE
+
+CLASSIFICATION
+
+Webpage or text classiﬁcation is typically handled using
+“bag of words” approaches. Speciﬁcally, the frequently oc-
+curring and discerning terms are collected from training data
+to form a feature dictionary that is used to represent in-
+stances as normalized term frequency or TFIDF vectors [26].
+Homepage classiﬁcation was previously studied as a text
+classiﬁcation problem using term features [32, 31]. Previous
+work on the same problem also used other content-based
+features related to the HTML structure of the page such
+as the number of images/tables on the page, and the terms
+commonly found in anchor text of homepages [12]. In this
+study, we extracted content-based and URL-based features
+from our training sets. These features and the size of fea-
+ture sets are summarized in Table 1. The term dictionaries
+contain terms that occur in at least three documents (i.e.,
+webpages) and at least ﬁve times in the training set.
+
+In addition to term dictionaries, we hypothesize that the
+URL strings of homepages can provide additional evidence
+for identifying homepages. Hence, we design novel URL-
+based features based on surface patterns and presence in
+WordNet5. The URL-based features are explained in the
+next subsection.
+
+Type of features
+Content-based
+Top unigrams
+Number of tables/links/images on the page
+Unigrams from anchor text on the page
+URL-based
+Top unigrams and bigrams from URL strings,
+surface pattern and wordnet features
+
+#features
+
+18674
+3
+30
+
+1039
+
+Table 1: Feature types and the size of feature sets used
+in homepage identiﬁcation.
+3.1 URL strings as additional evidence
+
+The idea of using URL strings in academic homepage iden-
+tiﬁcation comes from an error analysis of a crawl obtained
+with the content-based classiﬁer. Consider some example
+URLs we encountered in our crawl listed in Table 2.
+
+With some knowledge in academic browsing, one can con-
+ﬁdently guess that the webpages at the URLs (1), (2), and
+(3) are unlikely to be researcher homepages. Similarly, among
+the URLs (4), and (5), while the former seems to be a
+homepage, the latter seems to lead to a course page. The
+above conjectures are based on the presumption that the
+URL strings are not “arbitrary”, but, instead conventions
+are observed that are indicative of the target content at the
+URL. For instance, in the previous examples, words such as
+“projects”, “events”, alphanumeric patterns of the terms in
+the URL indicate that the URLs, (1), (2), (3) and (5) are
+most possibly not researcher homepages.
+
+Treating “/” as delimiters, we extract features from the
+URL string following the domain name of a webpage. The
+
+5
+
+http://wordnet.princeton.edu/
+
+list of all unigrams and bigrams from URL strings that oc-
+cur more than thrice in the training dataset, comprise the
+URL-term dictionary. For terms in the URL not present
+in this dictionary, we look for their presence in WordNet to
+check if they are common words or proper nouns. WordNet
+is a large, lexical database of nouns, verbs, adjectives and
+adverbs for English, organized as a concept graph [29, 16].
+In addition, we capture the surface patterns of the URLs
+including the presence of hyphenated or underscored words,
+alphanumeric patterns, long words (i.e., words having greater
+than 30 characters), question marks and the presence of
+characters such as tilde. These features are designed to ﬁlter
+out the URLs that commonly represent course pages, an-
+nouncements, calendars and other auto-generated content.
+For instance, a typical homepage URL string in Computer
+Science departments has the name of the researcher follow-
+ing the ∼ character after the domain name
+(e.g., http://people.cs.umass.edu/∼mccallum/).
+This pattern is usually captured by our “TILDENONDICT”
+feature, where mccallum is a non-dictionary term. Partial
+sets of extracted features are shown along with the URLs
+listed in Table 2.
+
+The above sets of features perform very well on the train-
+ing datasets as shown Section 5. We, therefore, do not study
+other complicated, problem-speciﬁc feature design or feature
+selection.
+Instead our focus in this work is to study how
+these classiﬁers perform “in the wild”. We also note here
+that, a classiﬁer that can make accurate predictions using
+URL features can be quite beneﬁcial from the perspective of
+eﬃciency for a focused crawler. A crawler can potentially
+bypass examining the content of a page if a conﬁdent deci-
+sion can be made based on the URL string. However, we
+may not be able to always extract features from the URL
+strings. For instance, consider the following URLs from our
+crawls:
+http://john.blitzer.com/
+http://clgiles.ist.psu.edu/
+http://ben.adida.net/
+In these cases, it is not clear from the URL string that the
+target content refers to academic homepages. Even if com-
+plicated name-extraction based features were designed for
+the above cases, it is rare to ﬁnd academic homepages with
+‘.com’ and ‘.net’ domain suﬃxes. Based on the URL alone,
+we cannot be conﬁdent if the target content is an academic
+homepage or a company/personal homepage. For the sec-
+ond case, ‘clgiles’ could refer to a machine name. In addition
+to the above cases, given that feature dictionaries typically
+comprise features that meet a frequency requirement, we
+may not be able to extract features for all URLs.
+In our
+training datasets (Section 5), we were unable to extract URL
+features for about 27% of the instances. Therefore, content-
+based and URL features complement each other while iden-
+tifying homepage instances and a focused crawler might be
+required to use either or both of these sets of features.
+
+4. HOMEPAGE CLASSIFICATION USING
+
+UNLABELED DATA
+
+We show in our experiments (Section 5) that, although
+content-based features perform extremely well on the train-
+ing datasets, they are not very successful on the validation
+and test sets that were collected from the current-day aca-
+demic websites. On the other hand, URL features show
+good performance on both training and validation datasets.
+
+473- URL
+1
+
+www.cs.columbia.edu/robotics/projects/visual_control/allen-realtime.html
+SEQBEGIN robotics, robotics, projects, hyphenatedword, hyphenatedword
+www.cs.ucla.edu/events/events-archive/2011/limits-of-communication
+events, hyphenatedword, NUMBER, hyphenatedword
+http://www.cc.gatech.edu/hg/image/63622?f=ccfeature
+QMARK, hg, image, NONDICTWORD, NONDICTWORD SEQEND
+http://www.cs.umd.edu/∼djacobs/index.html
+TILDENONDICT, index
+www.cs.umd.edu/∼djacobs/CMSC828/CMSC828.htm
+TILDENONDICT, ALPHANUM, ALPHANUM
+
+2
+
+3
+
+4
+
+5
+
+Table 2: Example URLs with partial sets of extracted features (shown on the next line after each URL)
+
+However, as pointed out in the previous section, we may
+not be able to extract URL features for all instances and it
+is, therefore, imperative to have an accurate content-based
+classiﬁer as well.
+
+We now address the questions: Can we adapt the content-
+based classiﬁer to perform well in the deployment environ-
+ment with the help of the URL-based classiﬁer? Can the two
+classiﬁers “teach” each other so as to perform better in the
+new environment, using the co-training approach? Since the
+URL and content features provide evidence for classifying a
+webpage instance independently, intuitively, it appears pos-
+sible that there are instances that the URL classiﬁer makes
+mistakes on, which the content-based classiﬁer identiﬁes cor-
+rectly and vice versa.
+
+Blum and Mitchell proposed co-training in context of web-
+page classiﬁcation [4]. In their datasets, webpages are rep-
+resentable in terms of two distinct views: using terms on
+webpages and terms in the anchor text of hyperlinks point-
+ing to these pages. When few labeled examples are avail-
+able for training, they showed that co-training could be used
+to obtain predictions on the unlabeled data to enlarge the
+training set. Blum and Mitchell’s experiments and the sub-
+sequent experiments by Nigam and Ghani [30] showed that
+when a natural split of features is available, co-training that
+explicitly leverages this split has the potential to outperform
+classiﬁers that do not.
+
+We study the applicability and extension of co-training
+for our problem. Although the essential motivation is to
+make use of the naturally available feature split and enable
+classiﬁers to learn from each other, we highlight the follow-
+ing aspects of our setup: Previous studies and beneﬁts from
+co-training were illustrated on datasets where the unlabeled
+data is arguably from a similar distribution. That is, the
+positive and negative instances in the labeled datasets are
+representative of those in the unlabeled data. This is in
+contrast to our case, where our positive class is fairly well-
+deﬁned (homepages), whereas the negative class is described
+in terms of “not positive”. More precisely, although our
+training dataset has examples for the negative class, web-
+pages encountered during the crawls can belong to types not
+encountered in the labeled data. We present an error analy-
+sis in Section 5, that illustrates the “new” types of webpages
+encountered in our crawl, potentially causing the pre-trained
+content-based classiﬁers to underperform during crawling.
+
+The number of negative instances encountered during our
+crawls is higher in comparison with the number of posi-
+tive instances. While this aspect was noticed during our
+experiments, a previous estimation experiment using mark-
+recapture methods had indicated that academic homepages
+comprise a minute fraction of the Web [12]. We can expect
+this imbalance to become more prominent as more examples
+
+are sampled over the co-training rounds. In the algorithm
+studied by Blum and Mitchell, the ratio between the number
+of positive and negative instances added from the unlabeled
+data is maintained to be the same as that in the training
+dataset during each iteration of co-training [4]. We argue
+that avoiding this constraint is better in our scenario since
+we want the datasets to be more representative of the chang-
+ing distribution.
+
+Most classiﬁcation algorithms are sensitive to the number
+of positive and negative instances available in the training
+data and are known to learn biased classiﬁers in case of se-
+vere imbalance [3, 23]. We employ the idea of altering the
+mis-classiﬁcation costs for the underlying classiﬁers during
+each round of co-training to handle this problem. For ex-
+ample, if the training dataset has 10 positive and 100 neg-
+ative instances, we can set the penalty incurred on making
+mistakes on a negative instance to be 1
+10 th of the penalty
+incurred on making mistakes on a positive instance. For
+most implementations of classiﬁcation algorithms, the mis-
+classiﬁcation costs can be speciﬁed as a parameter during
+the training process [18].
+
+Our co-training setup is detailed in Algorithm 1. L and U
+represent the labeled and unlabeled datasets, respectively,
+available at each iteration. They comprise instances with
+both the views (content-based and URL-based feature sets).
+For a round of co-training, we train classiﬁers, C1 and C2, on
+the two available views, using misclassiﬁcation costs, ρ1 and
+ρ2, respectively. Next, “s” number of examples are sampled
+without replacement into S from the unlabeled data and C1
+and C2 are used to obtain predictions for these instances.
+The GetConf identEgs method is a generic placeholder that
+stands for a function that determines what instances from S
+are chosen for addition in subsequent rounds of co-training.
+We use the notation L+
+1 to represent the positive instances
+in the set L1 whereas L1
+1 indicates that the view 1 (or feature
+set 1) of the examples in L1 is being used.
+
+Based on previous studies in co-training [4, 30], we studied
+
+the following strategies for this function:
+
+• AddBoth: In this scheme, we add all examples from S
+that are labeled by C1 or C2 conﬁdently to the training
+set for the next round. This approach is similar to self-
+training used in semi-supervised learning where conﬁ-
+dently predicted unlabeled instances are added to the
+training set for retraining the classiﬁer in subsequent
+rounds [45]. However, in contrast with self-training
+that uses a single view, in AddBoth, conﬁdent pre-
+dictions are obtained from two sources (view 1 and 2)
+for addition into subsequent rounds.
+
+• AddCross: In this scheme, examples from S, conﬁ-
+dently labeled by C1 are added to view 2 for the next
+
+474round and vice versa. That is, we use the examples
+conﬁdently labeled by one classiﬁer while training the
+other classiﬁer in the next round. Cross-addition also
+seems resilient to handling the possibility of cascaded
+errors over the iterations. If a classiﬁer makes a con-
+ﬁdent but incorrect prediction, we would like to avoid
+feeding this example in the next round to the same
+classiﬁer, a common problem in self-training [45].
+
+• AddCrossRC: This scheme is similar to AddCross
+with the additional constraint on the number of posi-
+tive and negative instances added in each round. This
+constraint was originally studied by Blum and Mitchell
+and ensures that the ratio of the number of positive
+and negative instances added in each round is the same
+as that in the initial labeled dataset [4].
+
+Algorithm 1 Procedure for Co-training
+
+I nput: L, U , ‘s’
+L1 ← L, L2 ← L
+ρ1 ← φ, ρ2 ← φ
+while U (cid:4)= φ do
+
+Compute ρ1 using
+
+|L+
+1
+|L−
+1
+
+|
+
+|
+
+, ρ2 using
+
+|L+
+2
+|L−
+2
+
+|
+
+|
+
+.
+
+1, ρ1).
+2, ρ2).
+
+Train classiﬁer C1 using (L1
+Train classiﬁer C2 using (L2
+S ← φ
+Sample ‘s’ examples from U and move them to S.
+U ← U \ S
+S1, S2 ← GetConf identEgs(S, C1, C2)
+L1 ← L1 ∪ S1, L2 ← L2 ∪ S2
+
+end while
+Output: Classiﬁers C1, C2.
+
+The co-training algorithm is general and can be applied
+with any choice of classiﬁers on the two views. Blum and
+Mitchell provided a PAC-style analysis of co-training with
+probabilistic classiﬁers and showed that co-training works
+when the assumptions on suﬃciency and independence are
+met. That is, each view should be suﬃcient to predict the
+class label, and the two views are independent given the
+class label. Recent studies have proposed relaxed criteria
+under which co-training techniques still work [1]. However,
+in practice, it is tricky to judge if co-training works for a
+problem and to verify if the assumptions are satisﬁed [15].
+These questions are more relevant in context of recent re-
+search in obtaining two views from a single view when two
+views are not naturally available for applying co-training [9].
+With this context, we now discuss our formulation of the ef-
+fect obtained with co-training, in terms of a loss function.
+This formulation allows us to track whether the co-training
+process is beneﬁcial for a given problem, even without the
+use of a validation dataset.
+4.1 Learning Conforming Predictors on
+
+Unlabeled Data
+
+We assume that classiﬁers, C1 and C2 trained on the two
+views are parameterized in terms of their weight vectors, w1
+and w2. Most classiﬁcation algorithms e.g., Support Vector
+Machines (SVM) and Maximum Entropy (MaxEnt), output
+weight vectors capturing the importance of each feature as
+part of the training process [3].
+
+One can expect co-training to beneﬁt a classiﬁcation prob-
+lem if one classiﬁer (say, C1) can “guide” the other (C2) on
+examples that the latter makes mistakes on. This guidance
+is provided by adding examples conﬁdently labeled by C1 to
+
+the subsequent round of training C2. This observation hints
+at the possibility of directly manipulating C2, based on C1’s
+prediction for an example that C2 is not conﬁdent about.
+This eﬀect can be achieved by optimizing a function that
+directly captures the mismatch in the predictions of the two
+classiﬁers.
+
+Elaborating further, given that the concept classes, “pos-
+itive” and “negative” are still the same on unlabeled data, if
+C1 and C2 are accurate, they would make similar predictions
+on the unlabeled data. This intuition is the basis for “con-
+sensus maximization” widely adopted in multiview learning,
+of which co-training is a special case with two views [39, 24,
+10]. The mismatch in predictions by C1 and C2 on unlabeled
+data can be quantiﬁed using a loss function. The squared
+error loss function commonly used in machine learning cap-
+tures this loss as:
+
+LU (w1, w2) =
+
+1
+|U |
+
+(cid:2)
+
+u∈U
+
+(f1(w1, u) − f2(w2, u))2
+
+The above formulation captures the average squared-diﬀerence
+in predictions from the two views on unlabeled data. w1
+and w2 correspond to the parameter vectors correspond-
+ing to C1 and C2, respectively, and u refers to an example
+from U , having two views,u 1 and u2. For a given exam-
+ple, u = (u1, u2), the functions, f1 and f2 act on u1 and u2
+respectively, and make the predictions from C1 and C2 com-
+parable. These functions could be generic (e.g. a function
+that outputs the probability that the instance is positive) or
+classiﬁer-dependent (for e.g. a function that outputs scaled
+distances from the separating hyperplane in case of Support
+Vector Machines). Minimizing L corresponds to adjusting
+the weight vectors, w1 and w2, so that they make similar
+predictions on U .
+
+In contrast with multiview learning methods, where learn-
+ing the classiﬁers is folded into a global objective function in
+sophisticated ways [39, 24, 10], we adopt a simpler approach
+that works oﬀ the initial parameter vectors and iteratively
+modiﬁes them in a “co-training like” manner. Note that this
+initialization plays a crucial role in avoiding trivial solutions
+(such as w1, w2 = 0) that are potentially possible since the
+loss is optimized only on unlabeled instances. Our proposed
+technique for obtaining the “pair of conforming classiﬁers”
+is described in Algorithm 2.
+
+In Algorithm 2, we start with the original parameter vec-
+tors w1 and w2 from classiﬁers C1 and C2, respectively,
+and iteratively adjust these vectors so that the values of
+f1(w1, u1) and f2(w2, u2) look similar for all u ∈ U . The
+input parameter, #oIters, refers to the number of times the
+inner loop comprising of the two gradient descent steps is ex-
+ecuted, where as, the #iIters, and α are parameters for the
+gradient descent algorithm. Overall, the values of #oIters,
+#iIters, and α control the rate of convergence of the algo-
+rithm and can be set experimentally. These parameters can
+be set based on the base classiﬁers used, noting when the
+decrease in the objective function value is below a threshold.
+Adaptive tuning of these parameters by tracking the change
+in the value of the objective function in every iteration is a
+subject for future study [34].
+
+In each iteration, we employ mini-batch gradient descent
+to minimize the loss function, once w.r.t. w1 and next w.r.t.
+w2. The mini-batch gradient descent algorithm is a hybrid
+approach often used for large-scale machine learning prob-
+lems. This approach combines the best of stochastic (on-
+
+475Algorithm 2 Learning a pair of Conforming Classiﬁers
+
+I nput: w1, w2, U , ‘s’, #oIters, #iIters,α
+o = 0
+while o ≤ #oIters do
+
+%Perform Mini-batch Gradient Descent to obtain a new w2
+i = 0
+while i ≤ #iIters do
+
+S = φ. Sample ‘s’ examples from U into Ut
+for u ∈ Ut do
+
+if f1(u1, w1) is conﬁdent then
+
+Add u to S
+
+.
+
+∂LS
+∂w2
+
+end if
+end for
+w2 ← w2 − α
+i ← i + 1
+end while
+%Perform Mini-batch Gradient Descent to obtain a new w1
+i = 0
+while i ≤ #iIters do
+
+S = φ. Sample ‘s’ examples from U into Ut.
+for u ∈ Ut do
+
+if f2(u2, w2) is conﬁdent then
+
+Add u to S
+
+∂LS
+∂w1
+
+.
+
+end if
+end for
+w1 ← w1 − α
+i ← i + 1
+end while
+o ← o + 1
+end while
+Output: w1, w2
+
+line) gradient descent and batch gradient descent to obtain
+fast convergence during optimization by running gradient
+descent on small batches of randomly selected examples [13].
+In our algorithm, in each iteration, a small batch of in-
+stances are randomly sampled from the unlabeled data, U
+and the loss function deﬁned using instances for which w1
+makes conﬁdent predictions from this sampled set. This loss
+is minimized using gradient descent to adjust w2. A simi-
+lar process is then applied for adjusting w1 using conﬁdent
+predictions from w2. In eﬀect, as the algorithm proceeds,
+we are adjusting the parameters of each classiﬁer so that it
+makes predictions that are aligned with those of the other
+classiﬁer’s conﬁdent predictions. Upon convergence, both
+w1 and w2 are adjusted so that they make conforming pre-
+dictions on the unlabeled data.
+
+In our experiments, we used the diﬀerentiable, logistic sig-
+moid function for f1 and f2. Typically, classiﬁers use the
+parameter vector, w, for computing decision values for each
+instance. That is, given an instance x, the dot product value,
+(cid:4)w, x(cid:5), is used for determining the label assignment for the
+instance. This value can be ‘squashed’ to a number between
+0 and 1 indicating that the probability that instance has a
+particular label with the logistic function [3]:
+
+P (t) =
+
+1
+
+1 + e−t with
+
+dP (t)
+
+dt
+
+= P (t) · (1 − P (t))
+
+Given, the simple form for the derivative, we can directly
+use the values of f1 and f2 (that we compute anyway), for
+computing the gradients in Algorithm 2. Although the eﬀect
+obtained by Algorithm 2 is similar to that of co-training, the
+conformity loss directly measures the eﬀect of co-training as
+it is being applied.
+In contrast, Algorithm 1 is typically
+terminated either when no more examples are available or
+by tracking the performance on a validation dataset.
+
+We provide a preliminary, experimental demonstration of
+the connection between co-training and our proposed algo-
+rithm in Section 5. A more detailed analysis, study of other
+choices for the loss function L and the functions, f1 and
+f2, are a subject of future work. Nevertheless, quantifying
+the discrepancy in predictions from the two views and an
+algorithm to directly address this aspect is an exciting step
+in understanding when co-training works. We show in Sec-
+tion 5 that our method can be used in lieu of a validation
+dataset for tracking the performance of co-training.
+5. EXPERIMENTS
+
+We discuss 3 types of experiments: First, we study the
+performance of content-based and URL-based features on
+the training and validation datasets. Second, we show that
+co-training can successfully address the problem of mismatch
+in the training and deployment environments for homepage
+classiﬁcation. Finally, we show that our proposed algorithm
+(Algorithm 2), achieves the same eﬀect as co-training.
+
+5.1 Datasets
+
+We describe the datasets available for studying academic
+homepage classiﬁcation for the Computer Science discipline.
+The WebKB dataset was previously used by several researchers
+for studying webpage and text classiﬁcation including semi-
+supervised learning and co-training [4, 27, 31, 33]. The We-
+bKB collection contains academic webpages from Computer
+Science departments of four universities: Cornell, Washing-
+ton, Texas and Wisconsin, categorized into 7 categories (stu-
+dent, faculty, staﬀ, department, course, project, and other).
+The “other” class comprises pages that cannot be ﬁt into
+the remaining six classes; for instance, a publications page
+that links to a page belonging to a faculty page. This col-
+lection was obtained in 1997 and is not quite representative
+in terms of the types of webpages available on the academic
+websites of the current day as shown in the error analysis we
+present shortly. Another set of author-provided homepages
+are available from the bibliographic resource for Computer
+Science and related areas, DBLP6. Although this collection
+of 6000 homepages is more recent, we do not have negative
+instances as part of this dataset.
+
+For the deployment scenario, we crawled the university
+websites listed in Table 3. These websites were selected ar-
+bitrarily from the list of top US graduate schools in Com-
+puter Science (obtained from rankings in US News7). We
+seeded our crawl with these URLs and used the open-source
+crawling software, Heritrix8 (version 1.14.3), for obtaining
+all web pages of content-type ‘text/html’, within a depth
+of 5 starting at the parent URL. In total, we were able to
+obtain 162, 369 webpages using this process. This crawl was
+performed in April, 2012 and hence, represents a relatively
+recent snapshot of content at these URLs. Note that, this
+setup was used for the purpose of experiments. Our ﬁnal
+goal is to embed accurate classiﬁers into the crawler, so as
+to avoid obtaining webpages that are not homepages.
+
+To validate the performance of our classiﬁers, we ran-
+domly selected sets of 100 webpages from each of the 16
+universities listed in Table 3 and manually labeled them.
+From the remaining pages, another set of 500 pages were
+randomly chosen for validating or tuning the methods pro-
+
+6
+
+7
+
+8
+
+http://www.informatik.uni-trier.de/∼ley/db/
+
+http://www.usnews.com/
+
+https://webarchive.jira.com/browse/HER
+
+476(1) http://www.cs.wisc.edu, (2) http://www.cs.umich.edu, (3) http://www.cs.umd.edu, (4) http://www.cs.ucla.edu
+(5) http://www.cis.upenn.edu, (6) http://www.cs.columbia.edu, (7) http://www.cs.princeton.edu, (8) http://www.eecs.berkeley.edu
+(9) http://www.cs.washington.edu, (10) http://www.cs.brown.edu, (11) http://www.cs.utexas.edu, (12) http://www.cs.cornell.edu,
+(13) http://www.eecs.mit.edu, (14) http://cs.illinois.edu, (15) http://www.cc.gatech.edu, (16) http://www.cse.ucsd.edu
+
+Table 3: List of Seed URLs
+
+Training(WebKB+DBLP) Unlabeled(Crawl) Test(Crawl) Validation(Crawl)
+
+9263/4719
+
+143145
+
+1600/89
+
+500/42
+
+Table 4: Datasets Description: Entry a/b represents a instances out of which b are labeled positive
+
+1
+F
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+5-CV
+Validation
+
+MaxEnt SVM
+
+NB
+
+NBM
+Classifier
+
+RF20 1C-SVM
+
+1
+F
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+5-CV
+Validation
+
+MaxEnt SVM
+
+NB
+
+NBM
+Classifier
+
+RF20 1C-SVM
+
+1
+F
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+5-CV
+Validation
+
+MaxEnt SVM
+
+NB
+
+NBM
+Classifier
+
+RF20 1C-SVM
+
+Figure 1: Content Features
+
+Figure 2: URL Features
+
+Figure 3: Content+URL Features
+
+posed in Section 4. For our experiments, we only consider
+instances for which both the views are available, that is,
+pages from which we are able to extract both URL and con-
+tent features. A summary of the datasets 9 just described is
+shown in Table 4.
+5.2 Classiﬁcation Experiments
+
+We study the performance of our content-based and URL
+features using the classiﬁcation algorithms: Naive Bayes
+(NB), Naive Bayes Multinomial (NBM), Random Forests
+(RF), Support Vector Machines using a linear kernel (SVM)
+and Maximum Entropy (MaxEnt). Naive Bayes and Naive
+Bayes Multinomial are generative models whereas Random
+Forests is an ensemble method using Decision Trees. Dis-
+criminative algorithms such as Support Vector Machines [41,
+11] and Maximum Entropy classiﬁers [31] are being used ex-
+tensively for text classiﬁcation problems in the recent times.
+These methods output parameter vectors as part of the
+training process that can be manipulated directly in our
+Algorithm 2. Further details on diﬀerent classiﬁcation al-
+gorithms and their parameters can be found in a standard
+machine learning textbook (e.g.
+[3]). The Naive Bayes al-
+gorithm is well-studied in context of co-training and its theo-
+retical analysis, although co-training is a classiﬁer-independent
+technique. For text classiﬁcation, the Naive Bayes Multino-
+mial classiﬁer is diﬀerent from Naive Bayes in terms of its
+modeling of term counts with multinomials [27].
+
+Figure 1 shows the weighted F 1 measure on our training
+(ﬁve-fold cross-validation) and validation datasets using the
+classiﬁcation algorithms above with content-based features.
+Figure 2 shows similar results with URL-based features. We
+used classiﬁer implementations provided by Weka [18], lib-
+SVM [8] and Mallet [28]. Where applicable, we tuned the
+parameters on the training datasets for the best performance
+(e.g., the C parameter for SVM, the number of trees in RF).
+Similarly, to handle potential imbalance in instances belong-
+ing to diﬀerent classes during co-training, we use appropriate
+misclassiﬁcation costs (e.g., using the CostMatrix option in
+Weka and the “w” setting in libSVM).
+
+As the ﬁgures illustrate, discriminative algorithms such as
+SVM and MaxEnt generally outperform the generative mod-
+
+9
+
+all datasets, dictionaries and feature files are available upon request
+
+els such as NB and NBM on the homepage identiﬁcation task
+using both content (Figure 1) and URL (Figure 2) features.
+The performance of URL-based classiﬁers (Figure 2) is typ-
+ically higher compared to that of content-based classiﬁers
+(Figure 1), especially on the validation set that was collected
+from the crawled data. We performed an error analysis on
+the validation set and noticed that the content-based clas-
+siﬁers suﬀer from a high false-positive rate, and incorrectly
+label negative instances as positive. The WebKB dataset in-
+cludes negative instances coming from types such as course,
+department, and project-related pages. However, about 212
+out of the 500 validation instances could not be categorized
+into any of the 7 types present in WebKB. Instead, we can
+capture these pages under the following new types:
+
+1. Webpages related to colloquium, seminars, lectures,
+
+publications, papers, talks, slides.
+
+2. Webpages that describe code, widgets, scripts, datasets.
+
+3. Webpages related to department activities such as pic-
+nics, pages with embedded photos, and personal pages.
+
+4. Webpages pertaining to information on news, events,
+
+highlights, faq, forms.
+
+5. Webpages pertaining to alumni-related information,
+
+job and contest calls.
+
+Given that our validation set only comprises 500 instances, it
+is reasonable to suspect that other types of webpages exist in
+our crawled collection. We used Information Gain [3] on the
+training and crawl-based datasets to understand the feature-
+class correlation between the two datasets. The top-10 fea-
+tures ranked by this measure, shown in Table 5, also point to
+the diﬀerence between the two environments. However, our
+aim is not to model new types of webpages, but rather, we
+wish to learn a discriminator that isolates academic home-
+pages from non-homepages. In our experiments, we noticed
+that webpages belonging to the new types 1 and 2 above
+were often misclassiﬁed as academic homepages. However,
+surface patterns and cue words such as “seminars” in the
+URLs are eﬀective for classifying these instances correctly.
+Further, we studied the following approaches for improv-
+ing performance of content-based classiﬁers for the new envi-
+ronment: First, we learned classiﬁers on the combined set of
+
+477training
+TILDENODICT
+TILDENODICT SEQEND
+ALPHANUMBER
+NONDICTWORD
+courses
+ALPHANUMBER SEQEND TILDENODICT SEQEND
+users NONDICTWORD
+users
+NONDICTWORD SEQEND courses
+homes
+
+URL
+crawl
+ALPHANUMBER
+TILDENODICT
+ALPHANUMBER ALPHANUMBER type
+HYPHENATEDWORD
+html
+ALPHANUMBER SEQEND
+content
+text
+date
+professor
+university
+research
+
+QMARK
+NUMBER
+
+NUMBER SEQEND
+
+Content
+
+training
+gmt
+server
+
+crawl
+university
+computer
+science
+department
+numImages
+numLinks
+cs
+box
+ri
+providence
+
+Table 5: Features ranked based on Information Gain on training and crawl datasets
+
+1
+F
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+MaxEnt
+NBM
+SVM
+
+ 5
+
+ 10
+
+ 15
+
+ 20
+
+Iteration
+
+1
+F
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+MaxEnt
+NBM
+SVM
+
+ 5
+
+ 10
+
+ 15
+
+ 20
+
+Iteration
+
+1
+F
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+MaxEnt
+NBM
+SVM
+
+ 5
+
+ 10
+
+ 15
+
+ 20
+
+Iteration
+
+Figure 4: Self-training: Content
+
+Figure 5: Co-training: Content
+
+Figure 6: Co-training: URL
+
+1
+F
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+AddCrossRC
+AddBoth
+AddCross
+
+ 5
+
+ 10
+
+ 15
+
+ 20
+
+Iteration
+
+1
+F
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+1
+F
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+URL-GD
+URL-CT
+
+ 5
+
+ 10
+
+ 15
+
+ 20
+
+Iteration
+
+Content-GD
+Content-CT
+
+ 5
+
+ 10
+
+ 15
+
+ 20
+
+Iteration
+
+Figure 7: Co-training Schemes
+(NBM)
+
+Figure 8: GD: Content (MaxEnt)
+
+Figure 9: GD: URL (MaxEnt)
+
+features for each instance (content+URL). The performance
+of these classiﬁers is shown in Figure 3. As the plots indi-
+cate, using the combined set of features on the validation set
+is better than using content features alone (Figure 1), but
+still worse than using URL features alone (Figure 2).
+
+Second, we trained a one-class SVM (linear kernel) for
+identifying homepages. One-class classiﬁers learn discrimi-
+nators for a class by using just the positive instances with-
+out explicitly modeling the other classes [37, 44]. One-class
+methods are typically used for detecting outliers and novelty
+detection. However, one-class SVMs do not work as well as
+binary classiﬁers for our problem on the training datasets.
+Their performance on the validation sets is better, but not
+comparable to the best performing classiﬁers on the valida-
+tion datasets (see Figures 1, 2, and 3, 1C-SVM).
+
+Finally, we employed self-training to train the content-
+based classiﬁers using the unlabeled data. Self-training is an
+iterative approach commonly used in semi-supervised learn-
+ing. Unlabeled examples, predicted conﬁdently by the clas-
+siﬁer are added back to enlarge the training dataset used in
+retraining the classiﬁer in the subsequent iteration [43]. The
+intuition behind self-training has been compared to pseudo-
+relevance feedback employed in information retrieval [30,
+26]. Although, this approach was successfully applied to
+some problems before [43], for some applications, is known to
+suﬀer from cascaded errors resulting in the ﬁnal classiﬁer be-
+ing less eﬀective than the initial one [45]. Our content-based
+
+classiﬁers do not show any improvements with self-training
+and, depending on the classiﬁcation algorithm, even show
+decreased accuracy on the validation set. This behavior is
+illustrated in Figure 4.
+
+We chose the better performing of all classiﬁcation algo-
+rithms: NBM, SVMs and MaxEnt as base classiﬁers for the
+remaining experiments.
+5.3 Co-training Experiments
+
+We studied co-training (Algorithm 1) using the diﬀerent
+schemes, AddBoth, AddCross, and AddCrossRC for se-
+lecting unlabeled instances for the next round. We use the
+same type of algorithm for training classiﬁers on both views
+(e.g., SVM for URL features as well as for content-based
+features). We sampled 5000 instances from the unlabeled
+dataset in each iteration and consider an instance for addi-
+tion only if a prediction was made for this instance with a
+conﬁdence probability ≥ 0.9. Note that the labeled train-
+ing set is WebKB+DBLP, whereas the unlabeled training
+set is the data from our crawl. Figure 5 shows the per-
+formance of content-based classiﬁers (within co-training) on
+the validation set. Figure 6 shows similar results using URL-
+based classiﬁers. As shown in the ﬁgures, co-training suc-
+cessfully manages to pull up the performance of the content-
+based classiﬁers using the unlabeled data. The URL classi-
+ﬁers being more stable add relevant instances to the labeled
+datasets over successive rounds, enabling the content-based
+classiﬁer to retrain itself over the iterations and learn to dis-
+
+478criminate better among the current-day pages on the web.
+Although the initial rounds do not result in improvements
+in the performance for the URL classiﬁer, once the content-
+based classiﬁers are up in accuracy, they are able to provide
+useful examples to the URL classiﬁers, in turn, resulting in
+improvements even for the URL classiﬁer (Figure 6).
+
+Figure 7 shows the eﬀect of diﬀerent schemes for instance
+selection during co-training iterations for the NBM algo-
+rithm. Diﬀerence in performance on the validation dataset
+was noticed for the co-training schemes with NBM as base
+classiﬁers. For SVM and MaxEnt pairs, there was no observ-
+able diﬀerence in the performance attained by the diﬀerent
+schemes, AddBoth and AddCross. The AddCross scheme
+does either better or on par with the other schemes. In ad-
+dition, since we use a similar scheme for adding instances in
+Algorithm 2, we chose AddCross for comparisons with the
+Gradient Descent based approach in the next section.
+
+Due to space constraints, we do not show the compari-
+son between co-training without the mis-classiﬁcation costs
+accounted for. Not surprisingly, not accounting for class
+imbalance results in mistakes on the positive instances due
+to the large number of negative instances in the training
+data and the performance on this class reduces drastically
+over the co-training iterations for both the AddBoth and
+AddCross schemes. The performance on AddCrossRC
+is not aﬀected due to the ratio constraint being maintained
+over the iterations since we started with an almost balanced
+training dataset (see Table 4). However, the performance
+with the AddCrossRC is not as good as the AddCross
+scheme with class imbalance accounted for.
+5.4 Gradient Descent Experiments
+
+Figures 8 and 9 show a run of Algorithm 2 with initial
+weight vectors obtained with MaxEnt classiﬁers. These ini-
+tial vectors are obtained by running the MaxEnt trainer over
+the labeled (training) dataset. The ﬁgures show the classiﬁ-
+cation performance on the validation set after the termina-
+tion of each iteration (from 1 to 20) of Algorithm 2, which
+minimizes the loss function in each round. Similar plots with
+the initial weight vectors obtained from SVMs are shown in
+Figures 10 and 11.
+
+The ﬁgures also show the comparison of the proposed gra-
+dient descent algorithm with co-training. We plot the max-
+imum F 1 score that was obtained with co-training exper-
+iments (previous sub-section) alongside the curves in Fig-
+ures 8-11, to illustrate that our proposed algorithm in eﬀect
+attains similar performance improvements that are possible
+with co-training. Although these plots show the F 1 varia-
+tion over the validation set, note that, the validation set is
+not used for tracking the optimization process. Instead, the
+algorithm can terminate either after a pre-set number of it-
+erations or by explicitly tracking the objective value for con-
+vergence. Each iteration of the algorithm involves running
+mini-batch gradient descent twice, once for each classiﬁer.
+
+We observed the objective values to be converging in about
+20 iterations when the algorithm is initialized with the weight
+vectors from MaxEnt whereas it takes about 50 iterations
+with those from SVM. These values correspond to the #oIters
+in Algorithm 2. The #iIters and α values for Mini-batch
+Gradient Descent were set to 50 and 0.1, respectively, in all
+experiments. About 1% of unlabeled data was randomly
+sampled in each round and examples that were predicted
+with 90% conﬁdence were used for computing the loss func-
+tion that is minimized with Gradient Descent. The #iIters
+
+and α values aﬀect the rate of convergence for Gradient De-
+scent. We chose these values based on experimentation, in-
+stead of adaptively using techniques such as line search [34].
+Experimenting with these parameters is left for future work.
+With the settings just described, the run times for conver-
+gence were similar to that of co-training.
+In general, de-
+pending on the classiﬁcation algorithms used, the co-training
+experiments took times ranging between 5min-4hrs on a 16-
+core, 800MHz, 32GB RAM, AMD Opteron, Linux server.
+
+We plot the F 1 on the validation dataset against the com-
+puted objective function value in Figure 12. The plot depicts
+the close correspondence between reducing the discrepancy
+between predictions based on the two views and the improv-
+ing performance on the validation dataset. We also illustrate
+the connection between the eﬀect of co-training and our pro-
+posed loss function by plotting the value of our loss function
+on unlabeled data available in that iteration as co-training
+progresses in Figure 13. This plot highlights the fact that
+when co-training works, it seems to be due to the reducing
+discrepancy between the predictions from the two views used
+in co-training. The list of top-10 features that undergo the
+most change in the MaxEnt weight vectors after Algorithm 2
+converges are shown in Figure 15.
+5.5 Evaluation on the Test Set
+
+Method
+NBM-Before
+NBM-After-CT
+SVM-Before
+SVM-After-CT
+SVM-After-GD
+MaxEnt-Before
+MaxEnt-After-CT
+MaxEnt-After-GD
+GET-1
+GET-2
+MaxEnt-Combined-Before
+MaxEnt-After-ST
+GET-1
+GET-2
+
+Precision Recall
+0.4700
+0.7980
+0.4947
+0.8167
+0.8826
+0.4167
+0.9295
+0.9401
+0.5598
+0.5614
+0.7219
+0.7098
+0.4765
+0.7591
+
+0.8910
+0.9350
+0.9413
+0.9147
+0.9175
+0.8806
+0.9234
+0.9272
+0.8668
+0.8761
+0.9469
+0.9418
+0.9273
+0.9365
+
+F1
+
+0.5890
+0.8470
+0.6048
+0.8559
+0.8977
+0.5380
+0.9262
+0.9158
+0.6719
+0.6724
+0.7938
+0.7849
+0.5895
+0.8201
+
+Table 6: Before/After performance on the test set with
+Content Features
+
+So far, we have been showing performance results using
+the validation set (Table 4) for the sake of illustration. We
+summarize our evaluation with our ﬁnal classiﬁers on the
+test dataset in Figure 14 and Table 6. The table shows the
+weighted precision, recall and F 1 measures [26] whereas the
+ﬁgure illustrates the improvements in F 1 via bar charts. We
+compare the original content-based classiﬁers trained on the
+training datasets (the ‘Before’ entries) with our proposed
+methods. The ‘After-CT’ entries use the classiﬁers obtained
+after co-training was employed with unlabeled data and ter-
+minated after convergence was attained on the validation
+datasets (typically in about 20 iterations). The ‘After-GD’
+entries use the weight vectors obtained after running Algo-
+rithm 2 starting with the original weight vectors.
+
+We also compared MaxEnt with “expectation regulariza-
+tion”, a technique proposed by Mann, et al [25]. In this semi-
+supervised learning method, additional regularization terms
+are added to the objective function while learning classiﬁers
+of the exponential family. These additional terms encourage
+the predictions on unlabeled data to meet certain expecta-
+tions that capture label priors or feature-correlations. The
+expectations are expressed as soft constraints while learn-
+
+4791
+F
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+Content-GD
+Content-CT
+
+ 5
+
+ 10
+
+ 15
+
+ 20
+
+Iteration
+
+1
+F
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+URL-GD
+URL-CT
+
+ 5
+
+ 10
+
+ 15
+
+ 20
+
+Iteration
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+1
+F
+
+ 0
+ 0.04 0.05 0.06 0.07 0.08 0.09 0.1 0.11 0.12
+
+ObjVal
+
+Figure 10: GD: Content (SVM)
+
+Figure 11: GD: URL (SVM)
+
+Figure 12: ObjVal vs. F1
+
+ 0.2
+
+e
+u
+l
+a
+V
+ 
+s
+s
+o
+L
+
+ 0.15
+
+ 0.1
+
+ 0.05
+
+ 0
+
+MaxEnt
+SVM
+
+ 5
+
+ 10
+
+ 15
+
+ 20
+
+Cotraining Iteration
+
+Figure 13: Reducing value of
+the squared-error loss as co-training
+progresses
+
+1
+F
+
+ 1
+
+ 0.8
+
+ 0.6
+
+ 0.4
+
+ 0.2
+
+ 0
+
+Org
+CT
+GD
+GET
+
+MaxEnt
+
+SVM
+
+NBM
+
+Classifier
+
+Figure 14: Performance of our
+methods on the test datasets
+
+Content
+numLinks
+numImages
+
+URL
+NONDICTWORD
+TILDENODICT
+NONDICTWORD SEQEND research
+LONGWORD
+LONGWORD SEQEND
+QMARK
+TILDENODICT SEQEND
+HYPHENATEDWORD
+grads
+ALPHANUMBER
+
+here
+courses
+slide
+academics
+education
+publications
+document
+
+Figure 15: Features that are most
+aﬀected after running Algorithm 2
+on MaxEnt weight vectors
+
+ing the classiﬁers [14]. For example, for our problem, we
+could specify constraints, which indicate that the feature
+‘homepage’ in the HTML title strongly suggests that the
+class-label is positive.
+
+We obtained the code for automatically generating con-
+straints from the labeled data using information gain and an
+implementation of the expectation regularization framework
+with MaxEnt classiﬁer (GETrainer) from the authors10. Us-
+ing the parameter settings suggested by the authors, the
+performance of the GETrainer on the test dataset is listed
+in the “GET-1” and “GET-2” rows in Table 14. Labeled data
+can be used to extract constraints but class labels are not re-
+quired for learning the GETrainer. The “GET-1” row refers
+to the performance using unlabeled data from the crawl en-
+vironment while training, where as the “GET-2” row shows
+the performance when the labeled dataset was used during
+training. Based on the performance of the GETrainer on the
+validation dataset with diﬀerent number of constraints, we
+chose the number of constraints to be 8000 for the “GET-1”
+setting and 6000 for “GET-2”.
+
+Figure 14 and Table 6 indicate that the “expectation reg-
+ularization” technique is succesful in capturing feature con-
+straints and improves the performance of our content-based
+classiﬁer. We also evaluated the GETrainer using feature
+vectors containing both content-based and URL features.
+For the combined set of features, the GE method achieves
+an improved performance although it is not very high com-
+pared to that obtained with the original classiﬁer (‘Before’
+entry). However, larger beneﬁts are obtained by harnessing
+the split of features in terms of the two views.
+6. SUMMARY AND FUTURE WORK
+
+We studied the problem of adapting a classiﬁer trained
+on a labeled dataset of webpages to a related environment
+containing newer types of webpages in the context of fo-
+cused crawling for researcher homepages. We showed that
+
+10We thank G. S. Mann, G. Druck and A. McCallum for sharing
+their implementation with us.
+
+co-training techniques, which use two diﬀerent views of the
+data, can eﬀectively incorporate unlabeled data to improve
+the classiﬁcation performance in the deployment (crawling)
+scenario. Although our evaluation is speciﬁcally for home-
+page classiﬁcation, we posit that our ﬁndings hold for other
+problems or domains. It is reasonable to expect a mismatch
+in training/test environments in any focused crawling situ-
+ation, given the changing rate of content on the Web. Intu-
+itively, we can expect our techniques to work well when the
+following criterion is met: a view v1 must be able to pre-
+dict at least one unlabeled example conﬁdently that view v2
+cannot and vice versa. When this condition is satisﬁed, the
+views can “help each other” over the iterations.
+
+We also proposed a novel formulation of co-training in
+terms of a loss function. This loss can be directly minimized
+via a mini-batch gradient descent algorithm. Our results
+indicated that even without a validation set, one can track
+the eﬀect of the co-training process via our loss function.
+
+In future, it would be interesting to explore other aspects
+of our algorithm for learning “conforming pairs of classi-
+ﬁers” as well as other forms of the loss function and function
+choices for comparing classiﬁer predictions.
+It would also
+be interesting to explore classiﬁers’ performance when small
+fractions of the newer types of webpages, manually labeled,
+will be added to the training sets. For focused crawling, our
+motivating scenario, we will study the beneﬁts of folding
+in our proposed URL and content-based classiﬁers into the
+crawl process both in terms of yield and eﬃciency.
+
+7. ACKNOWLEDGMENTS
+
+We thank the members of IBM India Research Labs and
+Daniel Kifer (Penn State) for helpful discussions related to
+optimization algorithms. We gratefully acknowledge partial
+support from the National Science Foundation.
+
+4808. REFERENCES
+
+[1] M. F. Balcan, A. Blum, and K. Yang. Co-Training and
+Expansion: Towards Bridging Theory and Practice. In
+NIPS. 2005.
+
+[2] K. Balog, T. Bogers, L. Azzopardi, M. de Rijke, and
+
+A. van den Bosch. Broad expertise retrieval in sparse data
+environments. In SIGIR, 2007.
+
+[3] C. M. Bishop.Pattern Recognition and Machine Learning
+
+(Information Science and Statistics). Springer-Verlag New
+York, Inc., 2006.
+
+[4] A. Blum and T. Mitchell. Combining labeled and unlabeled
+
+data with co-training. In COLT, 1998.
+
+[5] P. D. Bra, G. jan Houben, Y. Kornatzky, and R. Post.
+
+Information retrieval in distributed hypertexts. In In
+RIAO, 1994.
+
+[6] U. Brefeld and T. Scheﬀer. Co-em support vector learning.
+
+In ICML, 2004.
+
+[7] S. Chakrabarti, M. van den Berg, and B. Dom. Focused
+crawling: a new approach to topic-speciﬁc web resource
+discovery. In WWW, 1999.
+
+[8] C.-C. Chang and C.-J. Lin. LIBSVM: A library for support
+
+vector machines. ACM TIST, 2, 2011.
+
+[9] M. Chen, K. Weinberger, and Y. Chen. Automatic feature
+decomposition for single view co-training. In ICML, 2011.
+
+[10] C. M. Christoudias, R. Urtasun, and T. Darrell.
+
+Multi-View learning in the presence of view disagreement.
+In UAI, 2008.
+
+[11] N. Cristianini and J. Shawe-Taylor. An introduction to
+
+support Vector Machines: and other kernel-based learning
+methods. Cambridge University Press, 2000.
+
+[12] S. Das, C. L. Giles, P. Mitra, and C. Caragea. On
+
+identifying academic homepages for digital libraries. In
+JCDL, 2011.
+
+[13] O. Dekel, R. Gilad-Bachrach, O. Shamir, and L. Xiao.
+
+Optimal distributed online prediction using mini-batches.
+JMLR, 13, 2012.
+
+[14] G. Druck, G. Mann, and A. McCallum. Learning from
+
+labeled features using generalized expectation criteria. In
+SIGIR, 2008.
+
+[15] J. Du, C. Ling, and Z.-H. Zhou. When does cotraining work
+
+in real data? Knowledge and Data Engineering, IEEE
+Transactions on, may 2011.
+
+[16] C. Fellbaum. WordNet: An electronic lexical database. MIT
+
+Press, 1998.
+
+[17] R. Ghani. Combining labeled and unlabeled data for
+
+multiclass text categorization. In ICML, 2002.
+[18] M. Hall, E. Frank, G. Holmes, B. Pfahringer,
+
+P. Reutemann, and I. H. Witten. The weka data mining
+software: An update. SIGKDD Explorations, 11, 2009.
+
+[19] J. Junghoo Cho, H. Garcia-Molina, and L. P. Page.
+
+Eﬃcient crawling through url ordering. In WWW, 1998.
+[20] M.-Y. Kan and H. O. N. Thi. Fast webpage classiﬁcation
+
+using url features. In CIKM, 2005.
+
+[21] H. S. Koppula, K. P. Leela, A. Agarwal, K. P. Chitrapura,
+
+S. Garg, and A. Sasturkar. Learning url patterns for
+webpage de-duplication. In WSDM, 2010.
+
+[22] H. Li, I. G. Councill, L. Bolelli, D. Zhou, Y. Song, W.-C.
+
+Lee, A. Sivasubramaniam, and C. L. Giles. Citeseerx: a
+scalable autonomous scientiﬁc digital library. In InfoScale,
+2006.
+
+[23] X.-Y. Liu and Z.-H. Zhou. The inﬂuence of class imbalance
+
+on cost-sensitive learning: An empirical study. In ICDM,
+2006.
+
+[24] B. Long, P. S. Yu, and Z. M. Zhang. A general model for
+
+multiple view unsupervised learning. In SDM, 2008.
+
+[25] G. S. Mann and A. McCallum. Simple, robust, scalable
+
+semi-supervised learning via expectation regularization. In
+ICML, 2007.
+
+[26] C. D. Manning, P. Raghavan, and H. Schutze. Introduction
+
+to Information Retrieval. Cambridge University Press,
+2008.
+
+[27] A. McCallum and K. Nigam. A comparison of event models
+
+for naive bayes text classiﬁcation. In AAAI, 1999.
+
+[28] A. K. McCallum. Mallet: A machine learning for language
+
+toolkit. http://mallet.cs.umass.edu, 2002.
+
+[29] G. A. Miller. Wordnet: a lexical database for english.
+
+Commun. ACM, 38, 1995.
+
+[30] K. Nigam and R. Ghani. Analyzing the eﬀectiveness and
+
+applicability of co-training. In CIKM, 2000.
+
+[31] K. Nigam, J. Laﬀerty, and A. McCallum. Using maximum
+
+entropy for text classiﬁcation. In IJCAI Workshop on
+Machine Learning for Information Filtering, 1999.
+
+[32] K. Nigam, A. McCallum, S. Thrun, and T. Mitchell.
+Learning to classify text from labeled and unlabeled
+documents. In AAAI, 1998.
+
+[33] K. Nigam, A. K. McCallum, S. Thrun, and T. Mitchell.
+
+Text classiﬁcation from labeled and unlabeled documents
+using em. Machine Learning, 39(2-3), 2000.
+
+[34] J. Nocedal and S. J. Wright. Numerical Optimization.
+
+Springer, 2006.
+
+[35] J.-L. Ortega-Priego, I. F. Aguillo, and J. A.
+
+Prieto-Valverde. Longitudinal study of contents and
+elements in the scientiﬁc web environment. Journal of
+Information Science, 32(4), 2006.
+
+[36] X. Qi and B. D. Davison. Web page classiﬁcation: Features
+
+and algorithms. ACM Comput. Surv., 41(2), Feb. 2009.
+[37] B. Sch¨olkopf, A. J. Smola, R. C. Williamson, and P. L.
+
+Bartlett. New support vector algorithms. Neural
+Computation, May 2000.
+
+[38] L. K. Shih and D. R. Karger. Using urls and table layout
+
+for web classiﬁcation tasks. In WWW, 2004.
+
+[39] V. Sindhwani, P. Niyogi, and M. Belkin. A
+
+Co-Regularization approach to semi-supervised learning
+with multiple views. In ICML, 2005.
+
+[40] J. Tang, J. Zhang, L. Yao, J. Li, L. Zhang, and Z. Su.
+Arnetminer: extraction and mining of academic social
+networks. In KDD, 2008.
+
+[41] V. N. Vapnik. The nature of statistical learning theory.
+
+Springer-Verlag New York, Inc., 1995.
+
+[42] Y. Wang and K. Oyama. Web page classiﬁcation exploiting
+
+contents of surrounding pages for building a high-quality
+homepage collection. In ICADL, 2006.
+
+[43] D. Yarowsky. Unsupervised word sense disambiguation
+
+rivaling supervised methods. In ACL, 1995.
+
+[44] H. Yu, J. Han, and K.-C. Chang. Pebl: Web page
+
+classiﬁcation without negative examples. IEEE TKDE, jan.
+2004.
+
+[45] X. Zhu. Semi-Supervised learning literature survey.
+Technical report, Computer Sciences, University of
+Wisconsin-Madison, 2005.
+
+481

@@ -1,0 +1,1692 @@
+SOFIE: A Self-Organizing Framework
+
+for Information Extraction
+
+Fabian M. Suchanek
+Max-Planck Institute CS
+Saarbruecken, Germany
+suchanek@mpii.de
+
+Mauro Sozio
+
+Max-Planck Institute CS
+Saarbruecken, Germany
+
+msozio@mpii.de
+
+Gerhard Weikum
+
+Max-Planck Institute CS
+Saarbruecken, Germany
+
+weikum@mpii.de
+
+ABSTRACT
+This paper presents SOFIE, a system for automated on-
+tology extension. SOFIE can parse natural language docu-
+ments, extract ontological facts from them and link the facts
+into an ontology. SOFIE uses logical reasoning on the exist-
+ing knowledge and on the new knowledge in order to disam-
+biguate words to their most probable meaning, to reason on
+the meaning of text patterns and to take into account world
+knowledge axioms. This allows SOFIE to check the plau-
+sibility of hypotheses and to avoid inconsistencies with the
+ontology. The framework of SOFIE unites the paradigms of
+pattern matching, word sense disambiguation and ontolog-
+ical reasoning in one uniﬁed model. Our experiments show
+that SOFIE delivers high-quality output, even from unstruc-
+tured Internet documents.
+Categories and Subject Descriptors
+H.1. [Information Systems]: Models and Principles
+General Terms
+Algorithms, Design
+Keywords
+Ontology, Information Extraction, Automated Reasoning
+
+INTRODUCTION
+
+1.
+1.1 Background and Motivation
+
+Recently,
+
+several projects such as YAGO [37, 38],
+Kylin/KOG [42, 43], and DBpedia [4], have successfully con-
+structed large ontologies by using Information Extraction
+(IE).1 These ontologies contain millions of entities and tens
+of millions of facts (i.e., instances of relations between enti-
+ties). A hierarchy of classes gives them a clean taxonomic
+structure. Empirical assessment has shown that these ap-
+proaches can achieve an accuracy of over 95 percent.
+
+The focus in these projects has been on extracting infor-
+mation from the semi-structured components of Wikipedia
+(such as infoboxes and the category system).
+In order to
+achieve an even broader coverage, new sources must be
+brought into scope. One particularly rich source are natural-
+language documents, such as news articles, biographies, sci-
+entiﬁc publications, and also the full text of Wikipedia ar-
+
+1In this paper, ontology means a knowledge base of semantic
+facts.
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2009, April 20–24, 2009, Madrid, Spain.
+ACM 978-1-60558-487-4/09/04.
+
+ticles. But so far even the best IE methods have typically
+achieved only 80 percent accuracy (or less) in such settings.
+While this may be good enough for some applications, the
+error rate is unacceptable for an ontological knowledge base.
+The key idea to overcome this dilemma, pursued in this pa-
+per, is to leverage the existing ontology for its own growth.
+We propose to use trusted facts as a basis for generating
+good text patterns. These patterns guide the IE from nat-
+ural language text. The resulting new hypotheses are scru-
+tinized with regard to their consistency with the already
+known facts. This will allow extracting ontological facts of
+high quality even from unstructured text documents.
+1.2 Example Scenario
+
+Assume that a knowledge-gathering system encounters
+
+the following sentence:
+
+Einstein attended secondary school in Germany.
+
+Knowing that “Einstein” is the family name of Albert Ein-
+stein and knowing that Albert Einstein was born in Ger-
+many, the system might deduce that “X attended secondary
+school in Y” is a good indicator of X being born in Y . Now
+imagine the system ﬁnds the sentence
+
+Elvis attended secondary school in Memphis.
+
+Many people have called themselves “Elvis”. In the present
+case, assume that the context indicates that Elvis Presley is
+meant. But the system already knows (from the facts it has
+already gathered) that Elvis Presley was born in the State
+of Mississippi. Knowing that a person can only be born in
+a single location and knowing that Memphis is not located
+in Mississippi, the system concludes that the pattern “X at-
+tended secondary school in Y” cannot mean that X was born in
+Y . Re-considering the ﬁrst sentence, it ﬁnds that “Einstein”
+could have meant Hermann Einstein instead. Hermann was
+the father of Albert Einstein. Knowing that Hermann went
+to school in Germany, the system ﬁgures out that the pat-
+tern “X attended secondary school in Y” rather indicates that
+someone went to school in some place. Therefore, the sys-
+tem deduces that Elvis went to school in Memphis.2 This is
+the kind of “intelligent” IE that we pursue in this paper.
+1.3 Contribution
+
+The example scenario shows that extracting new facts
+that are consistent with an existing ontology entails several,
+highly intertwined problems:
+
+Pattern selection: Facts are extracted from natural lan-
+guage documents by ﬁnding meaningful patterns in the text.
+2This is actually true. Albert Einstein went to secondary
+school in Switzerland, not Germany.
+
+WWW 2009 MADRID!Track: Semantic/Data Web / Session: Linked Data631The accuracy of this technique critically depends on having
+a variety of meaningful patterns. It can be further boosted
+if counter-productive patterns are excluded systematically
+[36]. Thus, discovering and assessing patterns is a key task
+of IE.
+
+Entity disambiguation: For ontological IE, the words
+or phrases from the text have to be mapped to entities in the
+ontology. In many cases, this mapping is ambiguous. The
+word “Paris”, e.g., can denote either the French capital or
+a city in Texas. Since many location names, companies, or
+product names are ambiguous, ﬁnding the intended meaning
+of a word is often a diﬃcult task.
+
+Consistency checking: The newly extracted facts have
+to be logically consistent with the existing ontology. Con-
+sistency checking is an interesting problem by itself. In our
+case, the problem is particularly challenging, because a large
+set of IE-provided noisy candidates has to be scrutinized
+against a trusted core of facts.
+
+This paper presents a new approach to these problems.
+Rather than addressing each of them separately, we provide
+a uniﬁed model for ontology-oriented IE that solves all three
+issues simultaneously. To this end, we cast known facts, hy-
+potheses for new facts, word-to-entity mappings, gathered
+sets of patterns, and a conﬁgurable set of semantic con-
+straints into a uniﬁed framework of logical clauses. Then, all
+three problems together can be seen as a Weighted MAX-
+SAT problem, i.e., as the task of identifying a maximal set of
+consistent clauses. The approach is fully implemented in a
+system for knowledge gathering and ontology maintenance,
+coined SOFIE. The salient properties of SOFIE and novel
+research contributions of this paper are the following:
+
+• a new model for consistent growth of a large ontology;
+• a uniﬁed method for pattern selection, entity disam-
+
+biguation, and consistency checking;
+
+• an eﬃcient algorithm for the resulting Weighted MAX-
+SAT problem that is tailored to the speciﬁc task of
+ontology-centric IE;
+
+• experiments with a variety of real-life textual and semi-
+structured sources to demonstrate the scalability and
+high accuracy of the approach.
+
+The rest of the paper is organized as follows. Section 2
+discusses related work, Sections 3 and 4 present the SOFIE
+model and its implementation, and Section 5 discusses ex-
+periments.
+
+2. RELATED WORK
+
+Fact Gathering. Unlike manual approaches such as
+WordNet [18], Cyc [23] or SUMO [26], IE approaches seek
+to extract facts from text documents automatically. They
+encompass a wide variety of models and methods, includ-
+ing linguistic, learning, and rule-based approaches [32]. The
+methods often start with a given set of target relations and
+aim to collect as many of their instances (the facts) as pos-
+sible. These facts can serve for the purposes of ontology
+population or ontology learning.
+
+DIPRE [10], Snowball [2] and KnowItAll [17] are among
+the most prominent projects of this kind. They harness
+manually speciﬁed seed facts of a given relation (e.g., a small
+number of company-city pairs for a headquarter relation) to
+
+ﬁnd textual patterns that could possibly express the relation,
+use statistics to identify the best patterns, and then ﬁnd new
+facts from occurrences of these patterns. Leila [36] has
+further improved this method by using both examples and
+counterexamples as seeds, in order to generate more robust
+patterns. This notion of counterexamples is also adopted by
+SOFIE. Blohm et al.
+[9, 8] provide enhanced methods for
+selecting the best patterns.
+
+TextRunner [5] pursues the even more ambitious goal of
+extracting all instances of all meaningful relations from Web
+pages, a paradigm referred to as Open IE [16]. However, all
+of these projects extract merely non-canonical facts. This
+means (1) that they do not disambiguate words to entities
+and (2) that they do not extract well-deﬁned relations (but,
+e.g., verbal phrases). In contrast, SOFIE delivers canonical-
+ized output that can be directly used in a formal ontology.
+Wikipedia-centric Approaches. Recently, a number
+of projects have applied IE with speciﬁc focus on Wikipedia:
+DBpedia [4], work by Ponzetto et. al. [27], Kylin/KOG [42,
+43], and our own YAGO project [37, 38]. While Ponzetto
+et al.
+focus on extracting a taxonomic hierarchy from
+Wikipedia, DBpedia and YAGO construct full-ﬂedged on-
+tologies from the semi-structured parts of Wikipedia (i.e.,
+from infoboxes and the category system). SOFIE, on the
+other hand, can process the full body of Wikipedia articles.
+It is not even tied to Wikipedia but can handle arbitrary
+Web pages and natural-language texts.
+
+Kylin goes beyond the IE in DBpedia and YAGO by ex-
+tracting information not just from the infoboxes and cate-
+gories, but also from the full text of the Wikipedia articles.
+KOG (Kylin Ontology Generator) builds on Kylin’s output,
+uniﬁes diﬀerent attribute names, derives type signatures,
+and (like YAGO) maps the entities onto the WordNet taxon-
+omy, using Markov Logic Networks [31]. KOG builds on the
+class system of YAGO and DBpedia (along with the entities
+in each class) to generate a taxonomy of classes. Both Kylin
+and KOG are customized and optimized for Wikipedia arti-
+cles, while this paper aims at IE from arbitrary Web sources.
+[41] have presented an approach called
+Positive-Only Relation Extraction (PORE). PORE is a
+holistic pattern matching approach, which has been im-
+plemented for relation-instance extraction from Wikipedia.
+Unlike the approach presented in this paper, PORE does
+not incorporate world knowledge, which would be necessary
+for ontology building and extension.
+
+Wang et al
+
+Declarative IE. Shen et al.
+
+[33] propose a framework
+for declarative IE, based on Datalog. By encapsulating the
+non-declarative code into predicates, the framework pro-
+vides a clean model for rule-based information extraction
+and allows consistency constraints and checks against ex-
+isting facts (e.g., for entity resolution). The approach has
+been successfully applied for building and maintaining com-
+munity portals like DBlife [15], while the universal ontologies
+studied in this paper are not in the scope of the work.
+
+Reiss et al. [30] pursue a declarative approach that is sim-
+ilar to that of [33], but use database-style algebraic operator
+trees rather than Datalog. The approach greatly simpliﬁes
+the manageability of large-scale IE tasks, but does not ad-
+dress any ontology-centered issues.
+
+Poon et al.
+
+[28] use Markov Logic networks [31] for IE.
+Their approach can simultaneously tokenize bibliographic
+entries and reconcile the extracted entities. In Markov Logic,
+ﬁrst-order formulas that express properties of patterns and
+
+WWW 2009 MADRID!Track: Semantic/Data Web / Session: Linked Data632hypotheses are grounded and translated into a Markov ran-
+dom ﬁeld that deﬁnes a clique-factorized joint probability
+distribution for the entirety of hypotheses. Inferencing pro-
+cedures over such structures can compute probabilities for
+the truth of the various hypotheses. Our approach has algo-
+rithmic building blocks in common with [28], but follows a
+very diﬀerent architectural paradigm. Rather than perform-
+ing probabilistic inferences on the extracted entities, our ap-
+proach aims to identify the best subset of hypotheses that is
+consistent with the textual patterns, the existing ontology
+and the semantic constraints.
+
+Ontology Integration and Extension. The goal of the
+current paper is to provide means for automatically extend-
+ing an ontology by new facts found by IE methods – while
+preserving the ontology’s consistency. This setting resem-
+bles the issue of ontology integration: merging two or more
+ontologies in a consistent manner [34, 40]. However, our
+setting is much more diﬃcult, because the new facts are ex-
+tracted from highly noisy text and Web sources rather than
+from a second, already formalized and clean, ontology.
+
+Boer et. al.
+
+[13] present an approach for extending a
+given ontology, based on a co-occurrence analysis of entities
+in Web documents. However, they rely on the existence of
+documents that list instances of a certain relation. While
+these documents exist for some relations, they do not exist
+for many others; this limits the applicability of the approach.
+Banko et al. pursue a similar goal called Lifelong Learn-
+ing [6], implemented in the Alice system. Alice is based
+on a core ontology and aims to extend it by new facts us-
+ing statistical methods. The approach has not been tried
+out with individual entities (in canonicalized form). More-
+over, it lacks logical reasoning capabilities that are crucial
+for ensuring the consistency of the automatically extended
+ontology.
+
+We believe that SOFIE is the very ﬁrst approach to
+the ontology-extension problem that integrates logical con-
+straint checking with pattern-based IE, and is thus able
+to provide ontological facts about disambiguated entities in
+canonical form.
+
+3. MODEL
+3.1 Statements
+
+Facts and Hypotheses. A statement is a tuple of a re-
+lation and a pair of entities. A statement has an associated
+truth value of 1 or 0. We denote the truth value of a state-
+ment in brackets:
+
+bornIn(AlbertEinstein, Ulm)[1]
+
+A statement with truth value 1 is called a fact. A statement
+with an unknown truth value is called a hypothesis.
+
+Ontological Facts. SOFIE is designed to extend an ex-
+isting ontology. In principle, SOFIE could work with any
+ontology that can be expressed as a set of facts. For our
+experiments, we used the YAGO ontology [37], which can
+be expressed as follows:
+
+type(AlbertEinstein, Physicist)[1]
+subclassOf (Physicist, Scientist)[1]
+bornIn(AlbertEinstein, Ulm)[1]
+...
+
+Wics. As a knowledge gathering system, SOFIE has to
+address the problem that most words have several meanings.
+The word “Java”, for example, can refer to the programming
+
+language or to the Indonesian island.3 In a given context,
+however, a word is very likely to have only one meaning
+[19]. We deﬁne a word in context (wic) as a pair of a word
+and a context. For us, the context of a word simply is the
+document in which the word appears. Thus, a wic is a pair
+of a word and a document identiﬁer.4 We use the notation
+word@doc, so that, e.g., the word “Java” in the document
+D8 is denoted by Java@D8. We assume that all occurrences
+of a wic have the same meaning.
+
+Textual Facts. SOFIE has a component for extracting
+surface information from a given text corpus. This informa-
+tion also takes the form of facts. One type of facts makes
+assertions about the occurrences of patterns. For example,
+the system might ﬁnd that the pattern “X went to school in Y”
+occurred with the wics Einstein@D29 and Germany@D29.
+This results in the following fact:
+
+patternOcc(“X went to school in Y”,
+
+Einstein@D29, Germany@D29)[1]
+
+Another type of facts states how likely it is, from a linguis-
+tic point of view, that a wic refers to a certain entity. We
+call this likeliness value the disambiguation prior. One way
+of computing a disambiguation prior is to exploit context
+statistics (see Section 4). Here, we just give an example for
+facts about the disambiguation prior of the wic Elvis@D29:
+
+disambPrior(Elvis@D29, ElvisPresley, 0.8)[1]
+disambPrior(Elvis@D29, ElvisCostello, 0.2)[1]
+
+Hypotheses. Based on the ontological facts and the tex-
+tual facts, SOFIE forms hypotheses. These hypotheses can
+concern the disambiguation of wics. For example, SOFIE
+can hypothesize that Java@D8 should be disambiguated as
+the programming language Java:
+
+disambiguateAs(Java@D8, JavaProgrammingLanguage)[?]
+
+We use a question mark to indicate the unknown truth
+value of the statement. SOFIE can also hypothesize about
+whether a certain pattern expresses a certain relation:
+
+expresses(“X was born in Y”, bornInLocation)[?]
+
+Apart from textual hypotheses, SOFIE also forms hypothe-
+ses about potential new facts. For example, SOFIE could
+establish the hypothesis that Java was developed by Mi-
+crosoft:
+
+developed(Microsoft, JavaProgrammingLanguage)[?]
+
+Uniﬁed Model. By casting both the ontology and the
+linguistic analysis of the documents into statements, SOFIE
+uniﬁes ontology-based reasoning and information extraction:
+everything takes the form of statements. SOFIE will aim to
+ﬁgure out which hypotheses are likely to be true. For this
+purpose, SOFIE uses rules.
+3.2 Rules
+
+Literals and Rules. SOFIE will use logical knowledge
+to ﬁgure out which hypotheses are likely to be true. This
+knowledge takes the from of rules. Rules are based on liter-
+als. A literal is a statement that can have placeholders for
+
+3This is the problem of polysemy, where one word refers
+to multiple entities. Conversely, if one entity has multiple
+names (synonymy) this does not pose a problem, as SOFIE
+maps words to entities.
+4A wic is related to but diﬀerent from a concordance aka.
+KWIC (keyword in context) [24].
+
+WWW 2009 MADRID!Track: Semantic/Data Web / Session: Linked Data633the relation or some of the entities, e.g., bornIn(X, Ulm). A
+rule is a propositional ﬁrst order logic formula over literals,
+e.g., bornIn(X, Ulm) ⇒ ¬ bornIn(X, Timbuktu). As in
+Prolog and Datalog, all placeholders are implicitly univer-
+sally quantiﬁed. We postpone the discussion of the formal
+semantics of the rules to Section 3.3 and stay with an intu-
+itive understanding of rules for the moment.
+
+Grounding. A ground instance of a literal is a statement
+obtained by replacing the placeholders by entities. A ground
+instance of a rule is a rule obtained by replacing all place-
+holders by entities. All occurrences of a placeholder must
+be replaced by the same entity. For example, the following
+is a ground instance of the rule mentioned above:
+
+bornIn(Einstein, Ulm) ⇒ ¬ bornIn(Einstein, Timbuktu)
+
+SOFIE’s Rules. We have developed a number of rules for
+SOFIE. One of the rules states that a functional relation
+(e.g., the bornIn relation) should not have more than one
+argument for a given ﬁrst argument:
+
+∧
+∧
+⇒
+
+R(X, Y )
+type(R, function)
+diﬀerent(Y, Z)
+¬ R(X, Z)
+
+The rule guarantees, for example, that people cannot be
+born in more than one place. Since disambiguatedAs is also
+a functional relation, the rule also guarantees that one wic
+is disambiguated to at most one entity. There are also other
+rules, some of which concern the textual facts. One rule as-
+serts that if pattern P occurs with entities x and y and if
+there is a relation r such that r(x, y), then P expresses r.
+For example, if the pattern “X was born in Y” appears with
+Albert Einstein and his true location of birth, Ulm, then it
+is likely that “X was born in Y” expresses the relation bornIn-
+Location. A naive formulation of this rule looks as follows:
+
+∧
+⇒
+
+patternOcc(P, X, Y)
+R(X, Y )
+expresses(P, R)
+
+We need to take into account, however, that patterns hold
+between wics, whereas facts hold between entities. Our
+model allows incorporating this constraint in an elegant way:
+
+∧
+∧
+∧
+⇒
+
+patternOcc(P, WX, WY)
+disambiguatedAs(WX, X)
+disambiguatedAs(WY, Y )
+R(X, Y )
+expresses(P, R)
+
+There is a dual version of this rule: If the pattern expresses
+the relation r, and the pattern occurs with two entities x
+and y, and x and y are of the correct types, then r(x, y):
+
+∧
+∧
+∧
+∧
+∧
+∧
+∧
+⇒
+
+patternOcc(P, WX, WY)
+disambiguatedAs(WX, X)
+disambiguatedAs(WY, Y )
+domain(R, DOM )
+type(X, DOM )
+range(R, RAN )
+type(Y, RAN )
+expresses(P, R)
+R(X, Y )
+
+By this rule, the pattern comes into play only if the two
+entities are of the correct type. Thus, the very same pattern
+
+can express diﬀerent relations if it appears with diﬀerent
+types. Another rule makes sure that the disambiguation
+prior inﬂuences the choice of disambiguation:
+
+⇒
+
+disambPrior(W, X, N)
+disambiguatedAs(W, X)
+
+Softness. The rules for SOFIE have to be designed manu-
+ally. We believe that the rules we provided should be general
+enough to be useful with a large number of relations. More
+(relation-speciﬁc) rules can be added. In general, it is im-
+possible to satisfy all of the these rules simultaneously. For
+example, as soon as there exist two disambiguation priors
+for the same wic, both will enforce a certain disambigua-
+tion. Two disambiguations, however, contradict the func-
+tional constraint of disambiguatedAs. This is why certain
+rules will have to be violated. Some rules are less important
+than others. For example, if a strong disambiguation prior
+requires a wic to be disambiguated as X, while a weaker
+prior desires Y , then X should be given preference – un-
+less other constraints favor Y . This is why a sophisticated
+approach is needed to compute the most likely hypotheses.
+3.3 MAX-SAT Model
+
+SOFIE aims to ﬁnd the hypotheses that should be ac-
+cepted as true facts so that a maximal number of rules are
+satisﬁed. The problem can be cast into a maximum satis-
+ﬁability problem (MAX SAT problem). In our setting, the
+variables are the hypotheses and the rules are transformed
+into propositional formulae on them. This view would allow
+violating some rules, but it would not allow weighting them.
+Therefore, we consider here a setting where the formulae
+are weighted. One approach for dealing with weighted ﬁrst
+order logic formulae is Markov Logic [31]. Markov Logic,
+however, would lift the problem to a more complex level
+(that of inferring probabilities), usually involving heavy ma-
+chinery. Furthermore, Markov Logic Networks might not be
+able to deal eﬃciently with the millions of facts that YAGO
+provides. Fortunately, there is a simpler option, which also
+allows dealing with weighted logic formulae: the weighted
+maximum satisﬁability setting or Weighted MAX-SAT.
+
+Weighted MAX-SAT. The weighted MAX-SAT prob-
+
+lem is based on the notion of clauses:
+
+1, . . . , x1
+1, . . . , x0
+
+Definition 1: [Clause]
+A clause C over a set of variables X consists of
+(1) a positive literal set c1 = {x1
+n} ⊆ X
+(2) a negative literal set c0 = {x0
+m} ⊆ X
+A weighted clause over X is a clause C over X with an
+associated weight w(C) ∈ R+.
+Given a clause C over a set X of variables, we say that a
+variable x ∈ X appears with polarity p in C, if x ∈ C p. The
+semantics of clauses is given by the notion of assignments:
+Definition 2: [Assignment]
+An assigment for a set X of variables is a function v :
+X → {0, 1}. A partial assignment for X is a partial
+function v : X * {0, 1}. A (partial) assignment for X
+satisﬁes a clause C over X , if there is an x ∈ X , such
+that x ∈ C v(x).
+Definition 3: [Weighted MAX SAT ]
+Given a set C of weighted clauses over a set X of variables,
+the weighted MAX SAT problem is the task of ﬁnding an
+assignment v for X that maximizes the sum of the weights
+of the satisﬁed clauses:
+
+P
+
+c ∈ C is satisﬁed in v
+
+w(c)
+
+WWW 2009 MADRID!Track: Semantic/Data Web / Session: Linked Data634An assignment that maximizes the sum of the satisﬁed
+clauses in a weighted MAX SAT problem is called a solution
+of the problem.
+
+Mapping SOFIE’s Rules into Clauses. The task that
+SOFIE faces is, given a set of facts, a set of hypotheses and
+a set of rules, ﬁnding truth values for the hypotheses so that
+a maximum number of rules is satisﬁed. This problem can
+be cast into a weighted MAX-SAT problem as follows. We
+assume a ﬁnite set of rules, a ﬁnite set of ontological facts,
+and a ﬁnite set of textual facts. Together they implicitly de-
+ﬁne a ﬁnite set of entities. We map this model into clauses
+as follows:
+
+1. Each rule is syntactically replaced by all of
+
+its
+grounded instances. Since the set of entities is ﬁnite,
+the set of ground instances is ﬁnite as well. (Section
+4 will discuss eﬃcient techniques for performing this
+lazily on demand, avoiding many explicit groundings.)
+
+2. Each ground instance is transformed into one or mul-
+tiple clauses as usual in propositional logic. The fol-
+lowing rewriting template covers all rules introduced in
+Section 3.2: p1∧. . .∧pn ⇒ c   (¬p1∨. . .∨¬pn∨c)
+
+3. The set of all statements that appear in the clauses
+becomes the set of variables. Note that these state-
+ments will include not only the ontological facts and
+the textual facts, but also all hypotheses that the rules
+construct from them.
+
+These steps leave us with a set of variables and a set of
+clauses.
+
+Weighting. The clauses about the disambiguation of
+wics and the quality of patterns may possibly be violated.
+These are the clauses that contain the relation patternOcc or
+the relation disambPrior (see Section 3.2). We assign them
+a ﬁxed weight w. For the disambPrior facts, we multiply
+w with the disambiguation prior, so that the prior analysis
+is reﬂected in the weight. The other clauses should not be
+violated. We assign them a ﬁxed weight W . W is chosen so
+large that even repeated violation (say, hundred-fold) of a
+clause with weight w does not sum up to the violation of a
+clause with weight W . This way, every clause has a weight
+and we have transformed the problem into a weighted MAX-
+SAT problem.
+
+Ockham’s Razor. The optimal solution of the weighted
+MAX-SAT problem shall reﬂect the optimal assignment of
+truth values to the hypotheses. In practice, however, there
+are often multiple optimal solutions. In particular, some op-
+timal solutions may make hypotheses true even if there is no
+evidence for them. For example, an optimal solution may
+assert that a pattern expresses a relation even if there are
+no examples for the pattern. This is because a rule of the
+form A ⇒ B can always be satisﬁed by setting B to true,
+even if A (the evidence) is false. To avoid this phenomenon,
+we give preference to the solution that makes the least num-
+ber of hypotheses true.5 We encode this desideratum in our
+weighted MAX-SAT problem by adding a clause (¬h) with
+a small weight ε for each hypothesis h. This ensures that a
+hypothesis is made true only if there is evidence for it. Given
+that the number of hypotheses is huge, the desired solution
+
+5This principle is known as Ockham’s Razor, after the 14th-
+century English logician William of Ockham. In our setting
+(as in reality), omitting this principle leads to random hy-
+potheses being taken for true.
+
+will make only a very small portion of the hypotheses true.
+The exact value for ε is not essential. Given two solutions of
+otherwise equal weight, ε just serves to choose the one that
+makes the least number of hypotheses true.
+4.
+
+IMPLEMENTATION
+
+SOFIE’s main components are the pattern-extraction en-
+gine and the Weighted MAX-SAT solver. They are de-
+scribed in the next two subsections, followed by an explana-
+tion of how everything is put together into the overall SOFIE
+system.
+4.1 Pattern Extraction
+
+Pattern Occurrences. The pattern extraction compo-
+nent takes a document and produces all patterns that appear
+between any two entity names. First, the system tokenizes
+the document, splitting the document into short strings (to-
+kens). The tokenization identiﬁes and normalizes numbers,
+dates and, in Wikipedia articles, also Wikipedia hyperlinks.
+The tokenization employs lists (such as a list of stop words
+and a list of nationalities) to identify known words. The tok-
+enization also identiﬁes strings that must be person names.6
+The output of this procedure is a list of tokens. Next, “in-
+teresting” tokens are identiﬁed in the list of tokens. Since we
+are primarily concerned with information about individuals,
+all numbers, dates and proper names are considered “inter-
+esting”. Whenever two interesting tokens appear within a
+window of a certain width, the system generates a pattern
+occurrence fact. More precisely, assume x and y are inter-
+esting words and appear in document d, separated by the
+sequence of tokens p. Then the following fact is produced:
+
+patternOcc(p, x@d, y@d)[1]
+
+Tokenizing Wikipedia. Wikipedia is a special type of
+corpus, because it also provides structured information such
+as infoboxes, lists, etc.
+Infoboxes and categories are tok-
+enized as follows. The article entity (given by the title of
+the article) is inserted before each attribute name and be-
+fore each category name. For example, the part “born in =
+Ulm” in the infobox about Albert Einstein is tokenized as
+“Albert Einstein born in = Ulm”. By this minimal modiﬁcation,
+these structured parts become largely accessible to SOFIE.
+Disambiguation. Our system produces pattern occur-
+rences with wics. Each wic can have several meanings. The
+system looks up the potential meanings in the ontology and
+produces a disambiguation prior for each of them. For ex-
+ample, suppose word w occurs in document d and w refers
+to the entities e1, . . . , en in the ontology. Then, the system
+produces a fact of the following form for each ei:
+
+disambPrior(w@d, ei, l(d, w, ei))[1]
+
+Here, l(d, w, ei) is a real value that expresses the likelihood
+that w means ei in document d. There are numerous ap-
+proaches for estimating this value [3]. We use a simple but
+eﬀective estimation, known as the bag of words approach:
+Consider the set of words in d, and for each ei, consider
+the set of entities connected to ei in the ontology. We com-
+pute the intersection of these two sets and set l(d, w, ei) to
+the size of the intersection. This value increases with the
+amount of evidence that is present in d for the meaning ei.
+We normalize all l(d, w, ei), i = 1 . . . n to a sum of 1.
+
+6The preprocessing tools are available at http://mpii.de/
+~suchanek/downloads/javatools.
+
+WWW 2009 MADRID!Track: Semantic/Data Web / Session: Linked Data635We observe that this full disambiguation procedure is not
+always necessary. First, all literals in the document (such
+as dates) are already normalized. Hence, they are always
+unambiguous. Second, some words have only one meaning.
+For these tokens, our system produces no disambiguation
+prior. Instead, it produces pattern occurrences that contain
+the respective entity directly instead of the wic.
+
+4.2 Weighted MAX-SAT Algorithm
+
+Prior Assignments. In our weighted MAX-SAT prob-
+lem, we have variables that correspond to hypotheses (such
+as developed(Microsoft, JavaProgrammingLanguage)) and
+variables that correspond to facts (namely ontological facts
+and textual facts). A solution to the weighted MAX-SAT
+problem should assign the truth value 1 to all previously ex-
+isting facts. Therefore, we assign the value 1 to all textual
+facts and all ontological facts a priori. This assumes that the
+ontology is consistent with the rules. In the case of YAGO,
+used in all our experiments, this holds by the construction
+methods [38]. Furthermore, we assume that the ontology is
+complete on the type and means facts. For YAGO, this as-
+sumption is acceptable, because all entities in YAGO have
+type and means relations.
+If type and means are ﬁxed,
+this allows certain simpliﬁcations, most importantly, pre-
+computing the disambiguation prior (as explained in the pre-
+vious subsection). This gives us a partial assignment, which
+already assigns truth values to a large number of statements.
+Approximation Algorithms. The weighted MAX-SAT
+problem is NP-hard [20]7. This means that it is impractical
+to ﬁnd an optimal solution for large instances of the prob-
+lem. Some special cases of the weighted MAX-SAT problem
+can be solved in polynomial time [21, 29]. However, none
+of them applies in our setting. Hence, we resort to using an
+approximation algorithm. An approximation algorithm for
+the weighted MAX-SAT problem produces an assignment for
+the variables that is not necessarily an optimal solution. The
+quality of that assignment is assessed by the approximation
+ratio, i.e., the weight of all clauses satisﬁed by the assign-
+ment divided by the weight of all clauses satisﬁed in the
+optimal assignment. An algorithm for the weighted MAX-
+SAT problem is said to have an approximation guarantee of
+r ∈ [0, 1], if its output has an approximation ratio greater
+than or equal to r for all weighted MAX-SAT problems.
+Many algorithms have only weak approximation guarantees,
+but perform much better in practice. Among the numerous
+approximation algorithms that appear in the literature (see
+[7]), we focus here on greedy algorithms for eﬃciency. Their
+run-time is linear or quadratic in the total size of the clauses.
+Johnson’s Algorithm. One of the most prominent
+greedy algorithms is Johnson’s Algorithm [22]. It is particu-
+larly simple and has been shown to have an approximation
+guarantee of 2/3 [11]. However, the algorithm cannot pro-
+duce assignments with an approximation ratio greater than
+2/3 if the problem has the following shape [45]: For some
+integer k, the set of variables is X = {x1, . . . , x3k} and the
+set of clauses is
+
+x3i+1 ∨ x3i+2
+x3i+1 ∨ x3i+3
+¬x3i+1
+
+for i = 0, . . . , k − 1
+
+7The SAT problem is not NP-hard if there are at most two
+literals per clause. The weighted and unweighted MAX-SAT
+problems, however, are NP-hard even when each clause has
+no more than two literals.
+
+Unfortunately, this is exactly the shape of clauses induced
+by the rule for functional relations in the SOFIE setting
+(in negated form, see Section 3.2). The relation disam-
+biguatedAs already falls into this category, making John-
+son’s Algorithm perform poorly for the very instances that
+are common in our case of interest. Therefore, we con-
+sider diﬀerent greedy techniques that overcome this prob-
+lem, and develop an algorithm that is particularly geared
+for the structure of clauses that typically occur in SOFIE.
+
+FMS Algorithm. We introduce the Functional Max Sat
+Algorithm here, which is tailored for clauses of the above
+shape. The algorithm relies on unit clauses:
+
+Definition 4: [Unit Clauses]
+Given a set of variables X , a partial assignment v on X
+and a set of clauses C on X , a unit clause is a clause
+c ∈ C that is not satisﬁed in v and that contains exactly
+one unassigned literal.
+
+Intuitively speaking, unit clauses are the clauses whose sat-
+isfaction in the current partial assignment depends only on
+a single variable. Our algorithm uses them as follows:
+
+Set of weighted clauses C
+
+Algorithm 1: Functional Max Sat (FMS)
+Input: Set of variables X
+Output: Assignment v for X
+1 v := the empty assignment
+2 WHILE there exist unassigned variables
+3
+
+FOR EACH unassigned x ∈ X
+
+m0(x) :=P { w(c) | c ∈ C unit clause, x ∈ c0}
+m1(x) :=P { w(c) | c ∈ C unit clause, x ∈ c1}
+
+x∗ := arg max(|m1(x) − m0(x)|)
+breaking ties arbitrarily
+
+v(x∗) = m1(x∗) > m0(x∗) ? 1 : 0
+
+4
+
+5
+
+6
+
+7
+
+Note that if there are no unit clauses, the algorithm will set
+an arbitrary unassigned variable to 0. If m0(x) and m1(x)
+are only recomputed for variables aﬀected by the previous
+assignment, the FMS Algorithm can be implemented [35]
+to run in time O(n · m · k · log(n)), where n is the total
+number of variables in the clauses, k is the maximum number
+of variables per clause and m is the maximum number of
+appearances of a variable.
+
+DUC Propagation. Once the algorithm has assigned
+a truth value to a single variable, the truth value of other
+variables may be implied by necessity. These variables are
+called safe:
+
+Definition 5: [Safe Variable]
+Given a set of variables X , a partial assignment v on
+X and a weighted set of clauses C on X , an unassigned
+variable x ∈ X is called safe, if
+
+w(c) ≥
+
+w(c)
+
+c unit clause
+
+x ∈ cp
+
+c unsatisﬁed clause
+
+x ∈ c¬p
+
+for some p ∈ {0, 1}. p is called the safe truth value of x.
+It can be shown [35, 25, 44] that safe variables can be as-
+signed their safe truth value without changing the weight
+of the best solution that can still be obtained.
+Iterating
+this procedure for all safe variables is called Dominating
+
+X
+
+X
+
+WWW 2009 MADRID!Track: Semantic/Data Web / Session: Linked Data636Unit Clause Propagation (DUC Propagation). DUC Prop-
+agation subsumes the techniques of unit propagation and
+pure literal elimination employed by the Davis ˝U-Putnam-
+˝ULogemann ˝U-Loveland (DPLL) algorithm [12] for the SAT
+problem.
+
+We enhance the FMS Algorithm by invoking DUC propa-
+gation in each iteration of the outer loop (i.e., before assign-
+ing truth values to previously unassigned variables). The
+resulting algorithm is coined FMS∗. We prove [35]
+
+Theorem 1: [Approximation Guarantee of FMS∗]
+The FMS∗ Algorithm has approximation guarantee 1/2.
+Lazy Generation of Clauses. Our algorithm works on
+a database representation of the ontology. The hypotheses
+and the textual facts are stored in the database as well. Since
+our weighted MAX-SAT problem may be huge, we refrain
+from generating all clauses explicitly. Rather, we use a lazy
+technique that, given a statement s, generates all clauses in
+which s appears on the ﬂy [35]. The algorithm returns only
+those clauses that are not yet satisﬁed. It uses an ordering
+strategy, computing ground instances of the most constrain-
+ing literals ﬁrst.
+4.3 Putting Everything Together
+
+SOFIE Algorithm. SOFIE operates on a given set of
+ontological facts (the ontology) and a given set of docu-
+ments (the corpus). We run SOFIE in large batches, because
+hypothesis testing is more eﬀective when SOFIE considers
+many patterns and hypotheses together.
+
+SOFIE ﬁrst parses the corpus, producing textual facts.
+These are mapped into clause form, together with the result-
+ing hypotheses. Then, the FMS∗ Algroithm is run, assigning
+truth values to hypotheses. Afterwards, the true hypotheses
+can be accepted as new facts of the ontology. This applies
+primarily to new ontological facts (i.e., facts with relations
+such as bornOnDate). Going beyond the ontological facts,
+it is also possible to include the new expresses facts in the
+ontology. Thus, the ontology would store which pattern ex-
+presses which relation.
+
+Now suppose that, later, SOFIE is run on a diﬀerent cor-
+pus. Since the SOFIE algorithm assigns the truth value 1
+to all facts from the ontology, the later run of SOFIE would
+adopt the expresses facts from the previous run. This way,
+SOFIE can already build on the known patterns when it
+analyzes a new corpus.
+
+5. EXPERIMENTS
+
+To study the accuracy and scalability of SOFIE under
+realistic conditions, we carried out experiments with diﬀer-
+ent corpora, using YAGO [37] as the pre-existing ontology.
+YAGO contains about 2 million entities and 20 million facts
+for 100 diﬀerent relations. Our experiments here demon-
+strate that SOFIE is able to enhance YAGO by adding pre-
+viously unharvested facts and completely new facts without
+degrading YAGO’s high accuracy.
+
+We experimented with both semi-structured sources from
+Wikipedia and with unstructured free-text sources from the
+Web. In each of these two cases, we ﬁrst perform controlled
+experiments with a small corpus for which we could man-
+ually establish the ground truth of all correct and poten-
+tially extractable facts. We report both precision and re-
+call for these controlled experiments. Then, for each of the
+semi-structured and unstructured cases, we show results for
+
+large-scale variants, with evaluation of output precision and
+run-time. Recall is not the primary focus of SOFIE, espe-
+cially since we may hope for redundancy in large corpora.
+All experiments were performed with the rules from Section
+3.2, unless otherwise noted.
+In all cases, we used the de-
+fault weights W = 100 for the inviolable rules, w = 1 for
+the violable rules and ε = 0.1 for Ockham’s Razor. The
+experiments were run on a standard desktop machine with
+a 3 GHz CPU and 3.5 GB RAM, using the PostgreSQL
+database system.
+5.1 Semi-Structured Sources
+5.1.1 Controlled Experiment
+
+To study the performance of SOFIE on semi-structured
+text under controlled conditions, we created a corpus of 100
+random Wikipedia articles about newspapers. We decided
+for 3 relations that were not present in YAGO, and added
+10 instances for each of them as seed pairs to YAGO. SOFIE
+took 3 min to parse the corpus, and 5 min to compute the
+truth values for the hypotheses. We evaluated SOFIE’s pre-
+cision and recall manually, as shown in Table 1.
+
+Table 1: Results on the Newspaper Corpus (1)
+Relation
+
+Ground Output Correct Precision Recall
+
+foundedOnDate
+hasLanguage
+ownedBy
+
+truth pairs
+87
+29
+49
+
+89
+45
+57
+
+pairs
+87
+28
+49
+
+100% 97.75%
+96.55% 62.22%
+100% 85.96%
+
+Thanks to its powerful tokenizer, SOFIE immediately ﬁnds
+the infobox attributes for the relations (such as owner for the
+owner of a newspaper). In addition, SOFIE ﬁnds some facts
+from the article text, but not all (e.g., for hasLanguage).
+As our results show, SOFIE can achieve a precision that
+is similar to the precision of tailored and speciﬁcally tuned
+infobox harvesting methods as employed in [37, 38, 4, 42].
+To test the performance of SOFIE without infoboxes, we
+removed the infoboxes from half of the documents, the goal
+being to extract the now missing attributes from other parts
+of the articles. We chose our seed pairs from the portion of
+articles that did have infoboxes. Table 2 shows the results.
+
+Table 2: Results on the Newspaper Corpus (2)
+Relation
+Ground Output Correct Precision Recall
+
+foundedOnDate
+hasLanguage
+ownedBy
+
+truth pairs
+78
+18
+26
+
+89
+45
+57
+
+pairs
+77
+18
+26
+
+98.71% 86.51%
+100% 40.00%
+100% 45.76%
+
+Recall is much lower if the infoboxes are not present. Still,
+SOFIE manages to ﬁnd information also in the articles with-
+out infoboxes. This is because SOFIE ﬁnds the category
+“Newspapers established in...”. This category indicates the
+year in which the newspaper was founded.
+Interestingly,
+this category did not occur in our seed pairs for founde-
+dOnDate. Thus, SOFIE had no clue about the quality of
+this pattern. By help of the infoboxes, however, SOFIE
+could establish a large number of instances of foundedOn-
+Date. Since many of these had the category “Newspapers
+established in...”, SOFIE accepted also the category pattern
+“Newspapers established in X” as a good pattern for the
+relation foundedOnDate. In other words, newly found in-
+stances of the target relation induced the acceptance of new
+patterns, which in turn produced new instances. This prin-
+ciple is very close to what has been proposed for DIPRE [10]
+
+WWW 2009 MADRID!Track: Semantic/Data Web / Session: Linked Data637and Snowball [2]. However, in contrast to such prior work,
+SOFIE achieves this eﬀect without any special consideration,
+simply by its principle of including patterns and hypotheses
+in its reasoning model. In the ideal case, SOFIE could ex-
+tract the information solely from the article text, thus aban-
+doning the dependence on infoboxes. Then, SOFIE would
+perform a task similar to KYLIN [42]. Up to now, however,
+the performance of SOFIE on this task trails behind KYLIN,
+which has a recall of over 90%. This is because KYLIN is
+highly tuned and speciﬁcally tailored to Wikipedia, whereas
+SOFIE is a general-purpose information extractor.
+
+5.1.2 Large-Scale Experiment
+
+We created a corpus of 2000 randomly selected Wikipedia
+articles. We chose 13 relations that are frequent in YAGO.
+We added a rule saying that the birth date and the death
+date of a person shall not have a diﬀerence of more than 100
+years. For simpliﬁcation, we also added a rule saying that a
+person cannot be both an actor and a director of a movie.
+This setting poses a stress test to SOFIE because of the high
+thematic diversity: Articles could be “out of scope” (relative
+to the 13 target relations) and even an individual article
+could cover very heterogeneous topics; these diﬃculties can
+mislead any IE method. SOFIE took 1:27 hours to parse the
+corpus. It took 12 hours to create all hypotheses, and the
+actual FMS* Algorithm ran for 1 hour and 17 min. Table 3
+shows the results of our manual evaluation (where we always
+disregard facts that were already known to YAGO).
+
+Table 3: Results on the Wikipedia Corpus
+
+Relation
+
+actedIn
+bornIn
+bornOnDate
+diedOnDate
+directed
+establishedOnDate
+hasArea
+hasDuration
+hasPopulation
+hasProductionLanguage
+hasWonPrize
+locatedIn
+writtenInYear
+Total
+
+Output Correct
+pairs
+8
+116
+115
+19
+10
+44
+1
+1
+18
+4
+34
+100
+8
+478
+
+pairs
+8
+122
+119
+20
+8
+50
+1
+1
+20
+4
+35
+109
+8
+505
+
+Prec.
+
+100%
+95.08%
+96.63%
+95.00%
+80.00%
+88.00%
+100%
+100%
+90.00%
+100%
+97.14%
+91.74%
+100%
+94.65%
+
+The evaluation shows good results. However, the precision
+values are slightly worse than in the small-scale experiment.
+This is due to the thematic diversity in our corpus. The
+documents comprised articles about people, cities, movies,
+books and programming languages. Our relations, in con-
+trast, mostly apply only to a single type each. For exam-
+ple, bornOnDate applies exclusively to people. Thus, the
+chances for examples and counterexamples for each single
+relation are lowered. Still, the precision values are very
+good. For the bornIn relation, SOFIE found the category
+pattern “People from X”. In most cases, this category indeed
+identiﬁes the birth place of people. In some cases, however,
+the category tells where people spent their childhood. This
+misleads SOFIE. Overall, the patterns stemmed from the
+article texts, the categories, and the infoboxes. So SOFIE
+harvested both the semi-structured and the unstructured
+part of Wikipedia in a uniﬁed manner. Given this general-
+purpose nature of SOFIE, the results are remarkably good.
+
+5.2 Unstructured Web Sources
+5.2.1 Controlled Experiment
+
+To study the performance of SOFIE on unstructured text
+under controlled conditions, we used a corpus of newspa-
+per articles that has been used for a prototypical IE system,
+Snowball [2]. Snowball was run on a collection of some thou-
+sand documents. For a small portion of that corpus, the
+authors established the ground truth manually. For copy-
+right reasons, we only had access to this small portion. It
+comprises 150 newspaper articles. The author kindly pro-
+vided us with the output of Snowball on this corpus. The
+corpus targets the headquarters relation, which is of partic-
+ular ﬁnesse, as city names are usually highly ambiguous. To
+exclude the eﬀect of the ontology in SOFIE, we manually
+added all organizations and cities mentioned in the articles
+to YAGO. This gives us a clean starting condition for our ex-
+periment, in which all failures are attributed solely to SOFIE
+and not to the ontology. As the headquarters relation is not
+known to YAGO, we added 5 pairs of an organization and a
+city as seed pairs to the ontology. Unlike Snowball, SOFIE
+extracts disambiguated entities. Hence, we disambiguated
+each name in the ground truth manually. We expect SOFIE
+to disambiguate its output correctly, whereas we will count
+any surface representation of the ground truth entity as cor-
+rect for Snowball.
+
+To run SOFIE with minimal background knowledge, we
+ﬁrst ran it only with the isHeadquartersOf relation. This re-
+lation is not a function, so that SOFIE has no counterexam-
+ples. SOFIE took 2 minutes to parse the corpus, 22 minutes
+to create the hypotheses and 20 sec for the FMS∗ algorithm.
+We evaluated by the ideal metrics [2], which only takes into
+account “relevant pairs”, i.e., pairs that have as a ﬁrst com-
+ponent a company that appears in the ground truth. Table
+4 shows results for Snowball and SOFIE (as SOFIE 1).
+
+Table 4: Results on the Snowball Corpus
+
+Ground Output Relev Correct Precision Recall
+
+truth
+120
+120
+120
+
+pairs pairs
+65
+429
+35
+35
+46
+46
+
+pairs
+37
+32
+42
+
+(ideal)
+56.69% 30.89%
+91.43% 24.32%
+91.30% 31.08%
+
+Snowball
+SOFIE 1
+SOFIE 2
+
+SOFIE achieves a much higher precision than Snowball –
+even though SOFIE faced the additional task of disambigua-
+tion.
+In fact, the 3 cases where SOFIE fails are diﬃcult
+cases of disambiguation, where “Dublin” does not refer to
+the Irish capital, but to a city in Ohio. To see how semantic
+information inﬂuences SOFIE, we added the original head-
+quarteredIn relation, which is the inverse relation of isHead-
+quartersOf. We added a rule stating that whenever X is the
+headquarters of Y , Y is headquartered in X. Furthermore,
+we made headquarteredIn a functional relation, so that one
+organization is only headquartered in one location. The re-
+sults are shown as SOFIE 2 in Table 4. The inverse relation
+has allowed SOFIE to ﬁnd patterns, in which the organi-
+zation precedes the headquarter (“Microsoft, a Redmond-based
+company”). This has increased SOFIE’s recall to the level
+of Snowball’s recall. At the same time, the functional con-
+straint has kept SOFIE’s precision at a very high level.
+
+5.2.2 Large Scale Experiment
+
+To evaluate SOFIE’s performance on a large, unstructured
+corpus, we downloaded 10 biographies for each of 400 US
+senators, as returned by a Google search (less, if the pages
+
+WWW 2009 MADRID!Track: Semantic/Data Web / Session: Linked Data638could not be accessed or were not in HTML). We excluded
+pages from Wikipedia. This resulted in 3440 HTML ﬁles.
+Extracting information from these ﬁles is a particulary chal-
+lenging endeavor, because the documents are arbitrary, un-
+structured documents from the Web, containing, for exam-
+ple, tables, lists, advertisements, and occasionally also error
+messages. The disambiguation is particularly diﬃcult. For
+example, there was one senator called James Watson, but
+YAGO knows 13 people with this name.
+
+We added a rule saying that the birth date and the death
+date of a person shall not have a diﬀerence of more than
+100 years. As explained in Section 4.3, we ran SOFIE in 5
+batches of 20,000 pattern occurrences, keeping the true hy-
+potheses and the patterns from the previous iteration for the
+next one. Overall, SOFIE took 7 hours to parse the corpus
+and 9 hours to compute the true hypotheses. We evaluated
+the results manually by checking each fact on Wikipedia,
+thereby also checking whether the entities have been disam-
+biguated correctly. Table 5 shows our results.
+
+Table 5: Results on the Biography Corpus
+Relation
+# Output # Correct Precision
+
+politicianOf
+bornOnDate
+bornIn
+diedOnDate
+diedIn
+Total
+
+pairs
+339
+191
+119
+66
+29
+744
+
+pairs
+≈ 322
+168
+104
+65
+4
+673
+
+94.99%
+87.96%
+87.40%
+98.48%
+13.79%
+90.45%
+
+For politicianOf, we evaluated only 200 facts, extrapolating
+the number of correct pairs and the precision accordingly.
+Our evaluation shows very good results. SOFIE did not only
+extract birth dates, but also birth places, death dates, and
+the states in which the people worked as politicians. Each of
+these facts comes with its particular disambiguation prob-
+lems. The place of birth, for example, is often ambiguous, as
+many cities in the United States bear the same name. Even
+the birth date may come with its particular diﬃculties if the
+name of the person refers to multiple people. Thus, we can
+be extremely satisﬁed with our precision values.
+
+SOFIE could not establish the diedIn facts correctly,
+though. This is due to some misleading patterns that got
+established in the ﬁrst batch. Counterexamples were only
+found in a later batch, when the patterns were already ac-
+cepted. However, the general accuracy of SOFIE is still
+remarkable, given that the system extracted disambiguated,
+clean canonicalized facts from Web documents.
+
+5.3 Comparison of MAX-SAT Algorithms
+
+To see how the FMS∗ Algorithm performs in our SOFIE
+setting, we ran the algorithm on a small corpus of 250 biog-
+raphy ﬁles. We compared the FMS∗ Algorithm to Johnson’s
+Algorithm [22] and to a simple greedy algorithm that sets
+a variable to 1 if the weight of unsatisﬁed clauses in which
+the variable occurs positive is larger than the weight of un-
+satisﬁed clauses where it appears negative. Table 6 shows
+the results. The number of unsatisﬁed inviolable clauses
+was 0 in all cases. In general, all algorithms perform very
+well. However, the FMS∗ Algorithm manages to satisfy the
+largest number of rules.
+It violates only one tenth of the
+rules that the other algorithms violate.
+
+Table 6: MAX SAT Algorithms (SOFIE Setting)
+
+Algorithm
+
+Time Unsatisﬁed Weight of
+unsatisﬁed
+
+violable
+clauses
+
+clauses
+
+FMS∗
+Johnson
+Simple
+
+(of 172,165)
+
+(% of total)
+
+15 min
+7 min
+7 min
+
+241
+2,357
+2,583
+
+0.0013
+0,0301
+0.0365
+
+To study the performance of the FMS∗ Algorithm on general
+MAX-SAT problems, we used the benchmarks provided by
+the International Conference on Theory and Applications of
+Satisﬁability Testing8. We took all benchmark suites where
+the optimal solution was available: (1) randomly generated
+weighted MAX-SAT problems with 2 variables per clause
+(90 problems), (2) randomly generated weighted MAX-SAT
+problems with 3 variables per clause (80 problems) and (3)
+designed weighted MAX-SAT problems (geared for “diﬃ-
+cult” optimum solutions) with 3 variables per clause (15
+problems). Each problem has around 100 variables and
+around 600 clauses. Table 7 shows the results.
+
+Table 7: MAX SAT Algorithms (Benchmarks)
+
+Algorithm Averaged approximation ratios, %
+Suite 3
+99.9682
+99.9682
+99.9702
+
+Suite 2
+91.5369
+91.4946
+92.2848
+
+Suite 1
+86.6837
+86.6919
+87.3069
+
+Johnson
+Simple
+FMS∗
+
+All algorithms ﬁnd good approximate solutions, with ap-
+proximation ratios on average greater than 85%. The set-
+ting of benchmarks is somewhat artiﬁcial and not designed
+for approximate algorithms. However, the experiments give
+us conﬁdence that the FMS∗ Algorithm has at least compa-
+rable performance to Johnson’s Algorithm. Our main goal,
+however, was to devise an algorithm that performs well in
+the SOFIE setting. The approximation guarantee of 1/2
+gives a lower bound on the performance in the general case.
+6. CONCLUSION
+
+The central thesis of this paper is that the knowledge of
+an existing ontology can be harnessed for gathering and rea-
+soning about new fact hypotheses, thus enabling the on-
+tology’s own growth. To prove this point, we have pre-
+sented the SOFIE system that reconciles pattern-based in-
+formation extraction, entity disambiguation, and ontological
+consistency constraints into a uniﬁed framework. Our ex-
+periments with both Wikipedia and natural-language Web
+sources have demonstrated that SOFIE can achieve its goals
+of harvesting ontological facts with very high precision.
+
+For our experiments, we have used the YAGO ontol-
+ogy. However, we are conﬁdent that SOFIE could work
+with any other ontology that can be expressed in ﬁrst or-
+der logic. SOFIE’s main algorithm is completely source-
+independent. There is no feature engineering, no learning
+with cross validation, no parameter estimation, and no tun-
+ing of algorithms. Notwithstanding this self-organizing na-
+ture, SOFIE’s performance could be further boosted by cus-
+tomizing its rules to speciﬁc types of input corpora. With
+appropriate rules, SOFIE could potentially even accommo-
+date other IE paradigms within its uniﬁed framework, such
+as co-occurrence analysis [13] or infobox completion [42].
+
+8http://www.maxsat07.udl.es/
+
+WWW 2009 MADRID!Track: Semantic/Data Web / Session: Linked Data6397. REFERENCES
+[1] Approximating the value of two power proof systems,
+
+with applications to max 2sat and max dicut. In
+ISTCS 1995.
+
+[2] E. Agichtein, L. Gravano. Snowball: Extracting
+
+relations from large plain-text collections. In ICDL
+2000.
+
+[3] E. Agirre, P. Edmonds. Word Sense Disambiguation:
+
+Algorithms and Applications (Text, Speech and
+Language Technology). Springer, 2006.
+
+[4] S. Auer, C. Bizer, G. Kobilarov, J. Lehmann,
+
+R. Cyganiak, Z. G. Ives. Dbpedia: A nucleus for a
+Web of open data. In ISWC 2007.
+
+[5] M. Banko, M. J. Cafarella, S. Soderland,
+
+M. Broadhead, O. Etzioni. Open information
+extraction from the Web. In IJCAI 2007.
+
+[6] M. Banko, O. Etzioni. Strategies for lifelong
+
+knowledge extraction from the web. In K-CAP 2007.
+[7] M. Battiti, R. Protasi. Approximate algorithms and
+
+solutions for Max SAT. In G. Xue, editor, Handbook of
+Combinatorial Optimization , Kluwer, 2001.
+
+[8] S. Blohm and P. Cimiano. Using the Web to reduce
+
+data sparseness in pattern-based information
+extraction. In PKDD 2007.
+
+[9] S. Blohm, P. Cimiano, E. Stemle. Harvesting relations
+
+from the Web-quantiﬁying the impact of ﬁltering
+functions. In AAAI 2007.
+
+[10] S. Brin. Extracting patterns and relations from the
+
+World Wide Web. In Selected papers from the Int.
+Workshop on the WWW and Databases, 1999.
+
+[11] J. Chen, D. K. Friesen, H. Zheng. Tight bound on
+Johnson’s algorithm for maximum satisﬁability. J.
+Comput. Syst. Sci., 58(3):622–640, 1999.
+
+[12] M. Davis, G. Logemann, D. Loveland. A machine
+
+program for theorem-proving. Commun. ACM,
+5(7):394–397, 1962.
+
+[13] V. de Boer, M. van Someren, B. J. Wielinga.
+
+Extracting instances of relations from Web documents
+using redundancy. In ESWC 2006.
+
+[14] G. de Melo, F. M. Suchanek, A. Pease. Integrating
+
+YAGO into the Suggested Upper Merged Ontology. In
+ICTAI 2008.
+
+[15] P. DeRose, W. Shen, F. Chen , A. Doan,
+
+R. Ramakrishnan. Building structured Web
+community portals: A top-down, compositional, and
+incremental approach. In VLDB 2007.
+
+[16] O. Etzioni, M. Banko, M. J. Cafarella. Machine
+
+reading. In AAAI 2006.
+
+[17] O. Etzioni, M. J. Cafarella, D. Downey, S. Kok, A.-M.
+
+Popescu, T. Shaked, S. Soderland, D. S. Weld,
+A. Yates. Web-scale information extraction in
+KnowItAll. In WWW 2004.
+
+[18] C. Fellbaum, editor. WordNet: An Electronic Lexical
+
+Database. MIT Press, 1998.
+
+[19] W. A. Gale, K. W. Church, D. Yarowsky. One sense
+
+per discourse. In HLT 1991.
+
+[20] M. R. Garey and D. S. Johnson. Computers and
+
+Intractability: A Guide to the Theory of
+NP-Completeness. W. H. Freeman & Co., 1979.
+
+[21] B. Jaumard and B. Simeone. On the complexity of the
+maximum satisﬁability problem for horn formulas. Inf.
+Process. Lett., 26(1):1–4, 1987.
+
+[22] D. S. Johnson. Approximation algorithms for
+
+combinatorial problems. J. Comput. Syst. Sci.,
+9(3):256–278, 1974.
+
+[23] D. Lenat, R.V. Guha. Building Large Knowledge
+
+Based Systems: Representation and Inference in the
+Cyc Project. Addison-Wesley, 1989.
+
+[24] C. D. Manning and H. Schutze. Foundations of
+
+Statistical NLP. MIT Press, 1999.
+
+[25] R. Niedermeier and P. Rossmanith. New upper
+
+bounds for maximum satisﬁability. Journal of
+Algorithms, 36:2000, 2000.
+
+[26] I. Niles and A. Pease. Towards a standard upper
+
+ontology. In FOIS, 2001.
+
+[27] S. P. Ponzetto and M. Strube. Deriving a large-scale
+
+taxonomy from Wikipedia. In AAAI, 2007.
+
+[28] H. Poon and P. Domingos. Joint inference in
+
+information extraction. In AAAI, 2007.
+
+[29] V. Raman, B. Ravikumar, S. S. Rao. A simpliﬁed
+
+NP-complete MAXSAT problem. Inf. Process. Lett.,
+65(1):1–6, 1998.
+
+[30] F. Reiss, S. Raghavan, R. Krishnamurthy, H. Zhu,
+
+S. Vaithyanathan. An algebraic approach to rule-based
+information extraction. In ICDE 2008.
+
+[31] M. Richardson and P. Domingos. Markov logic
+
+networks. Machine Learning, 62(1-2), 2006.
+
+[32] S. Sarawagi. Information Extraction. Foundations and
+
+Trends in Databases, 2(1), 2008.
+
+[33] W. Shen, A. Doan, J. F. Naughton, R. Ramakrishnan.
+Declarative information extraction using datalog with
+embedded extraction predicates. In VLDB 2007.
+
+[34] S. Staab and R. Studer, editors. Handbook on
+
+Ontologies, 2nd edition. Springer, 2008.
+
+[35] F. M. Suchanek. Automated Construction and Growth
+of a Large Ontology. PhD thesis, Saarland University,
+Germany, 2008.
+
+[36] F. M. Suchanek, G. Ifrim, G. Weikum. Combining
+
+linguistic and statistical analysis to extract relations
+from Webdocuments. In KDD, 2006.
+
+[37] F. M. Suchanek, G. Kasneci, G. Weikum. YAGO: A
+
+Core of Semantic Knowledge. In WWW 2007.
+
+[38] F. M. Suchanek, G. Kasneci, G. Weikum. YAGO: A
+
+Large Ontology from Wikipedia and WordNet.
+Elsevier Journal of WebSemantics, 2008.
+
+[39] L. Trevisan, G. B. Sorkin, M. Sudan, D. P.
+Williamson. Gadgets, approximation, linear
+programming. SIAM J. Comput., 29(6):2074–2097,
+2000.
+
+[40] O. Udrea, L. Getoor, R. J. Miller. Leveraging data and
+
+structure in ontology integration. In SIGMOD 2007.
+
+[41] G. Wang, Y. Yu, H. Zhu. Pore: Positive-only relation
+
+extraction from Wikipedia text. In ISWC, 2007.
+
+[42] F. Wu and D. S. Weld. Autonomously semantifying
+
+Wikipedia. In CIKM 2007.
+
+[43] F. Wu and D. S. Weld. Automatically reﬁning the
+
+Wikipedia infobox ontology. In WWW 2008.
+
+[44] Z. Xing and W. Zhang. MaxSolver: an eﬃcient exact
+
+algorithm for (weighted) maximum satisﬁability.
+Artiﬁcial Intelligence, 164(1-2):47–80, 2005.
+
+[45] M. Yannakakis. On the approximation of maximum
+
+satisﬁability. In SODA 1992.
+
+WWW 2009 MADRID!Track: Semantic/Data Web / Session: Linked Data640

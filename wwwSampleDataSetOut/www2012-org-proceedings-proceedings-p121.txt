@@ -1,0 +1,1517 @@
+Compressed Data Structures for Annotated Web Search
+
+Soumen Chakrabarti†
+
+Sasidhar Kasturi†
+
+Bharath Balakrishnan†
+
+Ganesh Ramakrishnan†
+
+Rohit Saraf†
+
+ABSTRACT
+Entity relationship search at Web scale depends on adding
+dozens of entity annotations to each of billions of crawled
+pages and indexing the annotations at rates comparable to
+regular text indexing. Even small entity search benchmarks
+from TREC and INEX suggest that the entity catalog sup-
+port thousands of entity types and tens to hundreds of mil-
+lions of entities. The above targets raise many challenges,
+major ones being the design of highly compressed data struc-
+tures in RAM for spotting and disambiguating entity men-
+tions, and highly compressed disk-based annotation indices.
+These data structures cannot be readily built upon stan-
+dard inverted indices. Here we present a Web scale entity
+annotator and annotation index. Using a new workload-
+sensitive compressed multilevel map, we ﬁt statistical dis-
+ambiguation models for millions of entities within 1.15GB
+of RAM, and spend about 0.6 core-milliseconds per disam-
+biguation. In contrast, DBPedia Spotlight spends 158 mil-
+liseconds, Wikipedia Miner spends 21 milliseconds, and Ze-
+manta spends 9.5 milliseconds. Our annotation indices use
+ideas from vertical databases to reduce storage by 30%. On
+40×8 cores with 40×3 disk spindles, we can annotate and
+index, in about a day, a billion Web pages with two million
+entities and 200,000 types from Wikipedia.
+Index decom-
+pression and scan speed are comparable to MG4J.
+Category: H.3.3 Information search and retrieval; search
+process. General terms: Algorithms, experimentation,
+performance. Keywords: entity, annotation, indexing, search.
+1.
+
+INTRODUCTION
+
+Web search today is greatly enriched by recognizing and
+exploiting named entities, their attributes, and relations be-
+tween them [6, 10, 19, 21]. Mentions of the entities are
+embedded in unstructured, “organic” Web pages. In a typ-
+ical system architecture [13, 24, 12, 26, 20], a spotter ﬁrst
+identiﬁes short token segments or “spots” as potential men-
+tions of entities from its catalog. For our purposes, a catalog
+consists of a directed acyclic graph of type nodes, to which
+entity nodes are attached. Many entities may qualify for a
+given text segment, e.g., “Michael Jordan” or “Apple”. In the
+second stage, a disambiguator chooses among the candidate
+entities. Collectively, these two stages comprise an anno-
+tator. An annotation record consists of a document ID, a
+token span, and one or more entities e chosen by the disam-
+biguator, usually accompanied by some score of conﬁdence
+that the token span mentions that speciﬁc e. To assist in
+search, these annotations need to be indexed. Annotation
+indices are generally diﬀerent from standard text indices.
+Used along with text indices, annotation indices help an-
+swer powerful queries that relate types of entities, speciﬁc
+entity literals, words and phrases [20]. E.g., we can collect
+short windows that include the phrase “p played” within two
+tokens of m, where p is a physicist and m is a musical in-
+†IIT Bombay; contact soumen@cse.iitb.ac.in
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2012, April 16–20, 2012, Lyon, France.
+ACM 978-1-4503-1229-5/12/04.
+
+strument. We can then subject these windows to further
+statistical analysis to generate a ranked list of (cid:104)p, m(cid:105) tuples.
+1.1 The scaling challenge
+
+Text indexing systems have greatly scaled up since the
+early days of information retrieval. Even public-domain in-
+dexing systems like Lucene or MG4J [5] can tokenize and in-
+dex hundreds of documents per second per CPU core. Such
+speed is critical to process Web crawls with billions of pages,
+but it is challenging to preserve it in the face of the substan-
+tial extra work involved when indexing the annotated Web:
+the act of annotation itself, and indexing not just tokens,
+but also annotated entities and their types. It is critical for
+the annotation process and the indexing of annotations to be
+very fast, comparable to text indexing or even faster. While
+the text in each document version is indexed just once, an-
+notation indexing may be a continual process. As entity
+catalogs are augmented and cleaned up, and as annotators
+are actively trained, annotation indexing will usually be per-
+formed repeatedly.
+
+SemTag [13], among the earliest annotation systems, pro-
+cessed about 264 million Web pages. However, it used the
+TAP [15] entity catalog with only 72,000 entities and an-
+notated only two mentions per page on average.
+In con-
+trast, recent Web annotation systems [24, 12, 26, 20] often
+use Wikipedia, DBPedia or YAGO [29] with over 200,000
+types and two million entities. Our goal is to scale to Free-
+base (25 million entities) and beyond. Although the corpus
+is streamed from disk, as the entity catalog scales up, its
+associated disambiguation model parameters quickly ﬁll up
+RAM, leaving little space for preparing index runs. Com-
+pact data structures, usable by large classes of annotators,
+are therefore of broad interest.
+
+The Entity Engine [21] and the Dual Inverted (DI) index
+[9] focus on fast query times by investing more index space.
+They support only 10–20 types, and do not address com-
+pressing data structures for the annotation step itself. We
+justify supporting large catalogs in Section 2. Yet other re-
+search systems [24, 12, 26, 20, 17] focus on quality and not
+speed or scalability. We shall also see that most public do-
+main oﬀerings of annotation software or services [25, 23] are
+much slower than the system we present here. We set up
+terminology and review related work in Section 3.
+1.2 Our contributions
+
+In this paper we explore new challenges raised by anno-
+tated Web search involving large entity and type catalogs.
+In Section 2 we use experimental evidence from TREC and
+INEX to justify the need for large, ﬁne grained type catalogs.
+This contrasts with earlier approaches [21, 9] that critically
+relied on just 10–20 very broad types (person, place, phone
+number, etc.). Toward this end, we introduce and investi-
+gate two data structure problems:
+• For a large class [24, 12, 26, 20] of statistical annota-
+tors, we propose in Section 4 aggressively compressed
+and yet high-performance, in-memory multilevel maps.
+To our knowledge, no prior work on statistical disam-
+
+WWW 2012 – Session: Semantic Web Approaches in SearchApril 16–20, 2012, Lyon, France121biguation, which is becoming increasingly popular [27,
+20, 17], focuses on large-scale data structures suitable
+for storing model parameters.
+• In Section 5 we propose compressed indices for annota-
+tions. To avoid disk seeks, we must inline information
+from the entity mention sites (“snippets”) into specially
+designed posting lists; hence they are called snippet-
+interleaved-posting (SIP) indices.
+
+Aggressively compressed data structures are critical for fast
+annotation, because they help us save as much RAM as pos-
+sible for sorting index runs, which reduces index merge time.
+Our system is fully implemented using MG4J [5] compo-
+nents and can process a billion-page corpus on 40 hosts in
+under a day. In Section 6, we report on large-scale experi-
+ments with YAGO’s 200,000 types, two million entities, and
+a 500-million page Web corpus. Each key-value entry in our
+model map has a uncompressed payload of 128 bits (three
+integers mapping to a ﬂoat); this is compressed down to
+only 19.2 bits/entry. Nevertheless, we can disambiguate at
+0.6 core-milliseconds per spot, orders of magnitude faster
+than DBPedia Spotlight (158 ms/spot), Wikipedia Miner
+(21 ms/spot), and Zemanta (9.5 ms/spot), three popular
+annotators. Our annotation index is 20–30% smaller than
+using Lucene’s payload hook. Index decompression rates are
+competitive with MG4J’s posting scan.
+2. THE NEED FOR LARGE CATALOGS
+
+For the purpose of this paper, a catalog has a directed
+acyclic graph of types under the subtype-of relationship,
+with entities attached to type nodes with the instance-of re-
+lationship. Although entity(-aware) search systems [6, 10, 3,
+21, 9] are becoming common, no consensus is evident on the
+number or granularity of types to be supported for the new
+paradigm to be eﬀective. Prototypes range from one type
+(persons in expert search) to 10–20 broad types (person,
+place, sports team, phone number, etc.) [21, 9] to Word-
+Net [6]. Unfortunately, logs from commercial Web search
+engines, even when available (e.g., Live Labs, AOL), pro-
+vide only raw string queries, with no explicit indication of
+the pertinent types.
+
+In an initial attempt to remedy this problem, we had
+ﬁve volunteers identify the YAGO-compliant answer types
+for entity-seeking queries collected from TREC/INEX over
+1999–2006. They succeeded for 889 queries, reporting 315
+distinct types. The distribution of answer type frequency vs.
+rank shows a characteristic heavy tail behavior (Figure 1):
+collectively, rare types cannot be ignored. Given this is true
+of modest-sized query sets from two competitions, we antic-
+ipate the heavy tail behavior to be only more pronounced in
+Web queries.
+
+The Dual Inversion (DI) system [9] supports 21 types,
+among the largest type catalog used in Web-scale entity
+
+Count Description
+
+889 Queries available with YAGO anwer types
+271 Queries where YAGO type had no DI counterpart
+190 Queries where NDCG decreased on mapping to DI
+52% Queries with unmappable type or decreased NDCG
+0.53 NDCG with YAGO answer types
+0.43 NDCG with DI answer types
+
+Figure 2: Adverse eﬀect of mapping from YAGO
+[29] to coarser [9] answer types.
+
+search. To further study the eﬀect of a limited type cat-
+alog, we had volunteers try to map YAGO answer types
+to DI answer types. As Figure 2 summarizes, they often
+failed, and even otherwise, the broader type resulted in loss
+of entity ranking accuracy using a competitive entity rank-
+ing system [7]. These results strongly motivate supporting
+a large number of types.
+3. SYSTEM CHALLENGES AND
+
+PREVIOUS APPROACHES
+
+Entity annotation to automatically create linked data has
+become increasingly popular in recent years, leading to sev-
+eral popular annotation software and services, e.g., Alchemy
+API, DBPedia Spotlight [23], Wikipedia Miner [25], Extrac-
+tiv, OpenCalais and Zemanta. All of them share the purpose
+of connecting spans in the text to entity catalogs, though
+they diﬀer in their algorithms and training data. Most an-
+notators [13, 24, 26, 20, 16, 17], including the ones above,
+work in two stages: spotting (Section 3.2) followed by dis-
+ambiguation (Section 3.3). In our system, we add an anno-
+tation indexer (Section 3.4) at the end. In this section we
+describe the overall framework, the performance challenges,
+and earlier work.
+3.1 Overview
+
+As Figure 3 shows, labeled mention contexts from a ref-
+erence corpus (e.g., Wikipedia) are used to train the disam-
+biguator. Mention contexts from the payload corpus (e.g., a
+Web crawl) are also turned into feature vectors, from which
+we sample a statistical workload that our central data struc-
+ture, the leaf-feature-entity map (“LFEM”) has to process.
+(The “(cid:96), f ” notation is explained in Section 3.3.) Because
+workload data is so sparse, we need to carefully smooth the
+distribution using a test set, which is then submitted to
+the LFEM compressor (Section 4). Afterward, we scan the
+whole corpus with the annotator while probing the LFEM.
+The resulting annotation is sent to an entity and type in-
+dexer (Section 5).
+
+Figure 1: Heavy-tailed type distribution in queries.
+
+Figure 3: System and workﬂow overview.
+
+11010010001101001000RankFrequencycountrycityleaderwriterriverislands of AsiaoceanSamplerTrainfoldTestfoldSpotterSpotterTestcontextsTraincontexts ,fworkloadSmootherDisambiguation trainerand cross-validator,f(e,w)modelCompressorL-F-E mapAnnotatorEntity andtypeIndexerTrainfoldTestcontexts ,fworkloadTrainfoldTestfoldTestcontexts ,fworkloadTrainfoldTraincontextsTrainfoldTestcontexts ,fworkloadTestfoldCorpusAnnotationindexSmoothed ,fdistribution ,fworkload“Payload”“Reference”WWW 2012 – Session: Semantic Web Approaches in SearchApril 16–20, 2012, Lyon, France1223.2 Spotting
+
+As we scan a sequence of text tokens in a document, the
+spotter ﬂags short token sequences as potential mentions of
+entities in the catalog. Each entity in the catalog is known by
+one or more (New York, New York City, Big Apple) canonical
+phrases (which may be single tokens). The relation between
+entities and canonical phrases is many-to-many.
+
+Mentions may match canonical phrases exactly or approx-
+imately. Approximate matching [8] is expensive in terms of
+computation and memory, so Web-scale spotters such as DB-
+Pedia Spotlight and others [13, 2] widely use variations on
+exact match using the Aho-Corasick algorithm or a preﬁx
+tree (trie). Spotlight requires 8 GB to store its matching
+data structure; this can get problematic trying to scale from
+DBPedia to Freebase and beyond. Similarly, the Wikify [24]
+spotter identiﬁes exact phrases to be tagged based on how
+often they are found in the anchor text of some link internal
+to Wikipedia. An eﬀective trick [2, Section 3] to ensure good
+recall in the face of exact matches is to pre-populate the trie
+with plausible synonyms or transformations [25] of canoni-
+cal phrases. We will assume such an architecture; given this,
+the time to spot is usually much smaller than the time to
+disambiguate, which will be our focus.
+
+Each node in the trie represents a partial (preﬁx) match of
+a token segment with one or more canonical phrases. Some
+nodes are designated as leaves indicating a completed exact
+phrase match. Abusing1 the word “leaf” (because it is a short
+name good for use in code), trie leaves can have children, in
+case one dictionary phrase is a preﬁx of another. E.g., New
+York Times and New York University are children of New
+York, and they are all leaves. In general, any spotter will
+have an analog to a leaf (cid:96): an artifact that
+• expresses a suitable match between a potential mention
+• lets us access a set of candidate entities E(cid:96) that may
+be mentioned by the canonical phrase corresponding
+to (cid:96).
+
+and a canonical phrase in the catalog, and
+
+Therefore, our architecture and notion of a “leaf” are quite
+generic, and not tied to the use of a trie.
+3.3 Disambiguation
+After spotting, disambiguation consists of choosing some
+entity e ∈ E(cid:96) as the most likely candidate. Sometimes, the
+correct decision will be to reject the mention, i.e., not link
+it to any entity in E(cid:96) from the catalog (e.g., many John
+Smiths mentioned in Web text that are not represented in
+Wikipedia).
+
+The mention is embedded in a context, which could range
+from the neighboring tokens to the entire text on the docu-
+ment, to the site or domain to which the document belongs.
+For the purpose of disambiguation, the context is distilled
+into a context feature vector x ∈ Rd for a suitable number
+of features d. Summarizing the notation,
+• x denotes the feature vector distilled from the potential
+• (cid:96) denotes the trie leaf that has been activated by scan-
+• E(cid:96) is the set of entities, including the reject option,
+For each e ∈ E(cid:96), we train weights w(cid:96)e ∈ Rd. The score of
+entity e is the inner product w(cid:62)
+(cid:96)ex. The entity chosen among
+
+that are eligible for linking to the mention.
+
+mention.
+
+ning x.
+
+the candidates is arg maxe∈E(cid:96) w(cid:62)
+(cid:96)ex. This form of inference
+can model naive Bayes, logistic regression and multiclass
+SVM classiﬁers, as well as the local (node potential) part
+of collective disambiguation techniques [20]. Eﬀectively, dis-
+ambiguation amounts to a multiclass (with the reject option)
+labeling problem at each leaf of the trie, and each context is
+an instance. For simplicity and concreteness we will focus on
+naive Bayes disambiguators. Preliminary experiments sug-
+gest that generative models are not only faster to train but
+also more accurate than SVMs, given the extreme sparsity
+of training data.
+3.3.1 Feature space
+For each (cid:96), e, w(cid:96)e is a map f → w from features to model
+weights. We will explain in Section 4 that it is best to or-
+ganize this map as (cid:104)(cid:96), f(cid:105) → {e → w}. We call this the
+leaf-feature-entity map, or LFEM. In our implementation,
+we use as features f :
+• Words that appear in the immediate lexical neighbor-
+hood of the mention, i.e., within some number of to-
+kens to the left and right of the mention. Experiments
+suggest that these are necessary, but not adequate, for
+high-accuracy annotation.
+• Salient words from the whole document where the men-
+tion is embedded. Salient words are those that con-
+tribute a large fraction to the norm of the document
+in TFIDF vector space.
+
+In this setting, the feature space is twice the size of the refer-
+ence vocabulary, because a nearby word is coded diﬀerently
+from the same word appearing far away in the same doc-
+ument. Overall, we use several million features (although
+each feature vector is very sparse). This is typical of mod-
+ern information extraction techniques [27].
+3.3.2 Weight map in RAM with fast random access
+Critical to fast disambiguation is holding the LFE map in
+RAM, as compactly as possible. This is challenging: even in
+our modest testbed, there are over a million leaves (cid:96), over two
+million entities e, and several million f s. There are about
+480 million ((cid:96), f, e) keys. (Note that the 96-bit key does not
+ﬁt in any primitive type.) Using standard maps from JDK,
+Gnu Trove, Colt, or MG4J [5] are all out of the question; just
+the keys ﬁll up ∼6GB of RAM unless we compress them ag-
+gressively, and hash table overheads would easily double the
+space needed. Surprisingly, current literature on entity dis-
+ambiguation [24, 12, 26, 20] provides little or no information
+about data structures and performance, which is the focus
+of this paper.
+
+While achieving good block compression, we also ensure
+fast random access by inserting sync points for decompres-
+sion, carefully chosen to minimize expected query time. Work-
+load-sensitive linked binary search trees [18] and skip lists
+[22] are known. However, their access costs are modeled as
+the expected number of pointers traversed, not scanning and
+decompression costs. Boldi and Vigna [4] use statistics from
+inverted lists2 to insert inlined optimal skip lists in inverted
+lists. Unlike earlier work, they do focus on compression, but
+do not consider access workload distributions. Chierichetti
+et al. [11] consider the speciﬁc access workload of sequen-
+tially merging inverted lists and insert optimal skip pointers
+for best expected query time. Our sync point allocation
+problem is diﬀerent from the above.
+
+1Or we may use “leafy nodes” instead of “leaf nodes”.
+
+2Skip pointers in inverted lists are diﬀerent from skip lists.
+
+WWW 2012 – Session: Semantic Web Approaches in SearchApril 16–20, 2012, Lyon, France123As the catalog becomes arbitrarily large, it is possible that
+the disambiguation model will overﬂow RAM. In that case
+we need to partition the catalog and make multiple passes
+through the corpus. Even then, it is critical to compress
+the model aggressively, to minimize the number of passes.
+Therefore our basic problem remains well-motivated regard-
+less of the size of the catalog.
+3.3.3 Other disambiguation systems
+Most other systems [13, 24, 12, 26, 17, 23] depend on some
+computation of similarity between a test context and entity-
+labeled training contexts, and this can beneﬁt from our work.
+However, data structure details are sparse. DBPedia Spot-
+light uses Lucene to index words in contexts of reference
+mentions. The context of a test mention is used as a query
+to fetch the most similar reference mentions, thus imple-
+menting a form of k-nearest-neighbor classiﬁcation. Unless
+(or even if) the whole index is cached in RAM (explicitly via
+Lucene options or implicitly via OS buﬀers), this approach is
+unlikely to beat our highly customized disambiguation data
+structures. We will conﬁrm this in Section 6.1.6.
+3.4 Indexing annotations
+
+Each annotation record contains a document ID, a token
+span, the leaf (ID) matched by the span, a subset of the
+candidate entities associated with the leaf, and a conﬁdence
+score associated with each candidate. Standard inverted in-
+dices map from keywords to posting lists that contain docu-
+ment IDs and oﬀsets within documents where the keywords
+occur. Postings for entities are similar, except that 1. a men-
+tion may span more than one token, so the left and right
+boundaries need to be recorded, and 2. additional ﬁelds like
+the leaf and conﬁdence scores need to be encoded. We also
+need posting lists keyed by types [6]: if e (e.g., Albert Ein-
+stein) is mentioned at a given span in a given document,
+any type T such that e ∈ T (e.g., theoretical Physicist) also
+appears there. This may greatly enlarge the index, but tech-
+niques are known to limit the size [6]. The above are all
+conventional document-inverted indices where keys are to-
+kens, entities or types, and postings are sorted primarily by
+document ID for DAAT query processing.
+
+For systems that support very small type catalogs [21, 9],
+one can use clever collocation (also called entity-inverted )
+indices that are keyed on (cid:104)token, type(cid:105) and record all win-
+dows of limited width where the token and the type co-occur,
+along with the speciﬁc entity ID. This trick can signiﬁcantly
+speed up some queries, but requires a great deal of extra in-
+dex storage, and may not help for multi-predicate queries on
+a cluster. As we shall see in Section 6.2, large type catalogs
+lead to collocation indices that are 36× larger than a DAAT
+index. (The proposal [9] is to limit the collocation index to
+only some (cid:104)token, type(cid:105) pairs, but no speciﬁc algorithms are
+suggested.) Another issue that is not addressed in earlier
+work [6, 21, 9] is how all the ancillary ﬁelds in type indices
+should be compressed.
+4. DISAMBIGUATION DATA STRUCTURES
+Recall from Section 3.3 that conceptually, the LFEM is
+a map from (cid:96), f, e to a suitable model weight w, where (cid:96)
+is a leaf, e is an entity, and f a feature.
+In most recent
+systems, all three would be represented as 32-bit integers,
+unless compressed. The value, w, may diﬀer with the kind
+of machine learning algorithm used: in case of naive Bayes
+classiﬁers it would be an integer (typically small) and in case
+
+of logistic regression or SVMs it would be a ﬂoating point
+number.
+
+4.1 The three-level (cid:96), f, e → w map
+
+Most disambiguation algorithms will proceed as follows as
+
+they scan document tokens:
+
+foreach trie leaf (cid:96) encountered during token scan do
+
+use context to build feature vector x = (xf )
+initialize score accumulators for each e ∈ E(cid:96)
+foreach feature f do
+
+probe LFEM with key ((cid:96), f ); get {e → w} map
+foreach entity e do
+
+update score accumulator of e using w, xf
+
+Note that (cid:96) comes from a dense ID space, because leaves
+of the trie can be assigned contiguous IDs, whereas, for
+any given (cid:96), the sets of f s and es encountered are sparse.
+Therefore, it makes sense to store the (cid:96), f, e → w map as
+(cid:104)(cid:96), f(cid:105) → {e → w}, i.e., probe using (cid:96), f as key and get back
+a sparse map from e to w.
+
+We will now use ideas from standard inverted index com-
+pression and dictionary coding from column-oriented (verti-
+cal) databases [31, 1] to design a compressed version of the
+(cid:104)(cid:96), f(cid:105) → {e → w} map. Working outward from the most
+detailed level:
+• Sort the entity IDs in E(cid:96) in some canonical order (say,
+decreasing reference corpus frequency). In the context
+of the current (cid:96), let the rank of e in E(cid:96) be called e(cid:48), or
+the short entity ID of e. Note that even if es themselves
+range in the millions, e(cid:48)s are small numbers, typically
+under ﬁve for most leaves.
+• For every ((cid:96), f ) we will store a table of es and ws.
+es will be sorted in short ID order and each e2 will
+1 − 1), the gamma code of the
+be encoded as γ(e(cid:48)
+gap between e2 and the previous entity e1’s short IDs,
+minus one. This means that for consecutive entities we
+will spend only one bit in recording e2.
+• For a Bayesian disambiguator, w is an integer and will
+be gamma encoded. For others, compact discretiza-
+tions are known [28].
+• The {e(cid:48) → w} table varies in size for various ((cid:96), f )
+keys. For a ﬁxed (cid:96), we will sort f s in increasing order
+and write down γ(f2 − f1 − 1) (but no short IDs this
+time). After this we will record the number of bits in
+f2’s entity-weight table.
+• Each block corresponding to a leaf is also of irregular
+size. Because (cid:96)s are from a compact, dense ID space,
+we can keep an in-memory array from (cid:96) to the bit oﬀset
+where (cid:96)’s block ends.
+
+2 − e(cid:48)
+
+Throughout, we will be referring to oﬀsets as bit oﬀsets. This
+is eﬃciently supported by InputBitStream and OutputBit-
+Stream in MG4J [5]. Here, and in Section 5, we will use
+gap/gamma codes as a ﬁrst prototype implementation. Pre-
+liminary experiments suggest that about 10% further savings
+are possible using a tuned Golomb code; details are deferred
+to a full version of this paper.
+
+4.2 Optimal sync tables for random access
+
+While the above scheme achieves good compression, de-
+compression involved in responding to an ((cid:96), f ) probe can
+be very slow, because we have to
+
+• Locate the beginning of the leaf block for (cid:96).
+
+WWW 2012 – Session: Semantic Web Approaches in SearchApril 16–20, 2012, Lyon, France124• Scan forward in (cid:96)’s block until we ﬁnd the sub-block
+• Load and return the {e → w} map block.
+
+for f .
+
+Although many (cid:96)s will have short blocks, we expect plenty
+of large leaves (meaning, leaves with large blocks) as well.
+Worse, assuming there is some coherence between the refer-
+ence and payload corpora, we expect the frequently encoun-
+tered leaves to be large.
+
+A standard remedy [30] is to prepare, for a small, carefully-
+chosen subset of features, a sync table with ﬁxed-size inte-
+gers, telling us where the {e → w} table for feature f begins.
+Given a feature f , we binary search the sync table to identify
+a (hopefully) short segment of the leaf block to scan, rather
+than the whole leaf block. The key issue is:
+Given an upper limit to the size of the sync table, divide
+it among the leaves, and then, for each leaf, choose the
+features to be included in the sync table, so as to minimize
+the expected or total query time during annotation.
+In principle, we can solve a single global optimization that
+allocates a global sync budget over all leaves simultaneously,
+but with millions of leaves and typically hundreds of features
+per leaf, this would be computationally impractical. There-
+fore we structure our allocation as an “outer” distribution
+of the global budget to leaves (Section 4.6), followed by an
+“inner” sync allocation within each leaf (Section 4.4). While
+the trade-oﬀ between sync budget and random access cost is
+standard [30, page 177], we are not aware of a prior two-level
+formulation of a workload-driven sync optimizer like ours.
+4.3 Workload model
+
+ure 3) must be informed by two kinds of input:
+
+The sync allocator (part of the “Compressor” block in Fig-
+• The number of bits in each {e → w} map, and the
+total number of bits in the bit block associated with (cid:96).
+• The relative rate or probability with which each spe-
+ciﬁc ((cid:96), f ) is probed in the LFEM. We can normalize
+the probe counts into p(cid:96), the marginal probability of
+hitting (cid:96), and pf|(cid:96), the (conditional) probability of hit-
+ting f inside the leaf block for (cid:96).
+
+4.3.1 Feature snapping
+The LFE map is prepared from a reference corpus where
+mentions are manually tagged to entities. The contexts of
+these mentions supply the features that appear in the LFE
+map. Inevitably, training data is small and sparse. When
+the payload corpus is scanned, many features are encoun-
+tered that were never registered in the LFE map. In NLP,
+these would be called “out of vocabulary” (OOV) features.
+From the way we access the LFE map, it is clear that an
+OOV feature f probe results in scanning past to the next
+larger feature, realizing that f is not there in the map.
+Therefore, in characterizing workload distributions, we will
+“snap” OOV features in the payload to the next larger fea-
+ture in the LFE map built from the reference corpus.
+4.3.2 Feature distribution smoothing
+We must tune the annotator’s performance by sampling
+a small fraction of the corpus. Therefore, missing leaves,
+or leaves with poorly characterized feature distributions, are
+normal and expected. Figure 4 shows the fraction of 1,162,488
+leaves hit at least once by an increasing number of sample
+documents from our 500 million document corpus. At 20
+million documents, ∼75 percent of leaves are hit. The sit-
+uation with feature hit distributions within leaves is simi-
+
+Figure 4: Leaf coverage as number of documents
+sampled is increased.
+
+Figure 5: Scatter plots of scan+read and read cost
+per bit in the e → w maps (“us”=µsec).
+lar, generally even more extreme. To cope, we use a train-
+test sampler (Figure 3) with Lidstone (also called Dirichlet)
+smoothing. Fix a leaf with F features, and let nf (ˆnf ) be the
+number of hits on feature f in the training (test) set. Then
+we model Pr(f ) = λ+nf
+, for a parameter λ, tuned em-
+pirically as
+
+φ nφ
+
+F λ +(cid:80)
+
+λ + nf
+
+φ nφ
+
+.
+
+(1)
+
+F λ+(cid:80)
+(cid:88)
+
+arg max
+λ>0
+
+f
+
+ˆnf log
+
+The idea is that if nf s are very sparse, λ needs to be large
+so that OOV features in {ˆnf} get adequate probability. We
+observed diverse λ to be suitable for diﬀerent leaves.
+4.4 The inner sync allocation problem
+
+Given a sync budget for each leaf, the inner policy dis-
+tributes the budget of a leaf among the features in the leaf
+block. We ﬁrst need a performance model that predicts the
+expected cost of a given choice of syncs. To develop this
+model, we introduce the following notation.
+p(f ): The probability of querying for feature f .
+b(f ): The number of bits in the e-to-w map for f .
+
+s0: The ﬁxed time taken to initiate a scan operation.
+s1: The incremental time taken to scan a bit. To scan β
+
+bits, s0 + s1β time is needed.
+
+r0: The ﬁxed time to initiate reading an e-to-w map.
+r1: The incremental time taken per bit to read an e-to-
+w map. The time taken to read the map for f will
+therefore be r0 + r1b(f ).
+
+The linear cost assumptions are reasonably justiﬁed by mea-
+surements on our system, shown in Figure 5.
+4.4.1 Extreme inner policies
+Equispaced syncs (Equi). Suppose the training data has
+zero feature hits for a given leaf, i.e., all nf = 0. As is visi-
+ble from Figure 4, there will always be many such leaves. In
+such a situation, a reasonable default approach is to place
+syncs approximately at a regular gap (measured in bits).
+
+00.20.40.60.80.E+05.E+61.E+71.5E+72.E+7Sampled docs-->Fraction leaves hit	        
+	 	    
+WWW 2012 – Session: Semantic Web Approaches in SearchApril 16–20, 2012, Lyon, France125Equispaced syncs ensure that no feature is too far from a
+sync feature, but it does not pay attention to the rate of hit-
+ting diﬀerent leaves and features when scanning the payload
+corpus. We call this the Equi inner policy.
+High-frequency syncs (Freq). At the other extreme, if we
+have so much nf data at a leaf that we suspect ˆnf will be
+very similar, we can allocate the leaf’s budget entirely to the
+features having the largest nf s. We call this the Freq inner
+policy. Our initial intuition was that leaves with enough hit
+samples are also likely to dominate (cid:96), f query times, and
+so overall Freq should win over Equi. Section 6.1 describes
+some interesting surprises and retrospective insight.
+Simple hybrid policies. We need not ﬁx a single policy for
+all leaves. We can simply choose the best of Freq and Equi
+at each leaf. We call this the FreqOrEqui inner policy; this
+gave a very modest gain. Another simple option is to hedge
+our bets and allocate half (or some tuned fraction of) the
+budget to frequent features and the other half to equispaced
+features. We call this policy EquiAndFreq.
+
+While the above policies can be implemented very eﬃ-
+ciently, they are unsatisfactory in the sense that they are
+not guided by a precise cost model. We take this up next.
+4.4.2 Cost-based optimization
+For a ﬁxed leaf, we will ﬁll up a cost table B[u, k] and a
+backtrace table L[u, k]. Here u is (an index to) a feature and
+k is a budget value. Say u ranges between 0 and F − 1 and
+k ranges between 0 and K(cid:96), the budget for this leaf. (Here
+we drop (cid:96) because it is ﬁxed.) B[u, k] is the best cost for
+probes up to and including feature u, using exactly k syncs.
+We ﬁnally want B[F − 1, K].
+We start by ﬁlling in the ﬁrst column B[·, 0] corresponding
+to k = 0 (no sync allocated). To retrieve the map for feature
+
+j=0 b(j) bits in time s0 + s1
+
+• Then read the map in time r0 + r1b(i).
+
+j=0 b(j).
+
+Given zero sync budget, we just have to preﬁx-sum the above
+
+i=0 pi
+
+r0 + r1b(i) + s0 + s1
+
+j=0 b(j)
+
+By convention, B[u,·] = 0 for u < 0. Also, in ﬁlling B[u, k],
+budget k must be used up, so we will set B[u, k] = ∞ if
+u < k − 1. To ﬁll B[u, k] for u ≥ k − 1, we can place the
+rightmost (kth) sync at position (cid:96), where k − 1 ≤ (cid:96) ≤ u.
+Then• The cost of accesses left of the sync at (cid:96) is B[(cid:96)−1, k−1].
+• Accessing the record at (cid:96) involved no scans3 and only
+(cid:0)b((cid:96)) +··· + b(i− 1)(cid:1), followed by a read cost of
+• For any feature i = (cid:96) + 1, . . . , u, the scan cost will be
+(cid:80)u
+i=(cid:96)+1 p(i)(cid:0)b((cid:96)) + ··· + b(i − 1)(cid:1)
+(cid:80)u
+
+B[(cid:96) − 1, k − 1] + r0
++ s0
+
+Multiplying with probabilities and summing up, we get
+
+the read cost of r0 + r1b((cid:96)).
+
+s0 + s1
+r0 + r1b(i).
+
+i=(cid:96) p(i) + r1
+
+i=(cid:96) p(i)b(i)
+
+i=(cid:96)+1 p(i) + s1
+
+(cid:80)u
+
+(cid:80)u
+
+All but the last sum is trivial to evaluate in O(1) time per
+cell of B, by computing some preﬁx sums ahead of time. For
+i = p(i) + p(i + 1) + ··· + p(j). (If
+convenience we write P j
+i > j, then P j
+i = 0.) The last term underlined above is 0 for
+
+3Strictly speaking, we have to binary search the sync table, but
+this cost is negligible compared to decompressing maps.
+
+i, we• Scan(cid:80)i−1
+B[u, 0] =(cid:80)u
+
+(cid:16)
+
+(cid:80)i−1
+(cid:80)i−1
+
+(cid:17)
+
+Allocate syncs:
+prepare preﬁx sum of p(i) and p(i)b(i)
+initialize B[·, 0]
+for k = 1, 2, . . . , K do
+
+for u = 0, 1, . . . , F − 1 do
+
+let B∗ ← ∞ and L∗ ← ⊥
+if u ≥ k − 1 then
+
+let B? = B[u − 1, k − 1] + r0p(u) + r1p(u)b(u)
+if B∗ > B? then
+
+B∗ ← B? and L∗ ← (cid:96)
+
+initialize g ← 0
+for (cid:96) = u − 1, . . . , k − 1 do
+g ← g + P u
+(cid:96)+1b((cid:96))
+B? ← B[(cid:96) − 1, k − 1] + s1g + (r0, r1, s0 terms)
+if B∗ > B? then
+
+B∗ ← B? and L∗ ← (cid:96)
+
+B[u, k] ← B∗ and L[u, k] ← L∗
+
+Backtrace syncs:
+k ← K
+for (cid:96) = F − 1, F − 2, . . . , 0 do
+
+if k < 0 then
+break
+(cid:96)(cid:48) ← L((cid:96), k)
+if (cid:96)(cid:48) ≥ 0 then
+(cid:96) ← (cid:96)(cid:48) − 1, k ← k − 1
+
+record (cid:96)(cid:48) as the kth sync
+
+Figure 6: DynProg inner sync allocation.
+
+(cid:96) = u. Writing out the last term in detail for k − 1 ≤ (cid:96) < u:
+
+p((cid:96) + 1)b((cid:96)) +
+p((cid:96) + 2)b((cid:96)) + p((cid:96) + 2)b((cid:96) + 1) +
+
+...
+
++
++
+
+...
+
+p(u)b((cid:96))
+= P u
+
+(cid:96)+1b((cid:96)) + P u
+
+(cid:96)+2b((cid:96) + 1) + ··· + P u
+
+p(u)b((cid:96) + 1)
+
+. . .
+
++
++ ··· +p(u)b(u − 1)
+u b(u − 1),
+
+it is now seen possible to evaluate it using preﬁx sums. The
+pseudocode for ﬁlling table B and tracing back the syncs is
+given in Figure 6; it takes O(F 2K) time, down from O(F 3K)
+if the above trick were not used. In addition, if we limited
+candidate syncs to C (cid:28) F positions, we can improve to
+O(CF K) time (details omitted).
+4.5 Feature ID reordering
+
+When contexts are turned into sparse feature vectors, com-
+mon practice is to clock up an ID generator to allocate fea-
+ture IDs to new features, as they are encountered. This
+policy tends to assign small IDs to frequent features because
+they are encountered sooner. Since IDs are arbitrary, we can
+help along further by assigning IDs more deliberately. This
+is reminiscent of (but diﬀerent from) optimal document ID
+assignment for maximally compressed inverted lists [14].
+
+Suppose, within a given leaf, we reordered feature IDs by
+decreasing order of their occurrence frequency or probability
+p(f ) while annotating the payload corpus. Because the most
+frequent IDs are close to each other, just a few syncs may
+suﬃce to drastically reduce the average amount of scanning
+and decompression required.
+However, recall that the e → w maps for diﬀerent fea-
+ture occupy diﬀerent number of bits b(f ). The features with
+largest p(f ) may also have large b(f ), pushing out later fea-
+
+WWW 2012 – Session: Semantic Web Approaches in SearchApril 16–20, 2012, Lyon, France126tures by many bits, increasing scan costs. This suggests
+sorting features by something like p(f )/b(f ).
+
+The main problem with the above proposals is that we
+cannot aﬀord one feature permutation per leaf, because we
+expect to handle tens to hundreds of millions of leaves. Here
+we settle for one global feature permutation. In Section 6.1.4
+we will present some surprising eﬀects of reordering features.
+4.6 The outer sync budgeting problem
+
+Suppose K is the global budget over all leaves, in terms
+of the number of syncs we can aﬀord. The budget is divided
+among leaves, say leaf (cid:96) gets K(cid:96) syncs. Dividing K into {K(cid:96)}
+is the job of the outer policy and the topic of this section.
+Once K(cid:96) syncs are allocated to (cid:96), deciding which features
+get sync records is the job of the inner policy, which was
+discussed in Section 4.4.
+
+Let b(cid:96) be the number of bits in the block for (cid:96). Intuitively,
+we should allocate more syncs to (cid:96) if either p(cid:96) is large or b(cid:96)
+is large, although a large b(cid:96) by itself may not motivate many
+syncs. This suggests the following baseline heuristics:
+Hit: K(cid:96) ∝ p(cid:96)
+HitBit: K(cid:96) ∝ p(cid:96)b(cid:96)
+Following Witten et al. [30, page 177], next we give a more
+careful outer policy based on these simplifying assumptions:
+
+• pf|(cid:96) is uniform over all f for any (cid:96).
+• The inner policy inserts syncs at uniform gaps.
+
+Under the above conditions, on an average, a feature probe
+will involve a scan over b(cid:96)/2K(cid:96) bits, starting at a sync. It
+is reasonable to model the cost of scanning from a sync to
+the desired feature as proportional to the number of bits
+b(cid:96)
+K(cid:96)
+
+scanned. Therefore the overall cost is proportional to(cid:80)
+
+(cid:96) p(cid:96)
+
+and we wish to ﬁnd
+
+p(cid:96)b(cid:96)
+K(cid:96)
+
+(cid:88)
+
+(cid:88)
+= constant or K(cid:96) ∝(cid:112)p(cid:96)b(cid:96)
+
+(cid:96)
+
+s.t.
+
+K(cid:96) = K.
+
+(cid:96)
+
+arg min{K(cid:96)}
+
+p(cid:96)b(cid:96)
+K 2
+(cid:96)
+
+(2)
+
+(3)
+
+Using standard Lagrangian optimization, at optimality,
+
+which we call the SqrtHitBit policy. Curiously, even though
+the assumptions made here are not valid, SqrtHitBit per-
+formed signiﬁcantly better than other outer policies. We
+experimented with other forms of diminishing return curves
+but these did not result in convincing improvements.
+5. COMPRESSED ANNOTATION INDEX
+
+Continuing from Section 3.4, here we describe compact
+document-inverted indices for annotations. The annotation
+index has two parts: the entity index and type index. We will
+directly proceed to describe type indices because they are a
+generalization of entity indices. The key is a type from the
+catalog. The posting list contains a block for every document
+where an entity of the key type is potentially mentioned.
+Each document block has to record the token spans of the
+potential mentions. In a standard term or entity index, the
+key itself tells us what term or entity occurred at an oﬀset.
+But for a type index, we need to retrieve the speciﬁc entity
+that was mentioned in a span. It is impractical, except in
+the smallest of corpora [6], to seek and fetch the document,
+so we need to inline the entity ID within the posting. We call
+this general style snippet interleaved postings (SIP) coding.
+Here we discuss only the SIP coding for the entity ID; other
+ﬁelds (e.g. annotation conﬁdence) will be discussed in a full
+version of the paper.
+
+,
+
+As in Section 4.1, we will be using gap/gamma codes as a
+ﬁrst prototype. We are investigating gap distributions and
+other codes in ongoing work.
+5.1 Separate postings by entity (EntSIP)
+
+Suppose three entities Einstein, Feynman and Hawking
+of type scientist are mentioned in a document at various
+oﬀsets/spans. Note that the IDs assigned to these entities
+in the catalog are usually arbitrary. E.g., Wikipedia and
+derivative catalogs have a few million entities, each usually
+assigned a 32 bit ID (although about 23 bits may suﬃce).
+One way to organize the block for this document in the post-
+ing list keyed by scientist is to write down
+• the document ID, gap-gamma coded wrt the previous
+• the number of distinct scientists mentioned in the doc-
+ument in gamma code (because it tends to be a small
+number)
+• write a sub-block for each distinct entity, which con-
+
+document
+
+tains
+
+– the entity ID in standard binary code, which we
+
+will call the “long” entity ID hereafter
+
+– the posting list of spans, each expressed as (cid:96), r
+where (cid:96), the left endpoint of the span, is gap-
+gamma coded wrt the previous span’s left end-
+point, and r is gap-gamma coded wrt (cid:96).
+
+Note that delimiting sub-blocks will consume some bits.
+The advantage of the above code is that each long entity ID
+is written down exactly once. However, a potential short-
+coming is that, by partitioning the posting list of Scientist
+into one list per entity, the gaps in each list become larger.
+5.2 Merged postings over all entities (DictSIP)
+On the other hand, if we wish to compress the gaps better
+by writing down a single merged posting list, we need to em-
+bed the entity ID better than its “long” version. Inspired by
+ideas from vertical (column-oriented) databases [31, 1], we
+employ a per-document dictionary mapping between “long”
+and “short” entity IDs. In our running example, if Einstein,
+Feynman and Hawking appear in the document in order of
+decreasing frequency, we assign them “short” entity IDs of
+0, 1, 2 (for the current posting list only; for other lists they
+may take on diﬀerent short IDs). Now a document block
+looks like this:
+• The dictionary is simply its size 3 (gamma coded) fol-
+• The number of posts in this document’s posting list.
+• For each post (cid:96), r, e
+
+lowed by three long entity IDs.
+
+– (cid:96) coded gap-gamma wrt the previous (cid:96)
+– r gap-gamma-coded wrt (cid:96)
+– The short entity ID of e, which is just the position
+of e in the dictionary. The short ID is gamma
+coded.
+
+6. EXPERIMENTS
+
+Our corpus is very similar to ClueWeb09, with about 500
+million mostly-English pages. Our annotation and indexing
+code uses MG4J [5] extensively and runs on 40 HP DL160G5
+computers, each with 8 2.2GHz Xeon cores, 8GB DDR2
+RAM, and four 750GB 7200rpm SATA drives. Most of our
+code is written to use all cores eﬃciently. From the 500M
+corpus, we drew disjoint train+test samples of size 2+2M,
+4+4M, 6+6M, 8+8M and 10+10M for cost modeling, but
+the resulting annotator was deployed on the whole corpus.
+
+WWW 2012 – Session: Semantic Web Approaches in SearchApril 16–20, 2012, Lyon, France127to verify that Equi is close to the optimal, because Equi al-
+location is algorithmically trivial and very fast (millions of
+leaves per minute).
+
+Figure 8: Eﬀect of sample size (“us”=µsec).
+
+6.1.2 Effect of sample size
+We were concerned that Figure 7 tells an incomplete story;
+as the sample size is increased, Freq would eventually win
+out simply by “rote learning”, i.e., placing syncs at frequent
+training features would also capture most of the test probes.
+As Figure 8 shows, this is not the case. This is because of the
+typical heavy-tail behavior of feature hits: as we increase the
+sample size, we continue to get feature hits in the test fold
+that were never seen in the train fold, at a rate signiﬁcant
+enough to favor Equi and DynProg over Freq. (EquiAnd-
+Freq runs were discontinued because they were uninterest-
+ing: performance was interpolated between Freq and Equi
+throughout.)
+6.1.3 Outer policies compared
+Keeping other options at their best values, Figure 9 com-
+pares outer policies. As can be seen, Bit is worse than
+SqrtHitBit, which shows that our bulk model at the outer
+level does capture some essence of the problem. HitBit is
+even worse than bit, most likely because feature hits are
+correlated with leaf bits, and HitBit “double-counts” this ef-
+fect. Overall, the best outer+inner policy combination can
+be six times faster than the worst, so it is important to
+choose well.
+6.1.4 Feature renumbering
+Figure 10 shows the eﬀect of one global permutation of
+feature IDs over all leaves on the size of the RAM LFEM
+buﬀer. As commented in Section 4.5, the default feature ID
+order is far from random. As a baseline, we purposely as-
+signed random IDs—this resulted in a considerable increase
+in the LFEM buﬀer size, as expected. We also tried the
+other policies proposed in Section 4.5. FeatHits reordering
+reduces LFEM buﬀer size by over 430 MB. In contrast, the
+permutation itself costs only 30 MB.
+
+6.1 LFEM performance
+
+We begin with a summary of LFEM’s RAM requirement
+with YAGO as catalog.
+If the map was stored with keys
+(cid:96), f, e and values w, there would be 478,163,567 entries. If
+(cid:96), f, e, w were each assigned 32 bits (int or ﬂoat), 7.64 × 109
+bytes would be needed at 128 bits/entry. Based on sepa-
+rate marginal distributions over each of (cid:96), f, e, w, the self-
+information is 33.6 bits/entry. Hash maps from JDK, Gnu
+Trove or COLT would more than double the RAM needed.
+(16 GB may not sound large for modern servers, but scaling
+up from 2 to 25 million entities would then become quite
+impossible.) In contrast, our LFEM takes only 1.15 × 109
+bytes, or an average of only 19.2 bits/entry. In other words,
+each 32-bit number (int or ﬂoat) was compressed down to
+4.8 bits on average.
+6.1.1 Inner policies compared
+Figure 7 compares various inner policies keeping other
+choices (such as outer policy) at their best settings. The
+policies compared are Freq, Equi, EquiAndFreq (which is a
+half-half4 blend of frequent and equispaced features), and
+DynProg (which bails out to Equi if the leaf problem is too
+large to solve in about a minute, which was the case for
+about 3–4% of the leaves).
+
+Figure 7: Inner policies compared (“us”=µsec).
+
+The ﬁrst surprise to us was that Equi was uniformly better
+than Freq, when not only the sync budget but also all other
+policies and parameters were varied. We expected total cost
+to be dominated by large leaves with plenty of training data,
+where Freq would do well. However, this was not the case.
+A closer study revealed that, out of 1,162,488 leaves,
+
+• Freq and Equi were tied on 175,001 leaves.
+• Freq was cheaper than Equi for 221,341 leaves. In these
+leaves, the average number of features was 256, and the
+diﬀerence of cost (Equi minus Freq) was 1.93 × 108.
+• Equi was cheaper than Freq for 143,564 leaves. In these
+leaves, the average number of features was 2231, and
+the diﬀerence of cost (Freq minus Equi) was 8.22×109.
+(The remaining leaves did not occur in the diagnostic sam-
+ple.) Thus, Freq does better in more leaves, but the gain
+is minuscule compared to its losses in other leaves, because
+leaves where Freq wins tend to have many fewer features and
+lower cost. For large leaves with many features, the heavy
+tail eﬀect makes Equi’s conservative approach win to Freq’s
+“rote learning”.
+
+The above analysis suggested that blending Freq and Equi
+might give a solution better than both of them, but this is
+also clearly not the case: blending gives costs strictly be-
+tween Equi and Freq. The optimal dynamic programming
+allocator beats Equi by a modest margin. It is encouraging
+
+4We also tried other proportions.
+
+Figure 9: Outer policies compared (“us”=µsec).
+
+0.E04.E108.E101.2E115.E51.E61.5E62.E62.5E63.E6BudgetCost (us)DynProgEquiEquiAndFreqFreq0E02E104E106E10246810Sample docs (M)Cost (us)DynProgEquiEquiAndFreqFreq0.E05.E101.E111.5E112.E115.E51.E61.5E62.E62.5E63.E6Budget->Cost(us)BitHitBitSqrtHitBitWWW 2012 – Session: Semantic Web Approaches in SearchApril 16–20, 2012, Lyon, France128Feature ID order
+Random
+Default (ﬁrst encounter)
+FeatHits: decr. global feature hits
+Global
+
+feature hits
+number of bits , decreasing
+
+LFEM bytes
+1,629,356,922
+1,553,006,658
+1,123,348,583
+1,408,519,022
+
+Figure 10: Eﬀect of feature renumbering.
+
+Figure 10 also shows the eﬀect on annotation cost (time).
+While DynProg and Equi beneﬁt from FeatHit permutation
+(between 13 and 35%), Freq suﬀers greatly (almost 10× slow-
+down). Closer scrutiny of this curious eﬀect showed that the
+global FeatHits ordering has excellent agreement with fea-
+ture frequencies within some of the costliest leaves. There-
+fore, after reordering, Freq pushes all syncs to the very left
+end of the feature range. Though this results in decreased
+scan cost for some features, the collective adverse eﬀect of
+scans to heavy tail features all over the range predominates.
+By design, Equi and DynProg are immune to this problem.
+6.1.5 Accuracy of estimated cost
+Measured CPU time (y) and modeled cost (x) are in ex-
+cellent agreement with the regression y = 1.0645x having an
+R2 coeﬃcient of 0.9895 (1 means perfect linear ﬁt). Points
+were chosen from a wide variety of inner and outer policies
+and sync budgets.
+6.1.6 Speed comparison against other systems
+Other than SemTag, no other system [24, 12, 26, 20,
+17, 16] reported on running time or memory requirements.
+SemTag [13] spotted 156 documents per second and disam-
+biguated 1,200–3,000 windows per second on one core, but
+these numbers are on an incomparable platform.
+
+At the time of writing, three well-known systems were
+readily available to compare against ours: DBPedia Spot-
+light, Wikipedia Miner [25], and Zemanta. All the systems
+have competitive accuracy; here we focus on scalability.
+
+We annotated 1000 documents d, sampled from Wikipedia,
+of diverse sizes (number of tokens td) and measured the
+number of annotated spots sd and the time yd taken. (For
+Wikipedia Miner, we disabled the initial caching as it oth-
+erwise took 2–3 hours to start up. The comparison with Ze-
+manta may not be entirely fair because its catalog extends
+beyond Wikipedia.)
+We ﬁtted a constrained linear regression yd = τ0 + τ1td +
+τ2sd where all τi ≥ 0 and τ1 ≤ τ2 (tokens not in a spot should
+cost less). τ0 captures a per-document overhead (including
+network latency for online services like Zemanta). Although
+not all systems gave great ﬁt using linear regression, τ2 gave
+a very good idea of each annotator’s throughput.
+
+Figure 11 shows a scatter plot of annotation time against
+the number of annotations produced, and also tabulates τ2
+estimates. LFEM is 16–263 times faster than other pop-
+ular systems; thanks entirely to syncs (see last row).
+
+System
+DBPedia Spotlight
+Wikipedia Miner
+Zemanta
+LFEM
+LFEM, no sync
+
+τ2 (ms/spot) Avg spots/page
+216
+48
+16
+111
+-
+
+158
+21
+9.5
+0.6
+42
+
+Figure 11: Throughput of our and other systems.
+6.2 SIP index performance
+
+When we proposed EntSIP and DictSIP (Section 5), we
+had no way to predict which would be better. Figure 12
+shows that DictSIP is more compact despite spending space
+on per-document entity dictionaries. The reason is clear
+from the cost break-up: a uniﬁed posting list reduces gap-
+gamma bits.
+
+Description
+DictSip
+Document blocks
+117362457
+477450617
+Total # postings
+Long+short entity ID bits
+14800482316
+Sub-block delimiter bits
+0
+Gap and span width bits
+5877067785
+Total of above bits
+20677550101
+Average gap
+153.9
+Figure 12: EntSIP vs. DictSIP — DictSIP wins.
+
+EntSIP
+117362457
+477450617
+12461668521
+1170992844
+8638890811
+22271552176
+628.8
+
+Figure 13 compares DictSIP against using long (32-bit)
+entity IDs, and using Lucene’s payload hook to pack the
+short entity ID. Long entity IDs take 43% more bits. As
+indices steadily move to RAM, this represents signiﬁcant
+savings. Lucene payloads are multiples of a byte, which
+makes it 27% more expensive than DictSIP. We also tried
+[7] to use Indri but its inlined annotations can support at
+most 4000 or so entities plus types, because of an internal
+BTree restriction.
+
+Figure 14 compares DictSIP with collocation indices. This
+experiment used a much smaller catalog to keep collocation
+index sizes in control. We also used a recall-precision knob to
+control the annotation density per page. Clearly, collocation
+indices are impractical for large catalogs that we critically
+need (Section 2)—they are 45–60 times the size of our
+DictSIP index, which would overﬂow our system.
+
+Finally, Figure 15 compares index decompression and scan
+performance against a plain MG4J [5] text index. Numbers
+of postings are comparable. DictSIP needs 23% more space
+
+Entity coding option
+DictSIP
+DictSIP using Lucene payload
+Inlining long entity IDs
+
+Space (bits)
+177251981035
+224801570189
+252246867520
+
+Figure 13: Beneﬁts of DictSIP’s compact dictionary.
+
+1E101E111E12DynProgEquiFreqDynProgEquiFreqDynProgEquiFreqDynProgEquiFreqDynProgEquiFreqDynProgEquiFreq50000010000001500000200000025000003000000DefaultFeatHitsCost-->Budget-->	       
+      
+ 
+WWW 2012 – Session: Semantic Web Approaches in SearchApril 16–20, 2012, Lyon, France129Annotation Density
+Collocation
+DictSIP type
+
+0.068
+18.110
+0.290
+
+0.150
+18.077
+0.285
+
+0.299
+29.000
+0.658
+
+0.438
+42.450
+0.828
+
+Figure 14: DictSIP compared with collocation in-
+dex. About 2M entities and only 617 types were
+indexed.
+
+Description
+Postings
+Index shard size
+Doc blocks scanned/sec
+Posts scanned/sec
+Disk read rate
+Disk read rate (dd bs=1M)
+CPU core utilization
+
+MG4J
+8,356,750,159
+48 GB
+0.94 M
+2.2 M
+10–14 MB/s
+105 MB/s
+100%
+
+DictSIP
+8,486,091,421
+59 GB
+1.7 M
+4.97 M
+45 MB/s
+105 MB/s
+75–85%
+
+Figure 15: Index scan+decompression performance.
+
+per posting to store additional ﬁelds, but it can decompress
+and scan more postings and document blocks per second.
+With about 50M documents per shard, for typical TREC
+entity queries (ilps.science.uva.nl/trec-entity), we can
+retrieve all snippets containing entities of a given type to-
+gether with keywords in 1–5 seconds.
+7. CONCLUSION
+
+We presented a fast, Web-scale annotator and annotation
+indexing system. The two key contributions are 1. a generic
+compression scheme for fast, compact, in-memory disam-
+biguation data structures and 2. a compact posting list de-
+sign for entity and type indices. Investigating Golomb, delta
+and other codes may give additional gains. Recent tech-
+niques [20, 17, 16] go beyond local signals, and it would be
+of interest to support such collective algorithms by extending
+our data structures. Supplementary material on our project
+is available at soumen.cse.iitb.ac.in/doc/CSAW.
+Acknowledgment. Thanks to Natassa Ailamaki for verti-
+cal database references and Sebastiano Vigna for much help
+with MG4J.
+8. REFERENCES
+[1] D. Abadi, S. Madden, and M. Ferreira. Integrating
+
+compression and execution in column-oriented database
+systems. In SIGMOD Conference, pages 671–682. ACM,
+2006.
+
+[2] S. Agrawal, K. Chakrabarti, S. Chaudhuri, V. Ganti, A. C.
+K¨onig, and D. Xin. Exploiting web search engines to search
+structured databases. In WWW Conference, pages 501–510,
+2009.
+
+[3] K. Balog, L. Azzopardi, and M. de Rijke. A language
+
+modeling framework for expert ﬁnding. Information
+Processing and Management, 45(1):1–19, 2009.
+
+[4] P. Boldi and S. Vigna. Compressed perfect embedded skip
+lists for quick inverted-index lookups. In String Processing
+and Information Retrieval, volume 3772 of LNCS, pages
+25–28. Springer, 2005.
+
+[5] P. Boldi and S. Vigna. MG4J at TREC 2005. In E. M.
+
+Voorhees and L. P. Buckland, editors, TREC, number SP
+500-266 in Special Publications. NIST, 2005.
+
+[6] S. Chakrabarti, K. Puniyani, and S. Das. Optimizing
+scoring functions and indexes for proximity search in
+type-annotated corpora. In WWW Conference, pages
+717–726, Edinburgh, May 2006.
+
+[7] S. Chakrabarti, D. Sane, and G. Ramakrishnan. Web-scale
+
+entity-relation search architecture (poster). In WWW
+Conference, pages 21–22, 2011.
+
+[8] A. Chandel, P. C. Nagesh, and S. Sarawagi. Eﬃcient batch
+
+top-k search for dictionary-based entity recognition. In
+ICDE, page 28, 2006.
+
+[9] T. Cheng and K. C.-C. Chang. Beyond pages: supporting
+
+eﬃcient, scalable entity search with dual-inversion index. In
+EDBT, pages 15–26. ACM, 2010.
+
+[10] T. Cheng, X. Yan, and K. C. Chang. EntityRank:
+
+Searching entities directly and holistically. In VLDB
+Conference, pages 387–398, Sept. 2007.
+
+[11] F. Chierichetti, S. Lattanzi, F. Mari, and A. Panconesi. On
+
+placing skips optimally in expectation. In WSDM
+Conference, pages 15–24, 2008.
+
+[12] S. Cucerzan. Large-scale named entity disambiguation
+
+based on Wikipedia data. In EMNLP Conference, pages
+708–716, 2007.
+
+[13] S. Dill et al. SemTag and Seeker: Bootstrapping the
+
+semantic Web via automated semantic annotation. In
+WWW Conference, pages 178–186, 2003.
+
+[14] S. Ding, J. Attenberg, and T. Suel. Scalable techniques for
+
+document identiﬁer assignment in inverted indexes. In
+WWW Conference, pages 311–320, 2010.
+
+[15] R. V. Guha and R. McCool. TAP: A semantic web
+
+test-bed. Journal of Web Semantics, 1(1):81–87, 2003.
+
+[16] X. Han, L. Sun, and J. Zhao. Collective entity linking in
+Web text: A graph-based method. In SIGIR Conference,
+pages 765–774, 2011.
+
+[17] J. Hoﬀart et al. Robust disambiguation of named entities in
+
+text. In EMNLP Conference, pages 782–792, Edinburgh,
+Scotland, UK, July 2011. SIGDAT.
+
+[18] T. C. Hu and A. C. Tucker. Optimal computer search trees
+
+and variable-length alphabetical codes. SIAM Journal of
+Applied Mathematics, 21(4):514–532, 1971.
+
+[19] G. Kasneci, F. M. Suchanek, G. Ifrim, S. Elbassuoni,
+
+M. Ramanath, and G. Weikum. NAGA: harvesting,
+searching and ranking knowledge. In SIGMOD Conference,
+pages 1285–1288. ACM, 2008.
+
+[20] S. Kulkarni, A. Singh, G. Ramakrishnan, and
+
+S. Chakrabarti. Collective annotation of Wikipedia entities
+in Web text. In SIGKDD Conference, pages 457–466, 2009.
+
+[21] X. Li, C. Li, and C. Yu. EntityEngine: Answering
+
+entity-relationship queries using shallow semantics. In
+CIKM, Oct. 2010. (demo).
+
+[22] C. Martinez and S. Roura. Optimal and nearly optimal
+static weighted skip lists. Technical Report LSI-95-34-R,
+Universitat Polit`ecnica de Catalunya, 1995.
+
+[23] P. N. Mendes, M. Jakob, A. Garc´ıa-Silva, and C. Bizer.
+
+DBpedia Spotlight: Shedding light on the Web of
+documents. In 7th International Conference on Semantic
+Systems, pages 1–8, 2011.
+
+[24] R. Mihalcea and A. Csomai. Wikify!: linking documents to
+
+encyclopedic knowledge. In CIKM, pages 233–242, 2007.
+
+[25] D. Milne. An open-source toolkit for mining Wikipedia
+
+(wikipedia-miner.sourceforge.net/publications.htm).
+To be announced, 2009.
+
+[26] D. Milne and I. H. Witten. Learning to link with
+
+Wikipedia. In CIKM, pages 509–518, 2008.
+
+[27] S. Sarawagi. Information extraction. FnT Databases, 1(3),
+
+2008.
+
+[28] V. R. Shanks, H. E. Williams, and A. Cannane. Indexing
+for fast categorisation. In Australasian Computer Science
+Conference, volume 16 of ACSC26, pages 119–127,
+Darlinghurst, Australia, 2003.
+
+[29] F. M. Suchanek, G. Kasneci, and G. Weikum. YAGO: A
+
+core of semantic knowledge unifying WordNet and
+Wikipedia. In WWW Conference, pages 697–706. ACM
+Press, 2007.
+
+[30] I. H. Witten, A. Moﬀat, and T. C. Bell. Managing
+
+Gigabytes: Compressing and Indexing Documents and
+Images. Morgan-Kaufmann, May 1999.
+
+[31] M. Zukowski, S. Heman, N. Nes, and P. Boncz. Super-scalar
+RAM-CPU cache compression. In ICDE, pages 59–70, 2006.
+
+WWW 2012 – Session: Semantic Web Approaches in SearchApril 16–20, 2012, Lyon, France130

@@ -1,0 +1,464 @@
+Traditional access control models rely on knowing requester identities in advance [8].
+Web services typically have large and dynamic requester populations.
+This means that requesters  identities are seldom known in advance.
+Most existing Web applications deal with strangers by requiring them to  rst register an identity at the Web site.
+Such approaches do not  t into the Web service philosophy of dynamically choosing services at run-time.
+Trust negotiation is an access control model that addresses this issue by avoiding the use of requester identities in access control policies [17].
+Instead, access is granted based on trust established in a negotiation between the service requester and the provider.
+In Copyright is held by the author/owner(s).
+this negotiation   called a trust negotiation1   the requester and the provider exchange credentials.
+Credentials are signed assertions describing attributes of the owner.
+Examples of credentials include membership documents, credit cards, and passports.
+The attributes of these credentials are then used to determine access.
+For instance, a requester may be given access to resources of a company by disclosing a credential proving she is an employee of that company.
+This example shows that the requester identity is not always needed to determine access.
+Credentials are typically implemented as certi cates [11].
+Although trust negotiation systems exist [3, 5, 12, 17], several issues still need to be addressed:   Trust negotiation policy speci cation.
+Trust negotiation policies specify which credentials   and other resources   to disclose at a given state of the trust negotiation, and the conditions to disclose them.
+Specifying these trust negotiation policies using most existing policy languages is a complex task that generally requires time-consuming and error-prone low-level programming [9].
+  Trust negotiation policy lifecycle management.
+Lifecycle management of policies   that is, the creation, evolution, and management of policies   is an often overlooked part of policy model design.
+Policies are rarely set in stone when  rst de ned.
+Instead, they are modi ed and re ned to re ect changing business strategies [14].
+Lifecycle management of policies is especially valuable in the dynamic environments that characterize Web services.
+Enterprise security policies change because of mergers and acquisitions, internal reorganization, emerging competitors, new products, updated processes, changes to laws and regulations, etc.
+Issues that must be considered in lifecycle management frameworks include how to update trust negotiation policies in a consistent manner and how to cope with dynamic policy evolution, that is, the change to a policy while there are active negotiations based on the policy being modi ed.
+The latter issue is particularly challenging, due to the need of minimizing the disruption to current requesters while making sure that the new policy is applied.
+In this paper we propose a model-driven approach to trust negotiation in Web services.
+The framework, called Trust-Serv, features a trust negotiation policy model based on state machines.
+More importantly, this model is supported by both abstractions and tools that permit lifecycle management of trust negotiation policies.
+These are the salient features of the work:
+ gotiation interchangeably.
+abstractions that are used to extend the familiar state machine model.
+These abstractions provide the expressiveness required for a trust negotiation policy model, such as representations for the level of trust established, credential disclosures, provisions, and obligations.
+  Trust-Serv supports lifecycle management of trust negotiation policies and instances.
+We introduce a set of change operations that are used to modify policies.
+Strategies are presented to allow not only evolution of policies, but also migration of ongoing negotiations to a new policy.
+To automatically determine the appropriate strategy for each negotiation, we use meta-policies.
+These meta-policies are speci ed independently of the negotiation policies.
+Additionally, since negotiation migration may cause negotiated access rights of requesters to be revoked, we present a scheme that is used to compensate such requesters.
+  Trust negotiation and access control are managed and automated by software components called negotiation controllers.
+Negotiation controllers intercept messages directed to the Web service they control.
+They may accept or reject operation invocation requests, or they may initiate an interaction with the negotiation controller of the other party to negotiate trust before accepting the invocation.
+All this is transparent to the Web services.
+At the service level, the interaction only involves the business logic of the services, and it appears to take place directly between the Web services.
+The remainder of the paper is structured as follows.
+We start by describing the trust negotiation policy model in Section 2.
+In Section 3, we present a proposed lifecycle management model.
+Section 4 describes the architectural support for policy evolution and negotiation migration, as well as the implementation of Trust-Serv and the results of experiments.
+In Section 5, we describe how our model-driven approach to trust negotiation is bene cial to developers of composite Web services.
+We discuss related work in Section 6 and conclude with a summary and directions for future work in Section 7.
+Trust-Serv expresses trust negotiation policies as state machines, because of their formal semantics, and because they are well suited to describing the reactive behavior that characterizes trust negotiations [15].
+Figure 1 shows an example of a trust negotiation policy for a bookshop service.
+We will refer to this policy in our examples.
+States in the model represents the level of trust achieved by the requester so far in the negotiation.
+By entering a new state, Trust-Serv gives the requester access to more resources.
+Trust-Serv iden-ti es two types of resources: operations of the Web service that is protected and credentials owned by the provider.
+Instead of assigning these resources directly to states, we use the abstraction of roles.
+Roles are semantic abstractions that describe some function performed by people or processes (e.g., author and editor).
+In role-based access control, permissions are assigned to roles rather than individual requesters [8].
+In the Trust-Serv policy model, roles are mapped to states, which means that the roles of a state may be activated (i.e., acquired) by the requester once it reaches that state.
+Roles are cumulative, so previously activated roles are not deactivated when entering a new state.
+C: Credential disclosure P: Provision T: Timeout Role Customer Reviewer Gold Customer Buyer Operation Register, Search Write review Special offers Purchase Credential Veri ed by Visa Elite Bookshops Member Figure 1: A trust negotiation policy P.I for a bookshop service.
+Example 2.1 (Roles).
+Consider the policy in Figure 1.
+If a requester enters state A, that requester is allowed to activate the Customer role.
+Upon activating this role, the requester is given access to the service operations Register and Search, as well as the provider credential Verified by Visa.
+In Trust-Serv, transitions are labeled with conditions that restrict when they may be  red.
+Brie y, the semantics are as follows: When the negotiation is in a state S, and an event occurs which sat-is es the condition of a transition T where S is the input state, then the negotiation moves to the output state of T. Requesters explicitly trigger events by invoking operations such as credential disclosure.
+Transitions are extended beyond traditional state machines to capture security abstractions necessary for trust negotiation.
+We have identi ed three types of transition conditions: credential disclosures, provisions or obligations, and timeouts.
+  Credential disclosure conditions require the requester to disclose one or more credentials.
+Additionally, they may constrain the permitted values of attributes of the credentials.
+The transition labels that start with C are credential disclosure conditions.
+These conditions may be speci ed in a number of existing languages [3, 5, 9, 12].
+Trust-Serv uses TPL (Trust Policy Language) [10], because it is expressive enough to describe credential disclosure conditions.
+  Provisions and obligations.
+We represent provisions as service operations that must be invoked before the negotiation can proceed, while obligations are promises by the requester to invoke an operation some time in the future [4].
+The transition between state A and B in Figure 1 marked with a dashed line, is a provision that requires the requester to invoke the Register operation to satisfy the condition.
+The intention is that requesters that do not possess an ID credential may instead register at the service and provide their identity through the Register operation.
+  Timeouts are used to specify timed transitions.
+If no action is taken by the requester within a given time, a transition to another state may be forced by using timed transitions.
+This type of transition is used to abort abandoned negotiations by forcing them to a  nal state.
+The transition between state C[ID]C[GoldMember]C[Address (cid:217)Credit Card]CustomerReviewerGold Customer, BuyerBuyerP[Execute Register ]ADCBIT[10min]F54A and F in Figure 1 marked with a dotted line, is a timed transition that requires the requester to take action within ten minutes of entering state A.
+Trust negotiation policies are interpreted by negotiation controllers.
+Each service is associated with a negotiation controller that interprets the service s trust negotiation policy.
+When a requester invokes an operation of the service, the invocation is intercepted by the controller.
+The controller may then forward the invocation to the service for processing, reject it, or it may initiate a negotiation with the requester to allow it to establish suf cient trust to allow the invocation.
+Requesters may also deploy trust negotiation policies to protect their credentials, instead of interacting directly with the negotiation controller of the service.
+The task of the negotiation controller would then be to try to achieve suf cient trust to allow the requester to access the desired resource, within the limits of the requester s trust negotiation policy.
+Because the requester policy constructs are a subset of those used for a provider policy (requesters may not have service operations), we focus on provider policies.
+Figure 2 illustrates how controllers are deployed to perform trust negotiation on behalf of both requesters and providers.
+The advantage of this architecture is that all the trust negotiation occurs at the controller level.
+At the service level, the interaction appears to take place directly between the requester and the service provider.
+This eliminates the need to encode trust negotiation logic in the Web service itself, which simpli es development and deployment.
+Figure 2: Interaction between service requesters and providers.
+Trust negotiation is managed and automated by the negotiation controllers and takes place at the controller level.
+In dynamic Web service environments, policies often need to be modi ed to accommodate changing business strategies.
+Changes to laws and regulations also force enterprises to update their policies.
+Security holes may be discovered, which need to be recti ed.
+In general, lifecycle management has been recognized as an important problem and has been studied in several different domains (see e.g., [6, 13]).
+Our focus is to address the lifecycle management problem in the context of trust negotiation policies and of Web services, both conceptually and in terms of supporting tools and architectures.
+Lifecycle management in trust negotiation policies is an important issue since, if it is not properly addressed, it could lead to policy breaches or to lower service quality, such as slower response time.
+Assume that a new policy P is de ned for a service.
+All new negotiations will start according to P. However, simply aborting and restarting all current negotiations is not appropriate for several reasons.
+A considerable amount of work may be lost, and the number of ongoing negotiations may be so high that aborting and restarting all would cause severe disruption to other dependent services.
+For instance, if a popular Web site (e.g., Amazon.com) suddenly aborted all customer transactions, all current customers would have to repeat the steps of the purchasing process.
+This could cause customer frustration and ultimately lead to loss of income for the service as customers seek other services.
+The problem is even more critical in the case of long-running services, such as purchase order approval or employee relocation management, as both the likelihood of having policy changes during each service execution, as well as the amount of work lost by aborting the service increase in a very signi cant way.
+Instead, it should be possible for the service to modify its policy without disrupting ongoing negotiations.
+Ad-hoc approaches to policy evolution and negotiation migration encounter scalability problems when used in Web service environments.
+Due to the potentially large requester populations, the number of concurrent negotiations could be large.
+It is thus infeasi-ble to manually manage policy evolution.
+To address the problem, in the following we propose a framework that enables automated policy lifecycle management, built on top of the trust negotiation model presented earlier.
+This section introduces de nitions that will be used throughout the paper to describe our approach to lifecycle management in trust negotiation.
+We describe a trust negotiation policy P by the tuple  P = (cid:104)StatesP , T ransitionsP , RolesP ,  P ,  P(cid:105) where StatesP is the set of states of P , T ransitionsP is the set of transitions of P , RolesP is the set of roles protected by P ,  P is the transition assignment function, associating each transition to a source state and a target state, and  P is the role assignment function, associating each role to a set of states.
+The domains and co-domains of   and   are as follows (  denotes powerset):  P : T ransitionsP   StatesP   StatesP  P : RolesP    (StatesP ) Notice that a role may be mapped to several states, and several roles may be mapped to the same state.
+States C and D in the policy in Figure 1 show examples of these properties.
+Upon reaching state C, requesters may activate both the Gold Customer and the Buyer role.
+Requesters may acquire the Buyer role either by reaching state C or state D.
+To be considered legal, i.e., syntactically correct, a negotiation policy has to meet certain criteria.
+We introduce the following definitions to formally de ne legality of a negotiation policy P .
+In the remainder, we will omit the policy identi er P where no ambiguity arises from the context.
+  Initial state: The policy has a single initial state  , where     States.
+  Successor function: The successor function   maps a state to the set of states that succeeds it.
+It is de ned as:  (s) = {t|t   States   ( u : u   T ransitions    (u) = (cid:104)s, t(cid:105))}   Successor transitive closure: The transitive closure of the successor function, denoted  , maps a state to the set of its successors recursively.
+It is de ned as:     (s) = {p|p    (s)   ( t : t    (s)   p       (t))}   Reachability: A state s is reachable iff it is in the successor transitive closure of the initial state, i.e., s       ( ).
+  Incoming and outgoing transitions: The outgoing transitions function   maps a state s to the set of transitions for which s is the source.
+Similarly, the incoming transitions function   maps a state s to the set of transitions for which s is the target.
+They are de ned as: RequesterNegotiationControllerPolicyProviderWeb ServiceNegotiationControllerServiceLevelControllerLevelPolicy55 (s) = {tr|tr   T ransitions ( t : t   States (tr) = (cid:104)s, t(cid:105))}  (s) = {tr|tr   T ransitions ( t : t   States (tr) = (cid:104)t, s(cid:105))}   Source and target states: The source state  s and target state  t of a transition tr are de ned such that  (tr) = (cid:104) s(tr),  t(tr)(cid:105).
+With these de nitions in place, we may de ne policy legality.
+De nition 3.1 (Legality).
+A trust negotiation policy P is legal iff every state is reachable from the initial state.
+Formally:  s   StatesP : s =     s       ( )
+ To allow policy updates, it is necessary to provide a set of change operations that can be applied to a policy.
+However, these operations need to be carefully constructed, to ensure they satisfy some desirable properties.
+Firstly, the set of operations should ensure structural consistency.
+This means that the result of applying an operation to a legal policy should always result in a legal policy.
+Additionally, it means that changes may not cause any ongoing negotiation to end up in a situation such that it is not clear how to proceed, i.e., how to process incoming operation invocations.
+Secondly, the set of operations should be complete.
+This means that using only these operations, it should be possible to transform any legal policy P.I into any other legal policy P.F.
+Finally, the set of change operations should be minimal.
+The set is minimal if no proper subset of it is also complete.
+An important result of the structural consistency requirement is that removing states becomes a delicate process.
+Firstly, if a policy developer wants to remove a state from a policy, she must  rst make sure that all the remaining states are still reachable.
+Secondly, any negotiations currently at that state would be left in an inconsistent state, since the behavior of such instances would be unde ned.
+To handle the  rst problem, we specify the reachability requirement as a precondition of the operation to remove states.
+The second problem is handled by rolling back instances at that state to their previous states.
+Having a set of operators that is complete, minimal, and structurally consistent guarantees that, through such operators, we can make any changes to any policy while avoiding the generation of illegal policies.
+It also avoids burdening the model with unnecessary change operations that would make the framework more complex without adding value.
+Based on these properties, we de ne the set of change operations, hereafter called primitives.
+The de nitions below detail the preconditions and effects of the primitives.
+We assume in the following that a policy P.I is modi ed, resulting in an updated policy
+   AddTransition (Transition tr, State s, State t): This primitive adds transition tr to the policy with source state s, and target state t.
+Precondition: s, t   StatesP.I   tr /  T ransitionsP.I Effect:
+
+   RemoveTransition (Transition tr): This primitive removes transition tr from the policy.
+The precondition states that there must be at least one other transition to the target of tr.
+This maintains structural consistency by ensuring that state t is still reachable from the initial state  .
+| ( t(tr))    ( s(tr))|   1   tr   Precondition: T ransitionsP.I Effect:
+
+   MapRole (Role r, State s): This primitive adds role r to the policy and maps it to the state s.
+Precondition: s   StatesP.I Effect:
+
+   UnmapRole (Role r, State s): This primitive removes the mapping of role r to state s. Because r may be mapped to other states, it is only removed from RolesP.F if this is the last mapping for that role.
+Precondition: true Effect:
+
+ RolesP.F = RolesP.I   {r}   AppendState (State s, State r, Transition tr): This primitive adds the state s to the policy as a successor of the state r.
+The transition tr is added from state r to state s. The formal semantics are: Precondition: r   StatesP.I   s /  StatesP.I   tr /  T ransitionsP.I Effect:
+
+   RemoveState (State s): This primitive removes the state s from the policy.
+Before s is removed, all roles mapped to s are unmapped, and all transitions in and out of s are removed.
+The precondition states that all the target states of outgoing transitions from s must be reachable even if the outgoing transitions of s are removed.
+The formal semantics are: Precondition:  tr    (s) : | ( t(tr))    (s)|   1 Effect:
+
+ UnmapRole (r, s)  P.F =  P.I   {t (cid:55)   P.I (t)} T ransitionsP.F = T ransitionsP.I   {t}
+ Firstly, these primitives are complete because every trust negotiation policy may be developed by initially transforming it into a state machine with only an initial state.
+Secondly, the primitives are minimal because they deal with insertion or removal of distinct concepts (transitions, roles, and states).
+Finally, they are consistent, since after applying any primitive to a legal policy, the policy remains legal.
+As the proofs of these properties are lengthy, although intuitive, they are omitted.
+Instances Once a policy is changed, decisions must be taken on how to handle ongoing negotiation instances (i.e., negotiations) that began under a different policy.
+We identify strategies that can be used to manage the negotiation instances when policies are changed.
+These strategies are designed such that different strategies may be applied to each instance.
+We assume that an initial policy P.I is modi ed, resulting in a  nal policy P.F.
+The two most obvious strategies either allow the instances to complete according to the policy under which they begun, or abort the instances and restart them under the new policy.
+We detail these below:   Concurrent to completion.
+The negotiation in progress according to P.I is allowed to complete according to P.I.
+This means the enforcement system might need to enforce more than one policy at a time (e.g., both P.I and P.F).
+This is done by creating one negotiation controller instance for each policy.
+The controller instance enforcing P.I is destroyed once all its negotiations have completed.
+This strategy is applicable when the provider can tolerate existing negotiations completing according to P.I.
+However, in many cases the provider may not allow this to happen.
+For instance, a change to applicable laws means that the provider must modify its operation to satisfy the new requirements.
+This strategy would be unacceptable in such situations.
+  Abort.
+The negotiation instance is aborted, and all roles attained by the requester are deactivated.
+Depending on the implementation, a new negotiation instance following P.F may be created in place of the aborted instance.
+The main drawback of this strategy is that it may waste a lot of work that has already been done.
+The requester and provider may have already negotiated a high level of trust, but if this strategy is applied, the negotiation would have to start all over again.
+The inadequacy of the two previous strategies emphasizes the need for better and more ef cient solutions to this problem.
+This involves allowing ongoing negotiation instances to be migrated to the new policy.
+However, care needs to be taken when migrating negotiations, to avoid undesired results.
+Example 3.1 (Compliance).
+Consider the policy in Figure 1.
+Suppose that the credential disclosure transition between states A and B was modi ed as follows: The requester must also submit a Credit Card credential.
+At the same time, the condition of a Credit Card credential is removed from the transition between states B and D. The resulting policy P.F is shown in Figure 3 (the provision transition and the timed transition are removed for clarity of presentation).
+A requester may then have reached state B according to P.I without disclosing a Credit Card credential.
+If the policy is modi ed while this requester is at state B, and the negotiation is migrated to P.F, this requester will be able to proceed to state D and activate the Buyer role without disclosing its Credit Card.
+This may not be acceptable for the provider.
+Example 3.1 suggests that negotiations have to satisfy some condition in order to be effectively migrated to P.F.
+The condition is that the negotiation instance so far according to P.I is compliant to P.F.
+A negotiation instance is compliant to a negotiation policy if it is a valid instance of the policy.
+To be able to de ne compliance, we introduce the following variables relating to a negotiation N according to a policy P :   StateP N denotes the state of P that N is currently at.
+The initial value of this variable is the initial state of P .
+Figure 3: A modi ed trust negotiation policy P.F for a bookshop service.
+  V isitedStatesP N denotes the ordered set of states of P visited so far by N. This set is initialized to contain only the initial state of P .
+States are appended to this set as soon as N   V isitedStatesP the requester enters them, thus StateP
+ N denotes the set of roles that are currently   RolesActivatedP active for N.
+  T ransitionsF iredP N to reach the V isitedStatesP
+ N denotes the transitions of P taken by De nition 3.2 (Compliance).
+A trust negotiation instance N is compliant to a trust negotiation policy P if all of the following conditions hold:
+
+ V isitedStatesN   v    P (r)
+ {x, y}   V isitedStatesN    P (t) = (cid:104)x, y(cid:105)) This de nition states that the policy P must contain (i) all states visited by N, (ii) all active roles of N, which must be mapped to states visited by N, and (iii) all transitions  red by N, of which the source and target states must be visited by N.
+Based on our de nition of compliance, we present here two strategies for migrating running negotiation instances to new policies.
+  Migration to new policy.
+The negotiation is migrated to P.F.
+If the negotiation instance is compliant to P.F, the migration is said to be unconditional.
+However, if the instance is not compliant to P.F, the migration is conditional.
+Conditional migrations require the negotiation instance to trace back steps in the policy until it reaches a state where it is compliant to P.F.
+If such a rollback is necessary, the appropriate roles are deactivated after the migration.
+  Migration to hybrid policy.
+Instead of rolling back non-compliant negotiation instances, temporary policies may be de ned for these negotiations.
+This ad-hoc policy will be a hybrid of P.I and P.F.
+Its function is to modify existing negotiation instances to comply with the requirements causing the policy change from P.I to P.F.
+Such a strategy is useful if the policy modi cation is critically important but a rollback is considered too disruptive.
+Example 3.2 (Negotiation migration).
+Consider the policy of the bookshop service, shown in Figure 1.
+Suppose the provider C[CreditCard (cid:217) ID]C[GoldMember]C[Address]CustomerReviewerGold Customer, BuyerBuyerADCBI57changed this policy as explained in Example 3.1, resulting in the policy P.F shown in Figure 3.
+Suppose further that a current negotiation had reached state B and activated the Reviewer role when the policy change occurred.
+If the provider uses the abort strategy, the negotiation is canceled and must be restarted.
+This is simple, but it might be considered a suboptimal solution because of the work lost.
+The concurrent to completion strategy lets the negotiation continue according to the old policy.
+The provider must decide whether to allow this.
+If this is unacceptable, the provider must choose another strategy.
+Using the migration to new policy strategy, the system  rst determines whether the negotiation is compliant to the new policy.
+The transition between states A and B has been  red by this negotiation.
+Since this transition was changed in the new policy, the negotiation is not compliant to the new policy.
+Trust-Serv then rolls back the negotiation to state A, and deactivates the role Reviewer before the negotiation resumes following the new policy.
+Because the number of concurrent negotiation instances could be large, it is infeasible for the provider to manually examine each instance to determine which strategy to apply.
+Instead, we use meta-policies; sets of rules that describe the management of policies.
+The result of the evaluation of a negotiation instance with this meta-policy will determine the appropriate strategy for this instance.
+We call these meta-policies strategy selection policies.
+A strategy selection policy consists of a sequence of rules.
+Each rule has two parts; a condition on variables of negotiation instances, and a migration strategy with an associated policy.
+The condition is a set of logic statements that state restrictions on the permissible values of negotiation instance variables.
+The last rule of every policy has a true condition.
+This rule is called the default rule, since it is used if no other rules match.
+The strategy part of each rule contains one of the evolution strategies presented above.
+It also contains a reference to the policy to which the instance is migrated if the condition evaluates to true.
+Negotiation instances are evaluated against each of the rules in turn, until a match is found.
+Once a negotiation instance satis es the condition of a rule, matching ceases and the instance is migrated to the speci ed policy using the speci ed strategy.
+Notice that the rules de ne a partition of the set of ongoing negotiations, meaning that for each ongoing negotiation there is exactly one strategy.
+Example 3.3 (Strategy selection policy).
+Figure 4 shows an example of a strategy selection policy.
+The policy P.I (Figure 1) is modi ed to achieve policy P.F (Figure 3).
+Rule 1 states that instances that have only visited state I and A are aborted.
+Rule 2 states that negotiation instances that have not visited state D are migrated to the new policy P.F.
+Finally, rule 3 is the default rule that speci es that all other instances are allowed to complete according to their current policy P.I.
+Issues regarding implicit agreements with requesters may arise when policies are changed while a negotiation is underway.
+When the provider informs the requester that it can acquire its desired role R at state S by providing a credential C, this is an implicit obligation from the provider to the requester.
+Essentially, the provider has just promised the requester that it only has to submit a single credential C to access role R.
+Now suppose that the provider wishes to change the policy by removing the mapping of role R to state S (i.e., applying the prim-
+
+
+<VARIABLE>VisitedStates</VARIABLE>
+
+
+ <STRATEGY NAME="Abort" POLICY="null"/>
+
+
+
+
+ <VARIABLE>VisitedStates</VARIABLE>
+
+ <STRATEGY NAME="Migrate to new policy"
+
+ <RULE ID="3" TYPE="default"> <STRATEGY NAME="Concurrent to completion"
+
+ Figure 4: A strategy selection policy.
+itive U nmapRole(R, S)).
+If this negotiation instance is migrated to the new policy after the requester has submitted credential C and activated role R, R will be deactivated.
+Now the requester has disclosed C to no avail, and it has not been able to acquire R, as promised by the provider.
+It is of vital importance that any lifecycle management model provides ways to handle these issues.
+Using the Trust-Serv trust negotiation policy model, the policy change that might cause such a situation is the removal of role-to-state mappings.
+To avoid situations where promises to the requester are broken, it is necessary to not deactivate roles activated by requesters, even if these role mappings are moved or removed.
+By letting requesters keep their roles, the promised resources are still available to requesters, and the implicit agreement is not broken.
+However, there might be situations where the policy upgrade is considered vital by the service provider.
+For instance, it might be discovered that the previous trust negotiation policy was too weak and allowed some requesters to obtain resources that they should not be able to obtain.
+Such violations could even be in breach of laws in cases where it would allow access to privileged information.
+It is thus not possible to always allow requesters to keep their roles in the case of policy updates and instance migration.
+To address this issue, we introduce a set of options that may be taken whenever negotiation instances are migrated to a new policy where role mapping have been removed.
+These options are executed by the provider s negotiation controllers.
+They permit role deactivations to be delayed, or provides compensation to the requester for obligations that are not upheld.
+  Delay the role deactivation.
+The provider instructs the negotiation controller to delay all role deactivations by some speci ed time.
+A notice is sent out to all affected instances, informing them that some of their privileges will soon be revoked because of a forced role deactivation.
+This gives re-questers a  grace period , during which they can adapt to the change by exercising the privileges they have achieved so far in the negotiation.
+  Compensate the requester.
+The provider instructs the controller to deactivate the affected roles immediately, and no-
+these requesters, offers of compensations are issued by the provider.
+This compensation can take many forms, including  nancial compensation.
+In Trust-Serv, we associate a compensation role with each role in the trust negotiation policy.
+This means that if a role is deactivated due to migration to another policy, the provider may offer membership in a compensation role to the requester.
+This role may then give the requester access to various forms of compensation offered by the service.
+Example 3.4 (Compensation).
+Figure 5 shows a fragment of the de nition of a role named Gold Customer.
+It spec-i es that if a requester is a member of this role, and this membership is deactivated by a negotiation migration, then that requester instead becomes a member of the compensation role Discount.
+  Let the requester decide.
+This  nal option lets the requester decide between the two previous options (i.e., delay the role deactivation or compensate the requester).
+The affected negotiations are suspended while the negotiation controller issues noti cations to the requesters asking for their preferred way of dealing with the issue.
+Once the requester replies with its choice, the instance is resumed and the controller takes the action indicated by the requester s reply.
+<ROLE NAME="Gold Customer" ...> <COMPENSATION ROLE="Discount"/> ...
+Figure 5: An example of the speci cation of a compensation role.
+Note that if the policy update does not involve removal of role-to-state mappings (i.e., the UnmapRole primitive), this issue does not arise.
+Also, even if role mappings are removed, if the chosen strategy for an instance is concurrent to completion, the update does not affect that instance, and no further action is necessary.
+In order to support the trust negotiation model described in this paper, we propose an architecture for Trust-Serv that is speci cally targeted at Web service environments.
+The goal of the architecture is to substantially increase the level of automation in Web service development and deployment with respect to what is available today.
+We achieve this by factorizing into the middleware those chores common to the development of many Web services.
+The Trust-Serv architecture introduces the notion of Web service containers to manage the internal behavior of the underlying service and its interactions with service requesters and partners.
+Containers provide functionality necessary for Web services to support trust negotiation, as well as other functionalities, such as conversation management and exception handling.
+The run-time operation of the service container is directed by policies, such as trust negotiation policies, that may be de ned for individual or groups of Web services.
+The advantage of this architecture is that developers who want to create a new service simply need to implement the business logic of the service and specify the trust negotiation policy.
+Tasks such as controlling negotiation instances and verifying credentials are delegated to the container, thereby considerably simplifying development.
+An overview of the extended architecture is shown in Figure 6.
+Figure 6: The service container architecture.
+The negotiation controllers are implemented as Web services that provide the capabilities to participate in trust negotiations.
+At run-time, the negotiation controllers are responsible for receiving negotiation messages such as credential disclosures and service requests, determining if new negotiation instances should be created, and triggering transitions if their conditions are met.
+Messages are sent between negotiation instances and service instances as SOAP requests and responses [7].
+Information needed by controllers to control trust negotiations is provided by translating the state machine representation of trust negotiation policies into rules.
+Due to space reasons, we do not discuss this here.
+However, details on this translation can be found in [15].
+The negotiation controllers are able to intercept invocations to the protected service by implementing all the operations de ned in the interface of the service (i.e., in the WSDL document [7]).
+However, for the operations of this interface, the negotiation controller simply acts as a mediator.
+That is, after the invocation is permitted, the implementations of these operations in the negotiation controllers only consist of a call to the corresponding operation in the protected service.
+Thus, requesters only interact with the protected service indirectly through the negotiation controllers.
+To support lifecycle management, Trust-Serv offers a negotiation modeler, which is a CASE-like tool for Web service trust negotiation policies.
+It assists developers in specifying and modifying negotiation policies.
+Additionally, it allows policy developers to de- ne strategy selection policies as XML documents.
+A negotiation policy is edited through a visual interface.
+This interface offers an editor for describing a state machine diagram of a negotiation policy.
+It also provides means to describe the conditions of transitions.
+The modeling functions available to the policy developer are the members of the set of primitives de ned in the policy model.
+Additionally, the interface allows more complex functions to be built using the primitives.
+Once constructed, these functions are available in the editor.
+Figure 7 shows a screenshot of the negotiation modeler interface.
+Implementation and Evaluation The implementation of Trust-Serv is an extension to the Self-Serv platform [1].
+Self-Serv is a middleware supporting Web service development based on standards such as SOAP, WSDL (Web Service Description Language), and UDDI (Universal Description, RequestersNegotiationControllersNegotiationModelerContainerRolePrivilegesNegotiationPoliciesWebServiceProviderCredentials59be very similar to the performance without negotiation strategies.
+Conversely, if most of the negotiation instances were allowed to complete according to the old policy, the migration strategies would seem to clearly give better performance.
+To avoid favoring either of the two options (with or without migration strategies), we focused on the migration to new policy strategy.
+This strategy must determine if a negotiation instance complies with the new policy.
+Compliant negotiations would be easily migrated to the new policy.
+Non-compliant negotiations, on the other hand, would have to be rolled back, then migrated to the new policy, and  nally advanced through the new policy as far as possible using credentials already disclosed by the requester.
+We designed the policy update to cause half of the active negotiations to be migrated unconditionally, while the other half was non-compliant and would have to be rolled back.
+The graphs in Figure 8 show the performance with and without migration strategies.
+The graph on the left shows the time taken when negotiations are aborted and restarted, while the graph on the right shows the time taken when negotiations are migrated.
+Each approach was tested with policies with different number of states and different number of negotiation instances.
+Each of the tests was run 11 times, with the result of the  rst run thrown away, to ensure that issues such as initialization would not affect the  nal result.
+The times taken by the remaining runs were averaged to achieve the times seen in the graphs.
+The times on the vertical axis show the performance bene t of using migration strategies.
+As we can see from the graphs, increasing the number of states causes only a linear increase in the time taken to migrate the negotiation instances.
+Similarly, increasing the number of negotiation instances causes a linear increase in the migration time.
+This shows that the migration strategies of Trust-Serv scales well both for a high number of negotiations, and for complex trust negotiation policies with many states.
+A model-driven approach to trust negotiation provides bene ts for developers of composite Web services.
+A composite Web service is an umbrella structure that aggregates multiple other elementary and composite Web services.
+In the composition, these services interact according to a given process model.
+For example, a composite Web service  Travel Planner  may aggregate multiple Web services for  ight booking, travel insurance, accommodation booking, car rental, itinerary planning, etc., which are executed sequentially or concurrently.
+The process model underlying a composite service is speci ed using formalisms like state charts [1], or emerging standard composition languages such as BPEL4WS (Business Process Execution Language for Web Services) [16].
+We have identi ed three composition scenarios in which our trust negotiation model is helpful.
+negotiation policy In this scenario, we assume that a composition model is already de ned by a service developer.
+The problem lies in inferring the trust negotiation policy of the composite service from the composition model and the trust negotiation policies of the component services.
+This is useful in cases where the developer starts by de ning the composition model, and then needs to derive the trust negotiation policy that the composite service supports.
+For example, assume that operation OPC of the composite service SC is implemented by invoking operation OP1 of service S1.
+Figure 7: The Trust Negotiation Modeler interface.
+Discovery, and Integration) [7].
+To test the scalability of Trust-Serv, we focused on the performance advantages of the lifecycle management framework.
+The migration strategies migrates negotiation instances to an updated policy.
+Without such strategies, trust negotiation frameworks would be forced to abort all negotiation instances and restart then following the new policy.
+To measure the performance advantage, the experiments were implemented in Java and run using Sun s JDK 1.4 on an AMD Athlon 1 GHz with
+ Scaling well for a high number of negotiations is important for Web services because they frequently have many requesters.
+Similarly, scaling well for complex policies with many states is an important property, since Web service policies are often very complex.
+This is because complicated laws and regulations often apply to services offered, and the trust negotiation policy has to enforce these laws.
+To measure the bene ts of migration strategies, we generated a number of ongoing negotiations at various states of a policy P.I.
+We then create another policy P.F by changing P.I using the primitives.
+If no migration strategies are used, we assume that all credentials submitted so far by the requester are kept in a cache by the provider.
+This information can then be used by the controller of the new policy to advance the restarted negotiation through the new policy, without any further credential disclosures by the requester.
+We measured the time it took for the controller to evaluate this information and move the negotiation as close as possible to the target state using only the information already submitted by the requester before the policy change.
+To compare, we measured the time it took to evaluate the negotiations against a strategy selection policy, migrating the instances accordingly, and advancing them as close as possible to their target state using information already submitted, in a manner similar to that used without migration strategies.
+Any performance advantage would come from the fact that the policy evaluation would not have to start from the initial state of the policy, but rather from the state of the new policy to which the negotiation was migrated.
+Of course, these measurements would be highly dependent on what changes are made, and on the strategy selection policy.
+If the strategy selection policy was set to abort nearly all the negotiation instances, the performance with negotiation strategies would likely
+ restart, and reevaluate negotiations with respect to the new policy.
+The graph on the right shows the time taken to evaluate the negotiation instances against the strategy selection policy, determining which of the instances comply with the new policy, migrating the negotiation instances, and reevaluating those instances that could not be migrated unconditionally from the state of the new policy to which they were migrated.
+If the condition of invoking OP1 from the trust negotiation policy of S1 requires credential CC to be disclosed, this condition is added to the condition of invoking OPC in the policy of SC.
+An even more useful approach consists of guiding the service developer in designing the composition model of the composite service, based on the trust negotiation policy that the composite service has to support.
+This is useful for instance in cases where some standardization body has de ned the characteristics (including trust negotiation policies) that a certain service must support.
+The developer is then faced with the problem of designing a composition model and choosing component services that can implement the standardized trust negotiation policy.
+To assist the developer in this effort, it is possible to automatically generate a skeleton of a composition model starting from the trust negotiation policy that the composite service has to support.
+The developer may then extend the skeleton with the business logic required to implement the service functionality.
+For instance, consider an operation OPC of a composite service SC that is implemented by invoking operation OP1 of service S1 and operation OP2 of service S2 in parallel.
+If the standardized trust negotiation policy of SC states that the condition for invoking OPC is CC, then S1 and S2 must be chosen so that CC = C1 C2, where C1 and C2 are the conditions for invoking OP1 and OP2 in the policies of S1 and S2, respectively.
+validation Given trust negotiation policies of a composite service and its component services, as well as a composition model of the composite service, abstractions of a trust negotiation model prove useful for checking the correctness of the trust negotiation policy of a composite service with respect to the composition model and the trust negotiation policies of the component services.
+Essentially, we want to avoid invocations of operations of the component services by the composite service if the requester to the composite service does not have the right to invoke those operations.
+As an example, consider an operation OPC of a composite service SC that is implemented by invoking operation OP1 of service S1.
+If the trust negotiation policy of S1 states that the condition for invoking OP1 is C1, then the condition CC for invoking OPC in the trust negotiation policy of SC must be either C1 or C1   C2, where C2 represents additional conditions for invoking OPC spec-i ed by the trust negotiation policy of SC.
+If this is not the case, the validation fails.
+If, for instance, CC = C1  C2, the validation fails because this would allow OP1 to be invoked without satisfying C1.
+Our work is related to efforts in providing policy languages for trust negotiation.
+Existing languages include early works such as PolicyMaker and KeyNote [9], as well as more recent efforts, such as IBM s TPL (Trust Policy Language) [10], the RT family of role-based trust management languages [12], the portfolio and service protection language presented in [5], as well as  Sec and  -TNL [3].
+Trust-Serv is complementary to all these efforts, as we use TPL to describe credential disclosure conditions.
+On the other hand, Trust-Serv provides a lifecycle management framework to support evolution of trust negotiation policies.
+To the best of our knowledge, none of these existing policy languages includes support for dynamic policy evolution.
+Our visual model for representing trust negotiation policies as state machines is related to visualization efforts in IBM s Trust Establishment (TE) framework [10].
+TE allows policies to be speci- ed as graphs, where the nodes represent roles and the edges show which roles are accepted as issuers of credentials for membership in other roles.
+The framework also includes an editor that allows policies to be edited as graphs.
+However, since TE does not support trust negotiation, it does not support dynamic policy evolution.
+The use of graphs to specify policies has also been studied by Yu et al. [17].
+The aim of this work is to use policy graphs to prevent unnecessary policy disclosure during trust negotiation.
+In this model, each resource is assigned a policy in the form of a graph.
+A policy is attached to each node, and this policy is revealed upon the client reaching the predecessor node.
+The policy speci es the credential disclosures that are required before the client may reach the
+ ferences between the policy graph model and our policy state machine model.
+Firstly, each policy graph can only be used to protect one resource, while state machine policies in Trust-Serv can protect any number of resources.
+Secondly, our model extends traditional state machines with security abstractions such as provisions and obligations.
+Finally, our model supports lifecycle management of both trust negotiation policies and negotiation instances.
+Our concept of trust negotiation borrows from TrustBuilder [17].
+This framework focuses on trust negotiation strategies and protocols.
+Negotiation strategies control which credentials to disclose, when to disclose them, and when to terminate a negotiation.
+The strategies are designed to work together with policies.
+If a policy determines that a credential may be disclosed, the strategy determines whether the disclosure is necessary, and when it should take place.
+Trust-Serv is complimentary to this work, as it adds support for dynamic policy evolution.
+In addition, our work features a container-centric architecture and implementation designed for Web services which permits scalable deployment of trust negotiation infrastructure.
+Bertino et al. [2] introduced a model for specifying and enforcing authorization constraints in work ow management systems.
+While our policy model uses state machines, a common representation for process systems such as work ows, our model works on a different level than this work ow authorization model.
+The model proposed in [2] speci es authorizations on the individual tasks of the business process.
+These processes are executed internally, possibly with publicly exposed interfaces.
+Our model on the other hand, considers these public interfaces exposed as Web services.
+Therefore, state machines in our model do not represent business processes, but rather policies to restrict access to exposed interfaces of business processes.
+Another important difference is that the model in [2] does not support lifecycle management of policies.
+Finally, Trust-Serv provides a scalable implementation of trust negotiation for Web service environments.
+Dynamic evolution of trust negotiation policies presents some unique and challenging issues.
+Firstly, because the number of ongoing negotiations may be large, we introduced strategy selection policies to automatically determine the appropriate strategy for each negotiation instance.
+Secondly, because the negotiation involves two parties (the requester and the provider), we had to address issues such as implicit obligations, and compensation if privileges were removed due to negotiation migration.
+In this regard, Trust-Serv provides a novel architecture for scalable deployment of trust negotiation with lifecycle management support in Web service environments.
+We have presented Trust-Serv, a trust negotiation framework for access control in Web services.
+In particular, we have emphasized lifecycle management, which is an important issue that to date has not been addressed.
+We have shown how security abstractions can be modeled as extensions to traditional state machines.
+Based on a formalization of the model, we have presented policy evolution primitives, negotiation instance migration strategies, and a strategy selection policy language that allow running negotiations to be ef- ciently migrated to a new policy.
+Finally, we have shown how this framework implements service containers to enable scalable deployment.
+Although we have chosen Web services as our target applications, many of the results presented in this paper are applicable to other forms of services provided over networks.
+A promising area for future includes expanding the model to handle composition of Web services.
+The approach to composite Web services will be based on the principles discussed in the joint analysis of trust negotiation and service composition.
+To enable composition, it is also necessary to study compatibility between requester and provider policies.
+That is, given the policies of a requester and a provider, is it possible to establish suf cient trust between the two parties to facilitate the desired interaction.
+This has been the subject of previous research, and we are investigating the application of this work to our model.

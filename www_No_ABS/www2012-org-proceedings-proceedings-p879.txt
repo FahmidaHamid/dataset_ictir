@@ -1,0 +1,355 @@
+Because data from the web are big and noisy, algorithms that process large document collections cannot solely depend on human annotations.
+One popular technique for navigating large unanno-tated document collections is topic modeling, which discovers the themes that permeate a corpus.
+Topic modeling is exempli ed by Latent Dirichlet Allocation (LDA), a generative model for document-centric corpora [1].
+It is appealing for noisy data because it requires no annotation and discovers, without any supervision, the thematic trends in a corpus.
+In addition to discovering which topics exist in a Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+Distribution of these papers is limited to classroom use, and personal use by others.
+corpus, LDA also associates documents with these topics, revealing previously unseen links between documents and trends over time.
+Although our focus is on text data, LDA is widely used in computer vision [2, 3], computational biology [4, 5], and computational linguistics [6, 7].
+In addition to being noisy, data from the web are big.
+The MapRe-duce framework for large-scale data processing [8] is simple to learn but  exible enough to be broadly applicable.
+Designed at Google and open-sourced by Yahoo, Hadoop MapReduce is one of the mainstays of industrial data processing and has also been gaining traction for problems of interest to the academic community such as machine translation [9], language modeling [10], and grammar induction [11].
+In this paper, we propose a parallelized LDA algorithm in the MapReduce programming framework (Mr. LDA).1 Mr. LDA relies on variational inference, as opposed to the prevailing trend of using Gibbs sampling.
+We argue for using variational inference in Section 2.
+Section 3 describes how variational inference  ts naturally into the MapReduce framework.
+In Section 4, we discuss two speci c extensions of LDA to demonstrate the  exibility of the proposed framework.
+These are an informed prior to guide topic discovery and a new inference technique for discovering topics in multilingual corpora [12].
+Next, we evaluate Mr. LDA s ability to scale in Section 5 before concluding with Section 6.
+In practice, probabilistic models work by maximizing the log-likelihood of observed data given the structure of an assumed probabilistic model.
+Less technically, generative models tell a story of how your data came to be with some pieces of the story missing; inference  lls in the missing pieces with the best explanation of the missing variables.
+Because exact inference is often intractable (as it is for LDA), complex models require approximate inference.
+One of the most widely used approximate inference techniques for such models is Markov chain Monte Carlo (MCMC) sampling, where one samples from a Markov chain whose stationary distribution is the posterior of interest [20, 21].
+Gibbs sampling, where the
+
+ Async-LDA [15]
+ pLDA [17]
+ Mahout [19] Mr. LDA Framework Multi-thread
+ Multi-thread Master-Slave MPI & MapReduce Hadoop MapReduce MapReduce Inference Gibbs Gibbs & V.B.
+Gibbs
+ Gibbs Gibbs
+
+ Likelihood Computation                                                 Asymmetric Hyperparameter   Prior Optimization Informed Multilingual   Prior                                 Table 1: Comparison among different approaches.
+Mr. LDA supports all of these features, as compared to existing distributed or multi-threaded implementations.
+(  - not available from available documentation.)
+Markov chain is de ned by the conditional distribution of each latent variable, has found widespread use in Bayesian models [20, 22,
+ Convergence of the sampler to its stationary distribution is dif cult to diagnose, and sampling algorithms can be slow to converge in high dimensional models [21].
+Blei, Ng, and Jordan presented the  rst approximate inference technique for LDA based on variational methods [1], but the collapsed Gibbs sampler proposed by Grif ths and Steyvers [23] has been more popular in the community because it is easier to implement.
+However, such methods inevitably have intrinsic problems that lead to dif culties in moving to web-scale: shared state, randomness, too many short iterations, and lack of  exibility.
+Shared State.
+Unless the probabilistic model allows for discrete segments to be statistically independent of each other, it is dif cult to conduct inference in parallel.
+However, we want models that allow specialization to be shared across many different corpora and documents when necessary, so we typically cannot assume this independence.
+At the risk of oversimplifying, collapsed Gibbs sampling for LDA is essentially multiplying the number of occurrences of a topic in a document by the number of times a word type appears in a topic across all documents.
+The former is a document-speci c count, but the latter is shared across the entire corpus.
+For techniques that scale out collapsed Gibbs sampling for LDA, the major challenge is keeping these second counts for collapsed Gibbs sampling consistent when there is not a shared memory environment.
+Newman et al. [25] consider a variety of methods to achieve consistent counts: creating hierarchical models to view each slice as independent or simply syncing counts in a batch update.
+Yan et al. [14]  rst cleverly partition the data using integer programming (an NP-Hard problem).
+Wang et al. [17] use message passing to ensure that different slices maintain consistent counts.
+Smola and Narayanamurthy [18] use a distributed memory system to achieve consistent counts in LDA, and Ahmed et al. [26] extend the approach more generally to latent variable models.
+Gibbs sampling approaches to scaling thus face a dif cult dilemma: completely synchronize counts, which can compromise scaling, or allow for inconsistent counts, which could negatively impact the quality of inference.
+In contrast to some engineering workarounds, variational inference provides a mathematical solution of how to scale inference for LDA.
+By assuming a variational distribution that treats documents as independent, we can parallelize inference without a need for synchronizing counts (as required in collapsed Gibbs sampling).
+Randomness.
+By de nition, Monte Carlo algorithms depend on randomness.
+However, MapReduce implementations assume that every step of computation will be the same, no matter where or when it is run.
+This allows MapReduce to have greater fault-tolerance, running multiple copies of computation subcomponents in case one fails or takes too long.
+This is, of course, easily  xed (e.g.
+by seeding a random number generator in a shard-dependent way), but it adds another layer of complication to the algorithm.
+Variational inference, given an initialization, is deterministic, which is more in line with MapReduce s system for ensuring fault tolerance.
+Many Short Iterations.
+A single iteration of Gibbs sampling for LDA with K topics is very quick.
+For each word, the algorithm performs a simple multiplication to build a sampling distribution of length K, samples from that distribution, and updates an integer vector.
+In contrast, each iteration of variational inference is dif cult; it requires the evaluation of complicated functions that are not simple arithmetic operations directly implemented in an ALU (these are described in Section 3).
+This does not mean that variational inference is slower, however.
+Variational inference typically requires dozens of iterations to converge, while Gibbs sampling requires thousands (determining convergence is often more dif cult for Gibbs sampling).
+Moreover, the requirement of Gibbs sampling to keep a consistent state means that there are many more synchronizations required to complete inference, increasing the complexity of the implementation and the communication overhead.
+In contrast, variational inference requires synchronization only once per iteration (dozens of times for a typical corpus); in a na ve Gibbs sampling implementation, inference requires synchronization after every word in every iteration (potentially billions of times for a moderately-sized corpus).
+Extension and Flexibility.
+Compared to Mr. LDA, many Gibbs samplers are highly tuned speci cally for LDA, which restricts extensions and enhancements, one of the key bene ts of the statistical approach.
+The techniques to improve inference for collapsed Gibbs samplers [27] typically reduce  exibility; the factorization of the conditional distribution is limited to LDA s explicit formulation.
+Adapting such tricks beyond LDA requires repeating the analysis to refactorize the conditional distribution.
+In Section 4.1 we add an informed prior to topics  word distribution, which guides the topics discovered by the framework to psychologically plausible concepts.
+In Section 4.2, we adapt Mr.
+LDA to learn multilingual topics.
+Nallapati, Cohen and Lafferty [16] extended variational inference for LDA to a parallelized setting.
+Their implementation uses a master-slave paradigm in a distributed environment, where all the slaves are responsible for the E-step and the master node gathers all the intermediate outputs from the slaves and performs the M-step.
+While this approach parallelizes the process to a small-scale distributed environment, the  nal aggregation/merging showed an I/O bottleneck that prevented scaling beyond a handful of slaves because the master has to explicitly read all intermediate results from slaves.
+Mr. LDA addresses these problems by parallelizing the work done by a single master (a reducer is only responsible for a single topic) and relying on the MapReduce framework, which can ef ciently marshal communication between compute nodes.
+Building on the MapReduce framework also provides advantages for reliability and monitoring not available in an ad hoc parallelization framework.
+The MapReduce [8] framework was originally inspired from the map and reduce functions commonly used in functional programming.
+It adopts a divide-and-conquer approach.
+Each mapper processes a small subset of data and passes the intermediate results as key value pairs to reducers.
+The reducers receive these inputs in sorted order, aggregate them, and produce the  nal result.
+In addition to mappers and reducers, the MapReduce framework allows for the de nition of combiners and partitioners.
+Combiners perform local aggregation on the key value pairs after map function.
+Combiners help reduce the size of intermediate data transferred and are widely used to optimize a MapReduce process.
+Partitioners control how messages are routed to reducers.
+Mahout [19], an open-source machine learning package, provides a MapReduce implementation of variational inference LDA, but it lacks features required by mature LDA implementations such as supplying per-document topic distributions and optimizing hyper-parameters (for an explanation of why this is essential for model quality, see Wallach et al. s  Why Priors Matter  [34]).
+Without per-document topic distributions, many of the downstream applications of LDA (e.g.
+document clustering) become more dif cult.
+Table 1 provides a general overview and comparison of features among different approaches for scaling LDA.
+Mr. LDA is the only implementation which supports all listed capabilities in a distributed environment.
+LDA assumes the following generative process to create a corpus of M documents with Nd words in document d using K topics.
+ k   Dir( k) (a) Draw document s topic distribution  d   Dir( ) (b) For each word n   {1, .
+.
+.
+Nd}: i.
+Choose topic assignment zd,n   Mult( d) ii.
+Choose word wd,n   Mult( zd,n ) In this process, Dir() represents a Dirichlet distribution, and Mult() is a multinomial distribution.
+  and   are parameters.
+The mean eld variational distribution q for LDA breaks the connection between words and documents q(z,  ,  ) = Dir( k |  k) Dir( d |  d)Mult(zd,n |  d,n), and when used in Equation 1 yields updates that optimize L, the lower bound on the likelihood.
+In the sequel, we take these updates (cid:89) k (cid:89) d (a) LDA (b) Variational Figure 1: Graphical model of LDA and the mean  eld varia-tional distribution.
+Each latent variable, observed datum, and parameter is a node.
+Lines between represent possible statistical dependence.
+Shaded nodes are observations; rectangular plates denote replication; and numbers in the bottom right of a plate show how many times plates  contents repeat.
+In the variational distribution (right), the latent variables  ,  , and z are explained by a simpler, fully factorized distribution with variational parameters  ,  , and  .
+The lack of inter-document dependencies in the variational distribution allows the paral-lelization of inference in MapReduce.
+An alternative to MCMC is variational inference.
+Variational methods, based on techniques from statistical physics, use optimization to  nd a distribution over the latent variables that is close to the posterior of interest [28, 29].
+Variational methods provide effective approximations in topic models and nonparametric Bayesian models [30, 31, 32].
+We believe that it is well-suited to MapReduce.
+Variational methods enjoy clear convergence criterion, tend to be faster than MCMC in high-dimensional problems, and provide particular advantages over sampling when latent variable pairs are not conjugate.
+Gibbs sampling requires conjugacy, and other forms of sampling that can handle non-conjugacy, such as Metropolis-Hastings, are much slower than variational methods.
+With a variational method, we begin by positing a family of distributions q   Q over the same latent variables Z with a simpler dependency pattern than p, parameterized by  .
+This simpler distribution is called the variational distribution and is parameterized by  , a set of variational parameters.
+With this variational family in hand, we optimize the evidence lower bound (ELBO), L = Eq [log (p(D|Z)p(Z| ))]   Eq [log q(Z)] (1) a lower bound on the data likelihood.
+Variational inference  ts the variational parameters   to tighten this lower bound and thus minimizes the Kullback-Leibler divergence between the variational distribution and the posterior.
+The variational distribution is typically chosen by removing probabilistic dependencies from the true distribution.
+This makes inference tractable and also induces independence in the variational distribution between latent variables.
+This independence can be engineered to allow parallelization of independent components across multiple computers.
+Maximizing the global parameters in MapReduce can be handled in a manner analogous to EM [33]; the expected counts (of the vari-ational distribution) generated in many parallel jobs are ef ciently aggregated and used to recompute the top-level parameters.
+ kKznwn d MNd kMNd d dzn nK k kWWW 2012   Session: Information ExtractionApril 16 20, 2012, Lyon, France881for all v   [1, V ] do Algorithm 1 Mapper Input: KEY - document ID d   [1, C], where C = |C|.
+VALUE - document content.
+Con gure
+
+ Map
+
+
+ 4: repeat
+
+
+
+
+
+
+ 12: until convergence
+
+
+
+
+
+ 19: end for
+ end for Emit (cid:104)(cid:52), k(cid:105) : Emit (cid:104)k, d(cid:105) :  d,k to  le.
+end for Normalize  v, set   =   + wv v,  end for Update row vector  d,  =   +  .
+for all k   [1, K] do Update  v,k =  v,k(cid:80) for all v   [1, V ] do Emit (cid:104)k, v(cid:105) : wv v,k.
+  exp   ( d,k).
+  ( d,k)     (cid:16)(cid:80)K (cid:17)(cid:17) (cid:16) v  v,k l=1  d,l .
+{Section 3.4} as given, but interested readers can refer to the appendix of Blei et al. [1].
+Variational EM alternates between updating the expectations of the variational distribution q and maximizing the probability of the parameters given the  observed  expected counts.
+The remainder of the paper focuses on adapting these updates into the MapReduce framework and challenges of working at a large scale.
+We focus on the primary components of a MapReduce algorithm: the mapper, which processes a single unit of data (in this case, a document); the reducer, which processes a single view of globally shared data (in this case, a topic parameter); the partitioner, which distributes the workload to reducers; and the driver, which controls the overall algorithm.
+The interconnections between the components of Mr. LDA are depicted in Figure 2.
+Each document has associated variational parameters   and  .
+The mapper computes the updates for these variational parameters and uses them to create the suf cient statistics needed to update the global parameters.
+In this section, we describe the computation of these variational updates and how they are transmitted to the reducers.
+Given a document, the updates for   and   are  v,k   Eq [ v,k]   e ( k ),  k =  k +  v,k, where v   [1, V ] is the term index and k   [1, K] is the topic index.
+In this case, V is the size of the vocabulary V and K denotes the total number of topics.
+The expectation of   under q gives an estimate of how compatible a word is with a topic; words highly v=1 V(cid:88) Algorithm 2 Reducer Input: KEY - key pair (cid:104)pleft, pright(cid:105).
+VALUE - an iterator I over sequence of values.
+Reduce
+ un-normalized   if pleft (cid:54)= (cid:52) and   suf cient statistics (refer to Section 3.4 for more details) otherwise.
+compatible with a topic will have a larger expected   and thus higher values of   for that topic.
+Algorithm 1 illustrates the detailed procedure of the Map function.
+In the  rst iteration, mappers initialize variables, e.g.
+seed   with the counts of a single document.
+For the sake of brevity, we omit that step here; in later iterations, global parameters are stored in distributed cache   a synchronized read-only memory that is shared among all mappers [35]   and retrieved prior to mapper execution in a con guration step.
+A document is represented as a term frequency sequence (cid:126)w = (cid:107)w1, w2, .
+.
+.
+, wV (cid:107), where wi is the corresponding term frequency in document d. For ease of notation, we assume the input term frequency vector (cid:126)w is associated with all the terms in the vocabulary, i.e., if term ti does not appear at all in document d, wi = 0.
+Because the document variational parameter   and the word variational parameter   are tightly coupled, we impose a local convergence requirement on   in the Map function.
+This means that the mapper alternates between updating   and   until   stops changing.
+The Map function in Algorithm 1 emits suf cient statistics for updating the topic variational distribution  .
+These suf cient statistics are keyed by a composite key set (cid:104)pleft, pright(cid:105).
+These keys can take two forms: tuple of topic and word identi er or, when the value represents the suf cient statistics for   updating, a unique value (cid:52) and a topic identi er.
+A partitioner is required to ensure that messages from the mappers are sent to the appropriate reducers.
+Each reducer is responsible for updating the per-topic variational parameter associated with a single topic indexed by k. This is accomplished by ensuring the partitioner sorts on topic only.
+A consequence of this is that any reducers beyond the number of topics is super uous.
+Given that the vast majority of the work is in the mappers, this is typically not an issue for LDA.
+The Reduce function updates the variational parameter   associated with each topic.
+It requires aggregation over all intermediate   vectors C(cid:88) (cid:16) (cid:17)  v,k =  v,k + w(d) v  (d) v,k , d=1 where d   [1, C] is the document index and w(d) denotes the number of appearances of term v in document d. Similarly, C is the number of documents.
+Although the variational update for   does not include a normalization, the expectation Eq [ ] requires the   normalizer.
+In Mr. LDA, the  v,k parameters are distributed to all mappers, and the normalization is taken care of by the mappers in a con guration step prior to every iteration.
+v gation of suf cient statistics in mappers before they are transferred to reducers.
+This decreases bandwidth and saves the reducer computation.
+which gives us L( ,  ,  ;  ,  ) =
+ Effective inference of topic models depends on learning not just the latent variables  ,  , and z but also estimating the hyperparame-ters, particularly  .
+The   parameter controls the sparsity of topics in the document distribution and is the primary mechanism that differentiates LDA from previous models like pLSA and LSA; not optimizing   risks learning suboptimal topics [34].
+Updating hyperparameters is also important from the perspective of equalizing differences between inference techniques; as long as hyperparameters are optimized, there is little difference between the output of inference techniques [36].
+The driver program marshals the entire inference process.
+On the  rst iteration, the driver is responsible for initializing all the model parameters (K, V , C,  ,  ); the number of topics K is user speci ed; C and V , the number of documents and types, is determined by the data; the initial value of   is speci ed by the user; and   is randomly initialized or otherwise seeded.
+The driver updates   after each MapReduce iteration.
+We use a Newton-Raphson method which requires the Hessian matrix and the gradient,  new =  old   H 1( old)   g( old), where the Hessian matrix H and   gradient are, respectively, as H(k, l) = (k, l)C  (cid:48) ( k)   C  l=1  l , g(k) = C (cid:124) + (cid:48)(cid:16)(cid:80)K (cid:33) (cid:125)     ( k) (cid:32) K(cid:88) l=1 (cid:33) (cid:123)(cid:122)  l computed in driver   ( d,k)      d,l (cid:32) K(cid:88) l=1 computed in mapper computed in reducer (cid:123)(cid:122) (cid:123)(cid:122) (cid:32)
+ C(cid:88) (cid:124) d=1 (cid:124) l=1  l (cid:17)   (cid:17) The Hessian matrix H depends entirely on the vector  , which changes during updating  .
+The gradient g, on the other hand, can be decomposed into two terms: the  tokens (i.e.,   d=1   ( d,k)       ( k)) and the  tokens (i.e.,(cid:80)C ).
+We can remove the dependence on the number of documents in the gradient computation by computing the  tokens in mappers.
+This observation allows us to optimize   in the MapReduce environment.
+Because LDA is a dimensionality reduction algorithm, there are typically a small number of topics K even for a large document collection.
+As a result, we can safely assume the dimensionality of  , H, and g are reasonably low, and additional gains come from the diagonal structure of the Hessian [37].
+Hence, the updating of   is ef cient and will not create a bottleneck in the driver.
+l=1  d,l
+ The driver monitors the ELBO to determine whether inference has converged.
+If not, it restarts the process with another round of mappers and reducers.
+To compute the ELBO we expand Equation 1, (cid:17) .
+(cid:33) (cid:125) (cid:125) (cid:16)(cid:80)K (cid:16)(cid:80)K ) (cid:125) (cid:125) (Ld( ,  ) + Ld( )    ( ) computed in mapper computed in reducer (cid:123)(cid:122) (cid:123)(cid:122) (cid:124) (cid:123)(cid:122) (cid:125) (cid:123)(cid:122) (cid:125)  ( ,k) reducer driver   K(cid:88) (cid:124) k=1 driver / constant  ( ) d=1 C(cid:88) (cid:123)(cid:122) (cid:124) K(cid:88) (cid:124) driver k=1 + + C(cid:88) (cid:124) d=1 (cid:125) (cid:124)  ( ,k) (cid:125) (cid:123)(cid:122) (cid:1)  (cid:88) (cid:16) (cid:104) (cid:32) V(cid:88) i=1 where  ( ) = log  (cid:0)(cid:80) (cid:88) V(cid:88) K(cid:88) V(cid:88) K(cid:88) k=1 v=1 + i Ld( ) = Ld( ,  ) = i=1  i log   ( i) ( i   1)   ( i)      v,kwv   ( k)     i=1  i (cid:17)(cid:17) .
+(cid:17)(cid:105) , j  j (cid:16)(cid:80) (cid:16)(cid:80)K  i,k(cid:80) j  j,k   log  v,k (cid:33) ,  v,k wi log v=1 k=1 i=1 Almost all of the terms that appear in the likelihood term can be computed in mappers; the only term that cannot are the terms that depend on  , which is updated in the driver, and the variational parameter  , which is shared among all documents.
+All terms that depend on   can be easily computed in the driver, while the terms that depend on   can be computed in each reducer.
+Thus, computing the total likelihood proceeds as follows: each mapper computes its contribution to the likelihood bound L, and emits a special key that is unique to likelihood bound terms and then aggregated in the reducer; the reducers add topic-speci c terms to the likelihood; these  nal values are then combined with the contribution from   in the driver to compute a  nal likelihood bound.
+In examining Mr. LDA s performance, the two largest performance limitations were the large number of intermediate values being generated by the mappers and the time it takes for mappers to read in the current variational parameters during during the mapper con guration phase.
+Reducer Caching.
+Recall that reducers sum over   contributions and emit the   variational parameters, but mappers require a normalized form to compute the expectation with of the topic with respect to the varia-tional distribution.
+To improve the normalization step, we compute the sum of the   variational parameters in the reducer [38, 39], and then emit this sum before we emit the other   terms.
+Although this requires O(V ) additional memory, it is strictly less than the memory required by mappers, so it in practice improves performance by allowing mappers to more quickly begin processing data.
+File Merge.
+Loading  les in the distributed cache and con guring every mapper and reducer is another bottleneck for this framework.
+This is especially true if we launch a large number of reducers every iteration   this will result in a large number of small outputs, since three stages: computing document-speci c variational parameters in parallel mappers, computing topic-speci c parameters in parallel reducers, and then updating global parameters in the driver, which also monitors convergence of the algorithm.
+Data  ow is managed by the MapReduce framework: suf cient statistics from the mappers are directed to appropriate reducers, and new parameters computed in reducers are distributed to other computation units via the distributed cache.
+Mr. LDA is designed to distribute workload equally.
+These partial results would waste space if they are signi cantly smaller than HDFS block size.
+Moreover, they cause a overhead in  le transfer through distributed cache.
+To alleviate this problem, we merge all relevant output before sending them to distributed cache for the next iteration.
+In this section, we highlight the  exibility of Mr. LDA to accommodate extensions to LDA.
+These extensions are possible because of the modular nature of Mr. LDA s design.
+The standard practice in topic modeling is to use a same symmetric prior (i.e.  v,k is the same for all topics k and words v).
+However, the model and inference presented in Section 3 allows for topics to have different priors.
+Thus, users can incorporate prior information into the model.
+For example, suppose we wanted to discover how different psychological states were expressed in blogs or newspapers.
+If this were our goal, we might create priors that captured psychological categories to discover how they were expressed in a corpus.
+The Linguistic Inquiry and Word Count (LIWC) dictionary [40] de nes 68 categories encompassing psychological constructs and personal concerns.
+For example, the anger LIWC category includes the words  abuse,   jerk,  and  jealous;  the anxiety category includes  afraid,   alarm,  and  avoid;  and the negative emotions category includes  abandon,   maddening,  and  sob.  Using this dictionary, we built a prior   as follows: (cid:40)  v,k =
+ 0.01, otherwise , Figure 3: Graphical model for polylingual LDA [12].
+Each document has words in multiple languages.
+Inference learns the topics across languages that have cooccurring words in the corpus.
+The modular inference of Mr. LDA allows for inference for this model to be accomplished by the same framework created for monolingual LDA.
+where  v,k is the informed prior for word v of topic k. This is accomplished via a slight modi cation of the reducer (i.e. to make it aware of the values of  ) and leaving the rest of the system unchanged.
+In this section, we demonstrate the  exibility of Mr. LDA by showing how its modular design allows for extending LDA beyond a single language.
+PolyLDA [12] assumes a document-aligned multilingual corpus.
+For example, articles in Wikipedia have links to the version of the article in other languages; while the linked documents are ostensibly on the same subject, they are usually not direct translations, and are often written with a culture-speci c focus.
+PolyLDA assumes that a single document has words in multiple languages, but each document has a common, language agnostic per-document distribution   (Figure 3).
+Each topic also has different facets for language; these topics end up being consistent because of the links across language encoded in the consistent themes present in documents.
+Because of the modular way in which we implemented inference, we can perform multilingual inference by embellishing each data unit with a language identi er l and change inference as follows:   Updating   happens l times, once for each language.
+The updates for a particular language ignores expected counts of all other languages.
+  Updating   happens using only the relevant language for a   Updating   happens as usual, combining the contributions of word.
+all languages relevant for a document.
+From an implementation perspective, PolyLDA is a collection of monolingual Mr. LDA computations sequenced appropriately.
+Mr. LDA s approach of taking relatively simple computation units, allowing them to scale, and preserving simple communication between computation units stands in contrast to the design choices made by approaches using Gibbs sampling.
+For example, Smola and Narayanamurthy [18] interleave the topic and document counts during the computation of the conditional distribution using Yao et al. s  binning  approach [27].
+While this improves performance, changing any of the modeling assumptions would potentially break this optimization.
+In contrast, Mr. LDA s philosophy allows for easier development of extensions of LDA.
+While we only discuss two extensions here, DocumentMap: Update  ,  Test Likelihood ConvergenceParametersReducerDocumentMap: Update  ,  DocumentMap: Update  ,  DocumentMap: Update  ,  ReducerReducerWrite  SufficientStatistics for  Update Driver: Update  Write  HessianTermsDistributed CacheMNLdKN1dK 1,kz1nw1n d L,kzLnwLn......WWW 2012   Session: Information ExtractionApril 16 20, 2012, Lyon, France884other extensions are possible.
+For example, implementing supervised LDA [41] only requires changing the computation of   and a regression; the rest of the model is unchanged.
+Implementing syntactic topic models [42] requires changing the mapper to incorporate syntactic dependencies.
+We implemented Mr. LDA using Java with Hadoop 0.20.1 and ran all experiments on a cluster containing 16 physical nodes; each node has 16 2.4GHz cores, and has been con gured to run a maximum of 6 map and 3 reduce tasks simultaneously.
+The cluster is usually under a heavy, heterogeneous load.
+In this section, we document the speed and likelihood comparison of Mr. LDA against Mahout LDA, another large scale topic modeling implementation based on variational inference.
+We report results on three datasets:   TREC document collection (disks 4 and 5 [43]), newswire documents from the Financial Times and LA Times.
+It contains more than 300k distinct types over half a million documents.
+We remove types appearing fewer than 20 times, reducing the vocabulary size to approximately 60k.
+  The BlogAuthorship corpus [44], which contains about 10 million blog posts from American users.
+In contrast to the newswire-heavy TREC corpus, the BlogAuthorship corpus is more personal and informal.
+Again, terms in fewer than 20 documents are excluded, resulting in 53k distinct types.
+  Paired English and German Wikipedia articles (more than half a million in each language).
+As before, we ignore terms appearing in fewer than 20 documents, resulting in 170k English word types and 210k German word types.
+While each pair of linked documents shares a common subject (e.g.
+ George Washington ), they are usually not direct translations.
+The document pair mappings were established from Wikipedia s interlingual links.
+In this experiment, we build the informed priors from LIWC [40] introduced in Section 4.1.
+We feed the same informed prior to both the TREC dataset and BlogAuthorship corpus.
+Throughout the experiments, we set the number of topics to 100, with a subset guided by the informed prior.
+Table 2 shows topics for both TREC and BlogAuthorship.
+The prior acts as a seed, causing words used in similar contexts to become part of the topic.
+This is important for computational social scientists who want to discover how an abstract idea (represented by a set of words) is actually expressed in a corpus.
+For example, public news media (i.e. news articles like TREC) connect positive emotions to entertainment, such as music,  lm and TV, whereas social media (i.e. blog posts) connect it to religion.
+The Anxiety topic in news relates to middle east, but in blogs it focuses on illness, e.g.
+bird  u.
+In both corpora, Causation was linked to science and technology.
+Using informed priors can discover radically different words.
+While LIWC is designed for relatively formal writing, it can also discover Internet slang such as  lol  ( laugh out loud ) in Affective Process category.
+As a result, an informed prior might be helpful in aligning existing lexical resources with corpora with sparse and/or out-of-dictionary vocabularies, e.g., Twitter data.
+On the other hand, some discovered topics do not have a clear relationship with the initial LIWC categories, such as the abbreviations and acronyms in Discrepancy category.
+In other cases, the LIWC categories were different enough from the dataset that model chose not to use topics with ill tting priors, e.g.
+Process category.
+the Cognitive As discussed in Section 4.2, Mr. LDA s modular design allows us to consider models beyond vanilla LDA.
+To the best of our knowledge, we believe this is the  rst framework for variational inference for polylingual LDA [12], scalable or otherwise.
+In this experiment, we  t 50 topics to paired English and German Wikipedia articles.
+We let the program run for 33 iterations with 100 mappers and 50 reducers.
+Table 3 lists down some words from a set of randomly chosen topics.
+The results listed indicates a general equivalent topic layout for both English and German corpus.
+For example, topic about Europe ( french ,  paris ,  russian  and  moscow ) in English is matched with the topic in German ( frankreich ,  paris ,  russischen  and  moskau ).
+Similar behavior was observed for other topics.
+The topics discovered by polylingual LDA are not exact matches, however.
+For example, the second to last column in Table 3is about North America, but the English words focus on Canada, while the corresponding German topic focuses on the United States.
+Similarly, the forth last column in English contains keywords like  hong ,  kong  and  korean , which did not appear in the top 10 words in German.
+Since this corpus is not a direct translation, these discrepancies might due to a different perspectives, different editorial styles, or different cultural norms.
+To measure the scalability and accuracy of Mr. LDA, we compare Mr. LDA with Mahout [19], another large scale topic modeling package based on variational inference.
+We use Mahout-0.4 as our baseline measure.
+In this set of experiments, we use 90% of the entire TREC corpus as training data and the rest as test data.
+We ensure that both packages have identical inputs (i.e. identical preprocessing to remove stopwords and selecting vocabulary).
+We monitor the held-out likelihood under the settings of 50 and 100 topics.
+In all experiments, we set the memory limit for every mapper and reducer instance to 2.0-GB.
+For the hyper-parameter  , Mahout uses a default setting of 50 K (recall that K is the number of topic).
+In order for the results to be comparable, for Mr. LDA, we start the hyper-parameter   from same setting as in Mahout.
+Mr. LDA continuously updates vector   in the driver program, whereas Mahout does not.
+All experiments are carried out with 100 mapper instances and 20 reducer instances.
+We then plot the held-out log-likelihood of test data against the (cumulative) training time.
+Our empirical results show that, with identical data and hardware, Mr. LDA outperforms Mahout LDA in both the speed and likelihood accuracy.
+We let both models run for 40 iterations.
+The held-out likelihood was computed using the variational distribution obtained after every iteration.
+Figure 4 shows the result for 50 topics.
+Mr. LDA runs faster than Mahout.
+In addition, Mr. LDA yields a better held-out log-likelihood than Mahout, probably as a consequence of hyper-parameter updating.
+When we double the total number of topics to 100, the difference in processing time is magni ed.
+Mr. LDA converges faster than Mahout, again due to the hyper-parameter updating.
+Comparing to the previous diagram of 50 topics, we observe that the training time of Mr. LDA is approximately doubled, which suggesting Mr. LDA scales out effectively.
+Anger Sadness Cognitive Affective Processes book life love like stori man write read easili dare truli lol needi jealousi friendship betray Negative Emotions  re hospit medic damag patient accid death doctor sorri crappi bullshit goddamn messi shitti bitchi angri Positive Emotions  lm music play entertain show tv calendar movie lord prayer pray merci etern truli humbl god
+
+
+
+ m o r f t u p t u
+ g o l
+ m o r f t u p t u
+ al arab israel palestinian isra india peac islam bird diseas shi infect blood snake anxieti creatur stock cent share index rose close fell pro t level polic drug arrest kill prison investig crime attack iraq american weight disord countri moder militari miseri nation lbs unit america loneli pain force Process coalit elect polit con ict anc think parliament poland Insight Causation Discrepancy Tentative Certainty technolog pound un comput share bosnia pro t research serb dividend bosnian system group herzegovina electron uk croatian scienc pre greek test yugoslavia trust equip sa god system ko christian http develop church ang program pa jesus ako www christ en web religion faith  le lang el servic cathol art italian itali artist museum paint exhibit opera  lm actor robert hotel travel  sh island wine garden design boat pretty davida croydon crossword william chrono jigsaw 40th surrey truli director charact richard Table 2: Twelve Topics Discovered from TREC (top) and BlogAuthorship (bottom) collection with LIWC-derived informed prior.
+The model associates TREC documents containing words like  arab ,  israel ,  palestinian  and  peace  with Anxiety.
+In the blog corpus, however, the model associates words like  iraq , america* ,  militari ,  unit , and  force  with the Anger category.
+Figure 4: Training Time vs. Held-out Log-likelihood on 50 topics.
+This  gure shows the accumulated training time of the model against the held-out log-likelihood over Mr. LDA and Mahout measured over 40 iterations on 50 topics.
+Markers indicate the  nishing point of a iteration.
+Mr. LDA outperforms Mahout both in speed and likelihood.
+Figure 5: Training Time vs. Held-out Log-likelihood on 100 topics.
+Similar to Figure 4, this  gure shows the accumulated training time of the model against the held-out log-likelihood for Mr. LDA and Mahout over 40 iterations, but for 100 topics.
+Markers indicate the  nishing point of a iteration.
+Understanding large text collections such as those generated by social media requires algorithms that are unsupervised and scalable.
+In this paper, we present Mr. LDA, which ful lls both of these requirements.
+Beyond text, LDA is continually being applied to new  elds such as music [45] and source code [46].
+All of these domains struggle with the scale of data, and Mr. LDA could help them better cope with large data.
+Mr. LDA represents a viable alternative to the existing scalable mechanisms for inference of topic models.
+Its design easily accommodates other extensions, as we have demonstrated with the addition of informed priors and multilingual topic modeling, and the ability of variational inference to support non-conjugate distributions allows for the development of a broader class of models than could be built with Gibbs samplers alone.
+Mr. LDA, however, would bene t from many of the ef cient, scalable data structures that improved other scalable statistical models [47]; incorporating these insights would further improve performance and scalability.
+While we focused on LDA, the approaches used here are applicable to many other models.
+Variational inference is an attractive inference technique for the MapReduce framework, as it allows the selection of a variational distribution that breaks dependencies among variables to enforce consistency with the computational constraints of MapReduce.
+Developing automatic ways to enforce those computational constraints and then automatically derive inference [48] would allow for a greater variety of statistical models to be learned ef ciently in a parallel computing environment.
+Variational inference is also attractive for its ability to handle online updates.
+Mr. LDA could be extended to more ef ciently handle online batches in streaming inference [49], allowing for even larger document collections to be quickly analyzed and understood.
+The authors would like to thank Dr. Jimmy Lin for valuable comments throughout this project and making data available for the experiments.
+This research was supported by NSF grant #1018625.
+Jordan Boyd-Graber is also supported by the Army Research Laboratory through ARL Cooperative Agreement W911NF-09-2-0072.
+Any opinions,  ndings, conclusions, or recommendations expressed are the authors  and do not necessarily re ect those of the sponsors.
+s i l g n
+ y n a m r e
+ opera musical composer orchestra piano works symphony instruments composers performed instrument dance concert performance conductor musik komponist oper komponisten werke orchester wiener game games player players released comics characters character version play video commic original manga ball spiel spieler serie the erschien gibt commics veroffentlic komposition
+ konnen spiele dabei spielen spiels ball klavier wien komponierte kompositionen bulgarien dirigent budapest konservatorium slowakei turkische musiker japanese japan australia australian  ag zealand korea kong hong korean tokyo sydney china red arms japan french france paris russian la le des russia moscow du louis jean belgium belgian les paris franzosischen japanischen the soviet political military union russian power israel empire republic country forces army communist led peace regierung republik platz sowjetunion frankreich song kam single krieg land lied bevolkerung franzosischer australischen titel la franzosische  agge le australien japanische jap italian said church family could pope childern italy death father wrote mother league greek cup turkish club region played hugarian football wine games hungary career greece game turkey championship never ottoman player romania match romanian win empire  nal bulgarian teams bulgaria scored wines saison ungarn gewann turkei turkischen spielte griechenland karriere rumanien ungarischen griechischen wechselte istanbul serbien osmanischen platz verein jahrhundert league
+ kam liga day wife died left home took frau the familie mutter vater leben starb tod mannschaft olympischen kinder tochter kam sei alter geboren san wegen catholic bishop roman rome st ii di saint king archbishop diocese papst rom ii kirche di bishof italien italienischen ende reich konig politischen kloster russland i staaten kaiser staat maria politische israel erzbishof fc spielen russischen moskau jean pariser pierre et les petersburg neuseeland tokio sydney japanischer china wappen australische to japans album song released songs single hit top singer love chart albums singles uk records pop album york canada governor washington president canadian john served house county north virginia senate carolina congress new staaten usa vereinigten york washington national river county gouverneur john university amerikanischen munchen state mitglied april veroffentlicht north professor berlin lied germany von worked studied published received member vienna august academy
+ institute berlin universitat deutschen professor studierte leben deutscher wien arbeitete erhielt august
+ erreichte erschien a songs erfolg you Table 3: Extracted Polylingual Topics from the Wikipedia Corpus.
+While topics are generally equivalent (e.g.
+on  computer games  or  music ), some regional differences are expressed.
+For example, the  music  topic in German has two words referring to  Vienna  ( wiener  and  wien ), while the corresponding concept in English does not appear until the 15th position.

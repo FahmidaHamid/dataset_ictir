@@ -1,0 +1,1583 @@
+Unsupervised Extraction of Template Structure in Web
+
+Search Queries
+
+Sandeep Pandey
+Yahoo! Research
+
+Sunnyvale, CA 94089
+
+spandey@yahoo-inc.com
+
+ABSTRACT
+Web search queries are an encoding of the user’s search intent and
+extracting structured information from them can facilitate central
+search engine operations like improving the ranking of search re-
+sults and advertisements. Not surprisingly, this area has attracted
+a lot of attention in the research community in the last few years.
+The problem is, however, made challenging by the fact that search
+queries tend to be extremely succinct; a condensation of user search
+needs to the bare-minimum set of keywords. In this paper we con-
+sider the problem of extracting, with no manual intervention, the
+hidden structure behind the observed search queries in a domain:
+the origins of the constituent keywords as well as the manner the in-
+dividual keywords are assembled together. We formalize important
+properties of the problem and then give a principled solution based
+on generative models that satisﬁes these properties. Using manually
+labeled data we show that the query templates extracted by our so-
+lution are superior to those discovered by strong baseline methods.
+The query templates extracted by our approach have potential
+uses in many search engine tasks; query answering, advertisement
+matching and targeting, to name a few.
+In this paper we study
+one such task, estimating Query-Advertisability, and empirically
+demonstrate that using extracted template information can improve
+performance over and above the current state-of-the-art.
+Categories and Subject Descriptors:
+H.3.3[Information Search and Retrieval]: Search process
+General Terms: Algorithms, Experimentation
+Keywords: query templates, intent analysis, graphical models
+
+1.
+
+INTRODUCTION
+
+The World Wide Web has grown in size exponentially for many
+years, and this has been accompanied by search engines becom-
+ing the preferred way that users ﬁnd and access information online.
+Hundreds of millions of queries are issued to the major search en-
+gines everyday, almost all of them in the form of “keywords”. Over
+years of usage, the keyword-search functionality has become the
+standard convention expected by users and supported by all ma-
+jor search engines. This has resulted in users becoming adept at
+reducing their search needs speciﬁcation to the bare minimum set
+of keywords needed to help the search engine ﬁnd relevant results.
+There have been some attempts amongst search engine practition-
+ers to induce users to provide queries in natural text, most notably
+by Powerset [2], but by and large all search engines expect users to
+express their search need via a small set of keywords.
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2012, April 16–20, 2012, Lyon, France.
+ACM 978-1-4503-1229-5/12/04.
+
+Kunal Punera
+
+RelateIQ
+
+Mountain View, CA 94041
+
+kunal.punera@utexas.edu
+
+Given these state of affairs, there has been a considerable amount
+of work on extracting as much information as possible from user
+queries in order to determine their intent [7, 9, 22, 29]. Once this
+intent is extracted it can be used to provide relevant results improv-
+ing the search experience [4], to detect whether a query has a com-
+mercial intent [22], to select a useful set of advertisements [8], and
+even to learn from the user’s interaction with the search engine [24].
+Challenges in extracting the intent information from queries arise
+from scalability issues since any potential solution must scale to
+hundreds of millions of queries a day, as well as instrumentation
+issues since the only user actions search engines observe are user
+clicks [16, 24]. However, the main difﬁculty arises from the brevity,
+and associated ambiguity, of the keywords in the query. Keywords
+can sometimes be ambiguous when considered without the surround-
+ing context; as in the oft-cited example of the word “jaguar”, which
+can denote the car as well as the animal. On the other hand, consid-
+ering all keywords in a query together to maintain the context can
+result in sparsity issues; for example, determining the characteris-
+tics (e.g., advertisement click-through-rate) for tail queries such as
+“jaguar xj12 95 6.0l engine mount” is largely infeasible given the
+rarity of the query [22].
+
+In this paper we seek to solve these issues by enriching search
+queries with information about the hidden structure underlying them.
+In particular, our goal is to develop methods that can automatically
+determine that the tail query “jaguar xj 12 95 6.0l engine mount”
+can be described using the <Brand,Model,Year,Part> pattern. We
+refer to such patterns as query templates and their constituents, such
+as Brand and Model, as attributes. Such an enrichment can help in
+inferring and catering to the user intent behind the query. For ex-
+ample, we can provide custom search experiences for certain tem-
+plates, such as returning, on the search results page, the availabil-
+ity and prices for vehicles queried via the <Brand,Model,Year>
+query template. Moreover, these enrichments can help us in dealing
+with data-sparsity by learning query characteristics (such as click-
+through-rates, search difﬁculty) at the template level instead of the
+individual query level. In fact, in this paper we demonstrate that
+using query templates can improve performance over the state-of-
+the-art method for estimating Query-Advertisability.
+
+Many past works have proposed methods to extract information
+in web search queries. Some of these analyze queries to obtain seg-
+mentations [5, 19], while others extract named entities from queries [15,
+23, 20]. All these approaches require either direct supervision of
+the tasks, such as manually labeled seed data, or use ancillary infor-
+mation such web search click-through data, both of which might
+be expensive or difﬁcult to obtain. Some recent works, such as
+Agarwal et al. [3] and Sarkas et al. [25] focus on detecting tem-
+plates in queries, while Szpektor et al. [27] use detected templates
+for improving query recommendations. However, these works as-
+
+WWW 2012 – Session: SearchApril 16–20, 2012, Lyon, France409sume that the attribute-set as well as the associated vocabularies are
+given as inputs in form of database relations or entity hierarchies.
+Given that search engines ﬁeld queries on a wide array of domains
+(with user interests following a long-tail [11]) and the terminology
+used in these queries is constantly in ﬂux (eg., new movies are re-
+leased every week), it would be prohibitively expensive to create
+and maintain these attributes and their vocabularies. Hence, in this
+work we consider the more realistic setting of extracting templates
+while constructing attributes and their vocabularies at the same time,
+without requiring any editorial/manual intervention.
+
+At its very core this problem can be looked at as one of grouping
+keywords into attributes, and hence text-mining algorithms such as
+Spherical k-Means and LDA can be used [6, 10]. While these ap-
+proaches are promising, they are not designed to take into account
+constraints/properties speciﬁc to how users construct queries. For
+example, for any given domain, users are known to employ only a
+few conﬁgurations of attributes as query templates [3], whereas both
+these methods allow queries to be generated from arbitrary combi-
+nations of attributes. Our proposed approach uses this knowledge to
+reduce the search space of attribute-word vocabularies and template-
+attribute conﬁgurations. In Section 3 we discuss this and other im-
+portant properties of the problem and how they are incorporated in
+our model. While this adds signiﬁcant complexity to the model-
+ing process, we give a procedure to estimate the parameters of the
+model. In Section 5 we empirically demonstrate that, without any
+supervision, manual or external (eg. click-through data), our ap-
+proach is able to extract meaningful templates and attributes from
+short keyword queries.
+
+OUR CONTRIBUTIONS.
+1) We formulate the problem of simultaneously extracting the tem-
+plates in queries as well as learning the attributes and their vocabu-
+laries. As far as we know this is the ﬁrst work to tackle this problem
+without requiring any seed input, external data (eg. click-through
+data), or manual supervision.
+2) We describe various characteristics of the way that keyword search
+queries are formulated by users. We then give a generative model
+for queries that takes these properties into account.
+3) We give a procedure based on Gibbs sampling to automatically
+infer the query templates and attributes in our model from observed
+search queries.
+4) In our empirical analysis, we use labeled ground truth to show
+that our approach ﬁnds better query templates and attributes than
+two state-of-the-art approaches based on LDA and k-Means. To
+ensure representative and robust results we repeat our experiments
+on real-world queries from three different domains.
+5) In order to showcase the usefulness of the query templates de-
+tected by our approach we consider the problem of predicting the
+Advertisability of tail queries. Our experiments demonstrate that
+using automatically inferred query templates can signiﬁcantly im-
+prove upon the state-of-the-art [22].
+
+ORGANIZATION.
+In the next section we present our formulation
+of the problem of extracting templates and attributes from observed
+web search query data. Our proposed solution for this problem is
+presented in Section 3. We postpone a detailed discussion of re-
+lated work to Section 4, where we can better contrast our proposed
+approach to it.
+In that section we also describe two existing ap-
+proaches that can be adapted to extract query templates; these serve
+as strong baselines in the empirical evaluation of our approach us-
+ing labeled ground truth in Section 5. In Section 5.5 we evaluate the
+templates discovered by our model on the task of predicting query
+advertisability. Finally, we summarize the paper in Section 6.
+
+2. EXTRACTING QUERY TEMPLATES
+
+In this section we formulate the problem of extracting query tem-
+
+plates from web search queries.
+2.1 Motivation for Extracting Query Templates
+In this paper our goal is to extract, with a completely unsuper-
+vised process, a set of domain-speciﬁc query patterns that most
+search queries in a domain conform to. For example, we would
+like our approach to discover that many search queries in the Auto-
+mobiles domain can be described using the <Brand, Model, Year>
+pattern. We refer to such patterns as query templates and their con-
+stituents as attributes. Here the attribute Brand denotes a place-
+holder for brand/manufacturer of the vehicle and can stand-in for
+words such as Honda, Toyota, Ford, etc. Similarly, attribute Model
+can stand-in for words such as Accord, Civic, etc., and, Year denotes
+the year when the car was manufactured. Extracting attributes from
+query-logs and enriching queries with the templates they conform
+to can facilitate many search engine operations. For example, due
+to sparsity issues search engines struggle with obtaining robust es-
+timates of various properties, such as advertisement click-through
+rates, of tail queries. With the ability to discover that the query
+“jaguar xj12 95 6.0l engine mount” corresponds to query template
+<Brand, Model, Year, Parts>, we can smooth the ad-click-through
+estimates of tail queries with the aggregated estimates of the cor-
+responding templates. Other applications include building custom
+search solutions for some query templates and using the extracted
+templates for improved query recommendations [18, 27].
+
+Here we note that some past works [3, 5, 15, 19, 23, 20, 25,
+27] have proposed methods to extract similar information from web
+search queries. However, these approaches require either direct su-
+pervision of the tasks, such as manually labeled seed data, or use
+ancillary information such web search click-through data (more de-
+tails in Section 4). The manually labeled seed data takes the form
+of attributes and their vocabularies in [3, 25] and entity classes or
+hierarchies in [5, 27], all of which are expensive to create and main-
+tain in a dynamically changing environment like web search. While
+the ancillary information needed in the form of entities [23] and text
+of documents [19] clicked in response to queries, can be difﬁcult to
+obtain. Therefore, in this work we restrict ourselves to the setting
+of extracting templates while constructing attributes and their vo-
+cabularies at the same time, without requiring any editorial/manual
+intervention.
+2.2 Desiderata for Template Model for Queries
+From our inspection of search query logs we observed that differ-
+ent users with the same search intent issue variations of a query
+to the search engine. However, at a fundamental level they fol-
+low a common process for generating these queries from a com-
+mon underlying schema, as shown in Figure 1. For example, for
+the search intent “ﬁnd information about the 6.0l engine mount of a
+1995 jaguar xj12” some users might formulate the query “jaguar xj
+12 95 6.0l engine mount” while others might use “jaguar xj 95 en-
+gine mount”. Both these queries can be thought of as being gener-
+ated from the query template <Brand, Model, Year, Parts> with the
+latter query containing fewer terms from the attributes Model and
+Parts. Similar observations hold for other domains of web search
+such as Entertainment, Travel, etc. In each case while we do not
+know the underlying schema – the templates, attributes, and vo-
+cabularies are hidden – and do not observe the underlying gener-
+ative process, we do see the generated query load. Our approach in
+this paper is to mathematically construct a realistic generative pro-
+cess for the queries so that we can reconstruct (infer) the hidden
+template-structure used to generate them (as shown in Figure 1).
+
+WWW 2012 – Session: SearchApril 16–20, 2012, Lyon, France4103. PROPOSED APPROACH
+
+In this section we formally describe our proposed generative model
+and give an algorithm to perform inference on it. We also describe
+how our modeling process satisﬁes the properties mentioned in Sec-
+tion 2.2.
+
+3.1 Generative Model
+
+Our generative model works as follows. We start with a pool of
+template conﬁgurations,1 called candidate pool, whereby each con-
+ﬁguration consists of a set of attributes. For example, say we have 3
+attributes, Model, Year and Brand. Then the candidate pool of tem-
+plate conﬁgurations can be any subset of {<Model>, <Brand>,
+<Year>, <Model, Brand>, <Model, Year>, <Brand, Year>, <Model,
+Brand, Year>}. Note that the empty template conﬁguration is not
+allowed in the pool. In a real-world setting, the candidate pool can
+also be constructed by a domain expert.
+
+Given the candidate pool we let the model choose T template
+conﬁgurations to construct vector (cid:126)θ where θt denotes the template
+conﬁguration at index t.2 Then each query q picks a template in-
+dex tq which leads to its template conﬁguration θtq . This way the
+queries can pick from only those template conﬁgurations which are
+present in (cid:126)θ (while the candidate pool has many more conﬁgura-
+tions), helping our model enforce PROPERTY I mentioned above.
+One way to think of this is that the candidate pool denotes the set
+of template conﬁgurations which are appropriate for the domain.
+Then the model chooses T template conﬁgurations from the candi-
+date pool, (cid:126)θ, to best explain the generation of queries. By varying
+the value of T we can control the trade-off between data likelihood
+and over-ﬁtting.
+
+Lastly, given a template conﬁguration for a query, from each at-
+tribute in the conﬁguration we generate a few words and then ar-
+range them to create the query. More speciﬁcally, each attribute has
+an associated Poisson distribution to determine the number of words
+it contributes (PROPERTY III), and a Multinomial distribution over
+the vocabulary to decide which words it contributes.
+In our run-
+ning example, in our learnt model we expect the Poisson parameter
+for the attribute Year to be smaller than that for the attribute Parts.
+Moreover, we expect that the Multinomial distribution associated
+with attribute Brand has a much larger probability of generating the
+word “honda” than, say, the attribute Year. The priors for all distri-
+butions are chosen to be their conjugates; Dirichlet for Multinomial
+and Gamma for Poisson. We enforce PROPERTY II within the infer-
+ence process described in Section 3.2.
+
+Formally, the parameters of the model are:
+
+µ ∼ Dirichlet(α) {multinomial distribution over all the template
+
+conﬁgurations in the candidate pool}
+
+θt ∼ Multinomial (µ) {conﬁguration for template index t}
+γ ∼ Dirichlet(δ) {vector of size equal to the number of template
+
+indices, say T , that queries are allowed to chose from
+
+tq ∼ Multinomial (γ) {template index for query q}
+φa ∼ Dirichlet(β) {multinomial word distribution for attribute a}
+ηa ∼ Gamma(g1, g2) {Poisson parameter for the number of
+
+words that attribute a contributes towards a query when
+the attribute is present in the template for the query}
+
+1We use the phrases template conﬁgurations, attribute conﬁgura-
+tions, and query templates interchangeably
+2For simplicity we construct (cid:126)θ by choosing conﬁgurations with re-
+placement, i.e., a conﬁguration can make into (cid:126)θ at two different in-
+dices. In other words, for t (cid:54)= t(cid:48), θt may be equal to θt(cid:48).
+
+Figure 1: Search queries are assumed to be generated from a common
+hidden underlying structure. Our goal in this paper is to devise an algo-
+rithm to use the observed queries to reconstruct the parameters of the
+generative process as well as the underlying template structure
+
+The simplest generative process would be single-attribute tem-
+plate model whereby each template has a single unique attribute,
+and each attribute is associated with a set of words (a word distribu-
+tion). When constructing a query a user picks a template, and then
+picks words from the associated attribute. This, however, is an un-
+realistic process since we have seen in the examples above that most
+queries have words from different attributes of a domain, such as
+Brand, Year etc. Hence, we consider multi-attribute template mod-
+els whereby each template is associated with multiple attributes.
+Here, each attribute has its own word distribution from which the
+words are chosen to instantiate the query.
+
+Besides having multi-attribute templates we list some additional
+properties that we desire in our model. These properties bring the
+generative model closer to reality. Moreover, they are also critical
+for the model performance since queries are short and sparse, and
+so searching a more constrained/restrictive but realistic model space
+is likely to be more robust and perform better.
+PROPERTY I: While most queries are different, we believe that a
+large number of queries in a given domain can be captured by only
+a few templates. In other words, our model must not allow arbi-
+trary distributions of attributes as templates; instead we constrain
+the number of distinct templates that can be formed in the model.
+PROPERTY II: Once a template for generating a query is picked, we
+force each attribute in the template to generate at least one word.
+The intuition behind this is that since queries are short, with 2-3
+words on average, if an attribute is not contributing any words to-
+wards a query, it is not required in the template.
+PROPERTY III: Each attribute has a speciﬁc word distribution as
+well as a distinct tendency for the number of words it contributes in
+a query. For example, the Year attribute in the Automobiles domain
+is likely to contribute 1 word (e.g., 1995), while the Parts attribute
+typically generates more words (e.g., 6.0l engine mount).
+
+Following this discussion we can formulate our problem as follows:
+
+PROBLEM DEFINITION: Given a set of queries, extract the
+underlying schema (templates, attribute, and their vocabular-
+ies) and learn the parameters of the generative process in a
+completely unsupervised manner while respecting the proper-
+ties mentioned above.
+Accounting for these properties signiﬁcantly increases the techni-
+cal complexity of our model over the state-of-the-art baseline meth-
+ods such as LDA [6] and Spherical k-Means [10] that are not de-
+signed to enforce these properties. However, in Section 3.2 we show
+that it is still feasible, mathematically and computationally, to per-
+form inference in our model. Moreover, we empirically show in
+Section 5 that these properties help our approach signiﬁcantly im-
+prove performance over the baselines.
+
+WWW 2012 – Session: SearchApril 16–20, 2012, Lyon, France411Given these parameters search queries are generated by the fol-
+
+lowing process:
+
+1. Sample the prior over template indices: γ ∼ Dirichlet(δ).
+2. Sample the prior over allowed template conﬁgurations: µ ∼
+
+Dirichlet(α).
+
+3. Sample template conﬁgurations for each template index from 1
+
+to T: θt ∼ Multinomial (µ).
+
+4. For each attribute a:
+
+(a) Sample the word distribution prior: φa ∼ Dirichlet(β).
+(b) Sample the Poisson parameter: ηa ∼ Gamma(g1, g2).
+
+5. To generate words for query q:
+
+(a) Sample template index tq ∼ Multinomial (γ), which
+
+leads to template conﬁguration θtq
+
+(b) For each attribute a ∈ θtq :
+
+i. Sample ni,a ∼ Poisson(ηa).
+ii. Place attribute a at ni,a number of positions in vector
+
+(cid:126)zq.
+
+(c) For each position j in query q, sample word wq,j from
+
+attribute zq,j,
+i.e., wq,j|zq,j, φzq,j ∼ Multinomial (φzq,j ).
+
+Other probabilistic models could be modiﬁed to extract templates
+(such as LDA [6]). In Section 4.1.1 we describe these alternative
+models in detail and show how our model differs from them.
+In
+Section 5 we empirically compare them against each other.
+3.2 Model Learning
+
+Here we describe how we perform inference on our model. Due
+to paucity of space we skip many intermediate steps of algebra; see
+the longer version [21] for detailed derivation of the expressions.
+Recall that (cid:126)θ denotes the set of T template conﬁgurations (i.e.,
+(cid:126)θ = {θt}T
+t=1) and (cid:126)η denotes the Poisson parameters for all attributes
+A, i.e., η = {ηa}|A|
+a=1. Also, let (cid:126)w, (cid:126)z, (cid:126)t denote the sequence of
+words, attributes and templates over all queries. Given the hyper-
+parameters, we ﬁrst derive the collapsed representation of the joint
+distribution over the known and latent variables. The joint distribu-
+tion is then used for inference in Section 3.2.1.
+
+P ( (cid:126)w, (cid:126)z, (cid:126)t, (cid:126)η, (cid:126)θ, φ, γ, µ | α, β, δ, g1, g2)
+
+Integration over the latent variables (cid:126)η, φ, γ, µ gives:
+P ( (cid:126)w, (cid:126)z, (cid:126)t, (cid:126)θ | α, β, δ, g1, g2)
+
+= (cid:0)P ( (cid:126)w|(cid:126)z, φ) P (φ|β)(cid:1) · (cid:0)P ((cid:126)t|γ) P (γ|δ)(cid:1)
+·(cid:0)P ((cid:126)z|(cid:126)θ, (cid:126)t, (cid:126)η) P ((cid:126)η|g1, g2)(cid:1) · (cid:0)P ((cid:126)θ|µ) P (µ|α)(cid:1)
+(cid:90) (cid:0)P ((cid:126)t|γ) P (γ|δ)(cid:1) dγ
+(cid:90) (cid:0)P ( (cid:126)w|(cid:126)z, φ) P (φ|β)(cid:1) dφ ·
+(cid:90) (cid:0)P ((cid:126)z|(cid:126)θ, (cid:126)t, (cid:126)η) P ((cid:126)η|g1, g2)(cid:1) d(cid:126)η ·
+(cid:90) (cid:0)P ((cid:126)θ|µ) P (µ|α)(cid:1) dµ
+TERM I(cid:90) (cid:0)P ( (cid:126)w|(cid:126)z, φ) P (φ|β)(cid:1) dφ =
+
+·
+= TERM I · TERM II · TERM III · TERM IV
+We compute each of these terms in turn.
+
+∆( (cid:126)na + (cid:126)β)
+
+|A|(cid:89)
+
+=
+
+where na(w) denotes the number of times word w is assigned to
+attribute a, (cid:126)na = {n(w)
+
+w=1, and ∆((cid:126)β) =
+
+a }V
+
+.
+
+a=1
+
+∆((cid:126)β)
+(cid:81)dim (cid:126)β
+Γ((cid:80)dim (cid:126)β
+
+k=1 Γ(βk)
+k=1 βk)
+
+TERM II(cid:90) (cid:0)P ((cid:126)t|γ) P (γ|δ)(cid:1) dγ =
+
+∆( (cid:126)nt + (cid:126)δ)
+
+∆((cid:126)δ)
+
+where (cid:126)nt = {nt}T
+t=1 denotes the vector of counts of queries as-
+signed to each template index, and T denotes the total number of
+template indices that queries are allowed to choose from.
+
+TERM III
+
+(cid:90) (cid:0)P ((cid:126)z|(cid:126)θ, (cid:126)t, (cid:126)η) P ((cid:126)η|g1, g2)(cid:1) d(cid:126)η
+(cid:90) |Q|(cid:89)
+
+(cid:18) 1
+
+(cid:89)
+
+(cid:0)Poisson(nq,a|ηa) nq,a!(cid:1)(cid:19)
+
+q
+
+nq!
+
+a∈θ(tq )
+
+=
+
+Gamma(ηa|g1, g2) d(cid:126)η
+
+where nq denotes the length of query q and nq,a denotes the number
+of words from attribute a in the query. Since Gamma is conjugate
+prior for Poisson, the above integration can be simpliﬁed to:
+Q nq,a − 1)!
+Q nq,a)(g1 − 1)!
+
+g1 (g1 +(cid:80)
+(g2 + Na)(g1+(cid:80)
+
+(cid:19) (cid:89)
+
+(cid:18) |Q|(cid:89)
+
+1
+nq!
+
+(cid:19)
+
+(cid:18)
+
+g2
+
+=
+
+a∈A
+
+q
+
+where Na denotes the number of queries with attribute a in their
+templates.
+
+TERM IV(cid:90) (cid:0)P ((cid:126)θ|µ) P (µ|α)(cid:1) dµ =
+
+∆( (cid:126)nθ + (cid:126)α)
+
+∆((cid:126)α)
+
+where the ith element of nθ is the number of template indices, from
+1 to T , pointing to the template conﬁguration θi.
+
+Inference
+
+3.2.1
+Our goal is to infer the attribute assignment of words and tem-
+plates assignment for the queries. Mathematically speaking, we
+want to infer the distribution P ((cid:126)z, (cid:126)θ, (cid:126)t| (cid:126)w), which can be written as:
+
+P ((cid:126)z, (cid:126)θ, (cid:126)t| (cid:126)w) =
+
+P ((cid:126)z, (cid:126)θ, (cid:126)t, (cid:126)w)
+
+P ( (cid:126)w)
+
+=
+
+(cid:80)
+
+P ((cid:126)z, (cid:126)θ, (cid:126)t, (cid:126)w)
+(cid:126)z,(cid:126)t,(cid:126)θ P ((cid:126)z, (cid:126)θ, (cid:126)t, (cid:126)w)
+
+where we omit the hyper-parameters for convenience. Clearly, the
+denominator in the above expression is a summation over a large
+number of combinations and is difﬁcult to compute. Hence, we use
+Gibbs sampling to perform this inference [13, 14].3 Under the Gibbs
+sampling procedure, the full conditional distributions (P (zi|(cid:126)z¬i, (cid:126)θ, (cid:126)t, (cid:126)w),
+P (θi|(cid:126)z, (cid:126)θ¬i, (cid:126)t, (cid:126)w), P (ti|(cid:126)z, (cid:126)θ, (cid:126)t¬i, (cid:126)w)) are used to simulate P ((cid:126)z, (cid:126)θ, (cid:126)t| (cid:126)w).
+To derive these conditionals, we use the joint distribution P ((cid:126)z, (cid:126)θ, (cid:126)t, (cid:126)w)
+(computed earlier):
+P ((cid:126)z, (cid:126)θ, (cid:126)t, (cid:126)w|α, β, δ, g1, g2) = P ( (cid:126)w|(cid:126)z, β) p((cid:126)θ|α) p((cid:126)t|δ) p((cid:126)z|(cid:126)θ, (cid:126)t, g1, g2)
+
+Next we give derivation of the conditional distributions for differ-
+ent latent variables, i.e., zi, θi, ti. As mentioned above, these con-
+ditionals are then used to perform the Gibbs sampling for inferring
+the query templates and attributes. The overview of our complete
+approach is given in Section 3.3.
+
+3In the general formulation of a Gibbs sampler, the latent variables,
+say (cid:126)x, are estimated by computing: P ((cid:126)x| (cid:126)w) = P (xi|(cid:126)x¬i, (cid:126)w) =
+P ((cid:126)x¬i, (cid:126)w) =
+
+P ((cid:126)x, (cid:126)w)
+
+P ((cid:126)x, (cid:126)w)
+
+(cid:82)
+
+X P ((cid:126)x, (cid:126)w)dxi
+
+.
+
+WWW 2012 – Session: SearchApril 16–20, 2012, Lyon, France4123.2.2 Computing the Conditional Distributions
+Here we simply give the expressions for the conditional distribu-
+tions and give the intuition behind them; please refer to the longer
+version [21] for complete derivations.
+
+CONDITIONAL FOR z.
+Ideally, we would like to compute (P (zi|(cid:126)z¬i, (cid:126)θ, (cid:126)t, (cid:126)w) where zi is
+the ith element of attribute sequence z. But in our case zi’s are
+not sampled independently as this can result in one of the attributes
+contributing zero words to the query (we do not allow this under
+PROPERTY II mentioned above). Hence, the sampling is done on
+per-query basis, say (cid:126)zq, which consists of the attributes for every
+word in the query. Hence, it is convenient to compute the condi-
+tional in terms of (P ((cid:126)zq|(cid:126)z¬q, (cid:126)θ, (cid:126)t, (cid:126)w). One can show that (derivation
+in the long version [21]):
+
+P ((cid:126)zq = (cid:126)vq|(cid:126)z¬q, (cid:126)θ, (cid:126)t, w) = 1
+
+nq
+
+(cid:81)
+
+(g1+(cid:80)
+
+(g1+(cid:80)
+(g2+Na−1)
+(g2+Na)
+Q ni,a−1−nq,a+vq,a)!
+
+Q ni,a−nq,a )
+Q ni,a−nq,a+vq,a)
+
+Q ni,a−1−nq,a)!
+
+a∈(cid:126)vq
+
+(g1+(cid:80)
+(g1+(cid:80)
+
+where (cid:126)vq denotes a new attribute sequence for query q, Na denotes
+the number of queries with attribute a in their templates, ni is the
+length of query i, ni,a is the number of terms in query i from at-
+tribute a, and nq,a and vq,a denote the number of terms from at-
+tribute a in the old query conﬁguration q and the new conﬁguration
+v, respectively.
+
+CONDITIONAL FOR t.
+Recall that (cid:126)t denotes the vector consisting of the template indices of
+all queries. We compute the conditional by deriving the probability
+of updating the template index of query j.
+
+P (tj = k|(cid:126)t¬j, (cid:126)z, (cid:126)w, (cid:126)θ) ∝
+
+P ((cid:126)z|(cid:126)θ,(cid:126)t)
+
+P ((cid:126)z¬j|(cid:126)θ,(cid:126)t¬j )
+
+P ((cid:126)t)
+P ((cid:126)t¬j )
+
+We computed
+
+P ((cid:126)z|(cid:126)θ,(cid:126)t)
+
+P ((cid:126)z¬j|(cid:126)θ,(cid:126)t¬j )
+
+earlier. Next we look at P ((cid:126)t)
+
+P ((cid:126)t¬j ) .
+
+P (tj = k, (cid:126)t¬j)
+
+P ((cid:126)t¬j)
+
+=
+
+(cid:80)
+
+n(k)
+t,¬j + δk
+k n(k)
+
+t,¬j + δk
+
+and n(k)
+
+where n(k)
+plate index k, with and without query j. Hence, n(k)
+
+t,¬j denote the number of queries assigned tem-
+t,¬j + 1.
+
+t = n(k)
+
+t
+
+CONDITIONAL FOR θ.
+Next we compute the conditional for θ, i.e., P (θj|(cid:126)θ¬j, (cid:126)z, (cid:126)w, (cid:126)t). Re-
+call that (cid:126)θ denotes the vector of T template conﬁgurations selected
+by the model, from which each query is assigned a conﬁguration.
+Note that by updating the index j of (cid:126)θ to any conﬁguration c (i.e.,
+set θj = c), we indirectly update the template of each query that is
+pointing to θj (i.e., queries which have tq = j). Hence,
+
+P (θj = c|(cid:126)θ¬j, (cid:126)z, (cid:126)w, (cid:126)t) ∝
+
+P ((cid:126)z|(cid:126)θ,(cid:126)t)
+
+P ((cid:126)z¬j|θ¬j ,(cid:126)t)
+
+P ((cid:126)θ)
+P ((cid:126)θ¬j )
+
+where (cid:126)z¬j denotes the attribute sequence, excluding all the queries
+whose template is pointing to θj conﬁguration. We can compute
+
+P ((cid:126)z|(cid:126)θ,(cid:126)t)
+
+P ((cid:126)z¬j|(cid:126)θ¬j ,(cid:126)t)
+
+as we computed it earlier. Next we look at P ((cid:126)θ)
+P ((cid:126)θ¬j )
+
+P (θj = c, θ¬j)
+
+P (θ¬j)
+
+=
+
+(cid:80)
+
+n(c)
+θ,¬j + αc
+c(cid:48) n(c(cid:48))
+
+θ,¬j + αc(cid:48)
+
+and n(c)
+
+θ,¬j denote the number of elements in vector (cid:126)θ that
+where n(c)
+θ
+have attribute conﬁguration c, with and without including element
+j. Hence, n(c)
+
+θ = n(c)
+
+θ,¬j + 1.
+
+3.3 Overview of the Inference Algorithm
+
+Above we have described the model and the update equations
+(i.e., conditionals). Here we summarize how the conditionals are
+used to perform the inference. The procedure begins with a random
+initialization of the queryword-attribute assignment (cid:126)z, the query-
+template assignment (cid:126)t, and the set of T template conﬁgurations (cid:126)θ.
+Then we iterate over queries and the template set using the condi-
+tionals derived in Section 3.2.2 to update the (cid:126)z, (cid:126)t, and (cid:126)θ vectors. At
+each iteration we compute the likelihood of the observed query data
+given the current learnt model parameters (φ, µ, γ, (cid:126)η). The proce-
+dure ends with an assignment of each query to a template, and each
+word in the query to an attribute.
+
+4. ALTERNATIVE APPROACHES AND
+
+A SURVEY OF RELATED WORK
+
+Some existing methods can be adapted to tackle the problem of
+
+discovering templates; in this section we describe two such approaches,
+LDA, and k-Means, and highlight the ways in which our proposed
+model differs from them. We end this section with a survey of some
+past works that are broadly related to our problem setting.
+4.1 Alternative Approaches
+4.1.1 Latent Dirichlet Allocation (LDA)
+Latent Dirichlet Allocation is a popular model for unsupervised
+discovery of document topics [6, 14]. Before showing how it can
+be applied for template extraction, we brieﬂy describe the genera-
+tive model here. In the LDA model, each topic has an associated
+φ distribution over the vocabulary. To construct document d, ﬁrst a
+multinomial distribution over the topics, denoted by θd is sampled
+from a Dirichlet prior. The ith word in the document is picked by
+choosing a topic from this multinomial distribution, and then sam-
+pling a word from the φ distribution associated with the topic.
+
+In our scenario each query can be thought of as a document. By
+applying LDA we can ﬁnd the attributes (i.e., the topics) and their
+associated vocabularies that have been used to generate the queries.
+These attributes can then be used to construct the query templates.
+Here we note that there are some fundamental differences be-
+tween the LDA model and our proposed generative model. First,
+LDA allows each query to pick an arbitrary topic distribution, while
+we constrain the query to conform to one of the ﬁnite templates (i.e.,
+attribute conﬁgurations) as is required by PROPERTY I of the prob-
+lem deﬁnition in Section 2.2. Second, even if the topic distribution
+for a query has a high probability for a topic, LDA does not require
+that topic to contribute a word in the query. In contrast, our model
+forces each attributes in the template to contribute at least one word
+to the query enforcing PROPERTY II of the problem deﬁnition. As
+discussed in detail in Section 2.2 these properties bring the genera-
+tion closer to reality, and reduce the model search for our approach
+to a more constrained and realistic space; this is particularly helpful
+since queries are short and sparse.
+
+Incorporating these properties in our model adds signiﬁcant tech-
+nical complexity. For example, for enforcing PROPERTY I we main-
+tain a ﬁnite pool of allowed conﬁgurations ((cid:126)θ). All other latent vari-
+ables (e.g., (cid:126)z, (cid:126)t) depend on this (cid:126)θ vector, and as a result, when (cid:126)θ is
+updated in the inference process, all other latent variables have to be
+updated accordingly. Similar, enforcing PROPERTY II means that
+we cannot sample the attributes for words (z’s) independently. In-
+stead, the sampling is done on a per-query basis. In our experiments
+we justify this added complexity by comparing LDA with our pro-
+posed model and showing that our approach results in much better
+template extraction performance.
+
+WWW 2012 – Session: SearchApril 16–20, 2012, Lyon, France413k-Means
+
+4.1.2
+The problem of extracting attributes can be framed as a problem
+of grouping the query words, and hence any text-clustering approach
+can be used. In this section we describe how Spherical k-Means [10]
+can be applied. We represent each word wu as a vocabulary-sized
+vector, where each element v of the vector contains the number
+of times words wu and wv occur together in queries. By running
+Spherical k-Means on these vectors, we put together those words
+into a cluster which have similar co-occurrence behavior as other
+words, e.g., words such as accord and toyota should have similar
+co-occurrence behavior with respect to brand words and years, and
+should fall into the same cluster. Hence, these clusters act like at-
+tributes for our scenario; using them we construct query templates.
+4.2 Survey of Related Work
+
+Many past works have tackled problems related to modeling query
+keywords. While a full survey is not possible due to lack of space,
+we discuss some key works that can help us put our work into con-
+text.
+
+The problem of assigning an attribute to each word in a query has
+been explored in [3, 25]. Agarwal et al. [3] proposed an approach
+based on random-walk on the tri-partite graph of queries, sites, and
+templates. Sarkas et al. [25] assumed that “structured” data is given
+in the form of tables. Then queries are annotated by mapping a
+query to a table and the attributes of this table. Both these works,
+however, assume that the attributes and their vocabularies are given
+as input to the algorithms. In contrast our work ﬁnds both the query
+templates as well as the attributes and their vocabularies in a com-
+pletely unsupervised manner.
+
+The problem of named entity recognition in web queries (eg. ﬁnd-
+ing movie names) is related to our problem with entities playing the
+role of attributes. In [15], Guo et al. give a nice semi-supervised ap-
+proach to extract entities from queries while ensuring that the model
+topics and pre-deﬁned classes align. In [30] the approach learns a
+topic-model using click-through data under some supervision from
+humans and uses the model to resolve ambiguities among named en-
+tities. In another related work [20] a weakly-supervised extraction
+framework is given for extracting named entities from web search
+queries starting from a seed set. Another set of work seek to ob-
+tain useful segmentations of web queries via learning from labeled
+examples [5] or using click-through data [19]. Our work differs
+from these in the focus – we focus assigning all words to attributes,
+not just named entities – and based on the fact that our proposed
+approach works with just the query-set and does not need manual
+intervention or data click-through interactions.
+
+Finally, there are recent works that seek to exploit query templates
+for accomplishing search related tasks. In [27] Szpektor et al. used
+entity hierarchies to mine query templates, which were used to im-
+prove query recommendation algorithms by deﬁning better relation-
+ships between queries. Similarly, Jain et al. [18] use many heuristics
+to deﬁne relationships between queries, and query templates could
+be used as one such signal. Hence, our work is complementary to
+these works that seek to improve web mining algorithms via query
+templates and could act as input into them.
+5. EXPERIMENTS
+
+In this section we analyze the performance of our approach (QT-
+GEN) on real-world search engine queries. We also provide an em-
+pirical comparison with the state-of-the-art alternatives described
+in Section 4.1. We begin with a description of the experimental
+methodology and then proceed to describing the results. We end the
+section with an application of our approach to the task of predicting
+query-advertisability.
+
+Domain
+
+Automobiles
+
+Travel
+
+Movies
+
+Attribute
+Brand
+Model
+Year
+Parts
+Specs
+
+Vehicle_type
+
+Tasks
+Brand
+Location
+Qualiﬁers
+
+Tasks
+Names
+Genres
+Qualiﬁers
+
+Vocabulary
+
+Vocab-size
+
+Honda, Toyota . . .
+Civic, Camry . . .
+2010, 2009 . . .
+engine, tires . . .
+mpg, 250hp . . .
+car, sedan . . .
+
+purchase, ﬂights . . .
+hilton, southwest . . .
+
+hawaii, SFO . . .
+
+cheap, discount . . .
+tickets, reviews . . .
+avatar, brad pitt . . .
+horror, bollywood . . .
+
+free, online . . .
+
+56
+188
+73
+148
+30
+44
+42
+27
+132
+27
+54
+60
+25
+20
+
+Table 1: Ground Truth: attributes and vocabularies created manually.
+The learned attributes output by QTGEN and baselines are evaluated
+in terms of their match to this ground truth.
+
+5.1 Experimental Setup
+
+We ﬁrst describe the construction of the query dataset and ground
+truth. We then describe the implementation details of our approach,
+QTGEN, and of the competing baselines.
+QUERY DATA-SET AND GROUND TRUTH.
+
+In order to obtain robust results and reduce the effect of any one
+topic we perform our empirical evaluation using queries from mul-
+tiple different domains: Automobiles, Travel, and Movies. This is
+the standard methodology in this area. Topical classiﬁcation of
+queries is a well-studied problem and we use a state-of-the-art multi-
+label classiﬁer [28] to classify a randomly sampled set of 100 mil-
+lion Yahoo search queries executed in September of 2010 into the
+above domains. These queries were suitably anonymized and care
+was taken to remove all personally identiﬁable information was re-
+moved. From these domain-speciﬁc queries we construct datasets
+for our two evaluation tasks. First, we construct three domain-
+speciﬁc query-sets of roughly 1000 queries each; the size was picked
+so that we could manually construct the ground truth. Second, for
+the large-scale automatic evaluation on the query-advertisability task
+we construct three datasets with 43793, 83387, and 15050 tail queries
+from the Automobiles, Travel, and Movies domains, respectively.
+For this task we also obtain the sponsored search impressions and
+clicks from the search logs.
+
+In order to construct the ground truth, templates underlying the
+queries in these query-sets were manually extracted. This resulted in
+the construction of 6 attributes for Automobiles domain and 4 each
+for the Travel and Movies domains, each of which was populated
+with the words likely to be generated from them; some words were
+labeled as being generated from multiple attributes. Some details
+about the ground truth are given in Table 1. Note that the ground
+truth construction was completed before the outputs of any of the
+approaches under evaluation were seen by the editors.
+OUR APPROACH AND BASELINES.
+
+QTGEN: This is an implementation of the approach outlined in
+Section 3. Each run of QTGEN is parameterized by the following
+settings: number of attributes (k), number of iterations (N), and val-
+ues of model parameters β, g1, and g2. Please see the description of
+our model for details of these parameters. In our empirical analysis
+we perform many experiments by varying values for these param-
+eters, but unless mentioned otherwise, the values are set to k = 5,
+N = 100, β = 0.1, g1 = 4, and g2 = 0.2; these parameter values
+were tuned using a 10% validation set.
+
+LDA: For this baseline approach we used the Mallet [1] imple-
+mentation of Latent Dirichlet Allocation, which has been described
+in detail in Section 4.1.1. The parameters values are set to k = 5,
+α = 50 and β = 0.01.
+
+WWW 2012 – Session: SearchApril 16–20, 2012, Lyon, France414Figure 2: PRECISION vs. CORRECTRECALL curves of QTGEN and
+baselines on the Automobiles domain. Each mark on the curves (from
+left to right) is produced by evaluating the top-N learnt attributes.
+
+K-MEANS: This baseline approach is described in detail in Sec-
+tion 4.1.2. In this implementation the initialization is done via far-
+thest ﬁrst approach. For our experiments, k was set to 5 (set using a
+10% validation dataset) and distance measure between vectors was
+computed using cosine similarity [10].
+5.2 Evaluation on Manually Labeled Ground
+
+Truth
+
+Above we described the process through which the templates that
+generate queries were manually extracted for three domains.
+In
+this section we evaluate the performance of QTGEN, LDA, and
+K-MEANS in successfully retrieving the attributes that form these
+templates. Before proceeding to the results we describe the metrics
+we use to evaluate the outputs of the various approaches.
+INTERPRETING THE OUTPUT OF ALGORITHMS.
+
+Traditional clustering evaluation measures such as pairs-based
+ones (e.g., Adjusted RAND [17]) and entropy-based ones (e.g., nor-
+malized mutual information [26]) are not suited for the tasks we
+consider in this paper. In designing an evaluation scheme relevant
+to our problem setting, we ﬁrst attempt to understand how the ex-
+tracted templates/attributes are likely to be used. Most applications
+of interest need the attributes to be returned in some order, and since
+none of the approaches under evaluation ranks the attributes, we as-
+sume each approach returns attributes in the decreasing order of the
+number of queries that generate words from it. Once the order is set,
+we want that each learned attribute contain words from only one at-
+tribute from ground truth. Moreover, we want that for each attribute
+in the ground truth, all its words be covered by one learnt attribute.
+To fulﬁll these requirements each ground truth attribute must be
+mapped to a unique learnt attribute. In a real-life application, this
+mapping would be constructed by a human expert when she studies
+the attributes output by the system. In order to evaluate numerous
+runs of our approach and baselines objectively, we construct this
+mapping automatically by evaluating all possible mapping in terms
+of the total AUC [12] between the learnt and the ground truth at-
+tributes, and picking the one with the maximum score.
+
+Once the mapping is ﬁxed, we go over the learnt attributes in
+the order established and evaluate them in terms of net PRECISION
+and CORRECTRECALL. We say that a word is correctly placed if
+the learnt attribute and the ground truth attribute it belongs to are
+mapped to each other. Hence, PRECISION(N) is the fraction of
+words in the ﬁrst N learnt attributes (in the algorithm’s ordering)
+that are correctly placed. Similarly, CORRECTRECALL(N), is the
+fraction of words in ground truth attributes mapped to the ﬁrst N
+learnt attributes that are correctly placed. Intuitively, it can be seen
+that PRECISION measures the accuracy of the system while COR-
+RECTRECALL measures the correct coverage.
+
+Figure 3: PRECISION vs. CORRECTRECALL curves of QTGEN and
+baselines on the Travel domain. Each mark on the curves (from left to
+right) is produced by evaluating the top-N learnt attributes.
+
+Figure 4: PRECISION vs. CORRECTRECALL curves of QTGEN and
+baselines on the Movies domain. Each mark on the curves (from left to
+right) is produced by evaluating the top-N learnt attributes.
+
+PRECISION VS. CORRECTRECALL.
+
+We plot PRECISION and CORRECTRECALL of all approaches on
+the three domains in Figures 2, 3, and 4. The PRECISION is plotted
+on the y-axis while the CORRECTRECALL is on the x-axis. The
+markers on each curve indicate the performance values at different
+N, with markers on the left indicating values for lower N. As we can
+see, in general, at higher values of N, PRECISION tends to decrease
+while CORRECTRECALL monotonically increases.
+
+First we observe that attributes found by QTGEN match the ground
+
+truth very precisely in their word compositions. For example, in
+the Automobiles domain, the top-3 learnt attributes have > 60% of
+the words that were assigned to them and were also manually la-
+beled as belonging to these attributes. Similar results are also seen
+for the other two domains. Being this precise makes the learnt at-
+tributes easier for downstream human users to interpret as well as
+easier for automated algorithms to use. We also observe that for
+all domains and operation points, the attributes found by QTGEN
+dominate those found by LDA and K-MEANS in terms of CORREC-
+TRECALL. The runners-up in terms of PRECISION is clearly the K-
+MEANS approach; in fact it equals QTGEN in terms of PRECISION
+for the Movies domain.
+
+The second observation about the results concerns the CORREC-
+TRECALL of the learnt attributes. As we can see, upon learning 5
+attributes our approach consistently ﬁnds around 50% of the words
+in the matched ground truth attributes. On the Automobiles dataset,
+QTGEN vastly outperforms the baseline approaches, while on the
+other two domains the algorithms are roughly comparable in terms
+of CORRECTRECALL.
+In fact, LDA, and to a lesser degree K-
+MEANS, consistently operate at a lower PRECISION and slightly
+higher CORRECTRECALL proﬁle. In many applications producing
+output with high CORRECTRECALL is very important, however, we
+feel that the the low PRECISION of attributes learnt by LDA and
+K-MEANS will make them too obscure to be used automatically by
+algorithms or manually by human editors.
+
+ 0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0 0.1 0.2 0.3 0.4 0.5 0.6PRECISION (N)CORRECT RECALL (N)Automobile domainQTGENLDAk-Means 0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0 0.1 0.2 0.3 0.4 0.5 0.6PRECISION (N)CORRECT RECALL (N)Travel domainQTGENLDAk-Means 0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0 0.1 0.2 0.3 0.4 0.5 0.6PRECISION (N)CORRECT RECALL (N)Movies domainQTGENLDAk-MeansWWW 2012 – Session: SearchApril 16–20, 2012, Lyon, France415Figure 5: PRECISION vs. CORRECTRECALL curves of QTGEN after
+different number of iterations on the Automobiles domain.
+
+Figure 6: PRECISION vs. CORRECTRECALL curves of QTGEN using
+different number of attributes on the Automobiles domain.
+
+Finally, we note that the results indicate that learnt attributes that
+are heavily used also score high in terms of PRECISION and COR-
+RECTRECALL. This is completely true in the case of the Automo-
+biles domains and to a slightly lesser degree for the other two do-
+mains. This can be seen in the curves of QTGEN in Figures 2,
+3, and 4 which are constructed by considering attributes in the de-
+creasing order of their usage. As we can see for the performance
+curve of QTGEN on Automobiles domain (Figure 2), the PRECI-
+SION drops monotonically, indicating that the most precise attributes
+are the most heavily used, and the gaps between successive marks on
+the x-axis become smaller, indicating the same trend for the COR-
+RECTRECALL of learnt attributes. It is also clear from the ﬁgures
+that the attributes learnt by LDA and K-MEANS display this desir-
+able property to a much lesser degree.
+
+To summarize, we have seen that QTGEN outperforms the base-
+lines in terms of obtaining interpretable attributes that cover a large
+fraction of the query-terms correctly. The parameter setting used to
+report this performance was tuned over a 10% held-out validation
+dataset. Next, we show the effect of variation of these parameters
+on the performance of QTGEN in terms of PRECISION and COR-
+RECTRECALL.
+5.3 Effect of Parameter Values
+EFFECT OF NUMBER OF ITERATIONS.
+
+We start by studying the effect of the number of model iterations.
+In Figure 5 we have plotted the scores of attributes identiﬁed by QT-
+GEN after a ﬁxed number of iterations. These performance num-
+bers are plotted by averaging the result of multiple runs with random
+initializations, but we do not show the conﬁdence intervals to reduce
+clutter. Note that the results of this experiment on all three domains
+were very similar and hence we show them only for the Automo-
+biles domain. From the results displayed in Figure 5 we make two
+observations.
+
+First, it can be easily seen that while the performance of QTGEN
+does improve with increasing iterations, after very few iterations
+(>50) the performance differences become indistinguishable. The
+only statistically signiﬁcant differences in performance are between
+
+Figure 7: PRECISION vs. CORRECTRECALL curves of QTGEN
+run with different values of φ on the Automobiles domain.
+the #iters = 10 and #iters = 25 curves and the rest. This fast
+convergence of QTGEN can be attributed to the fact that it imposes
+a lot of structure derived from domain knowledge on the model. For
+instance, in our model queries are required to be generated from
+one of a few attribute conﬁgurations and each attribute is required
+to generate at least one word. These restrictions reduce the num-
+ber of choices that must be evaluated and hence the convergence is
+achieved in fewer iterations.
+
+Second, we observe that QTGEN converges faster to a precise
+characterization of attributes that are used more frequently than it
+does for other less frequently used attributes. In Figure 5 we have
+annotated each mark of a converged attribute with the ground truth
+attribute that it maps to. As we can see, QTGEN converges to the
+ﬁnal characterization of the attribute that maps to Model ﬁrst. This is
+because a model-name is speciﬁed in nearly every query in our data.
+Next most commonly used attribute is Year, which, in addition, also
+has a small vocabulary and is hence found in few iterations as well.
+Finally, Brand and Parts that participate in fewer queries are found.
+EFFECT OF NUMBER OF ATTRIBUTES.
+
+In Figure 6 we plot the performance of QTGEN when it learns
+templates by allowing for different number of attributes. As we can
+see the performance for most settings are very similar showing that
+with any given number of attributes QTGEN is able to learn at-
+tributes that closely map to ground truth attributes. However, the
+main difference is in the number of ground truth attributes that are
+covered by the learnt attributes. This difference is primarily rep-
+resented in the CORRECTRECALL values that QTGEN is able to
+achieve with the lower settings of number of attributes.
+
+Often, in unsupervised learning scenarios, one of the hardest pa-
+rameters for a domain expert to set is the true number of clusters /
+attributes in the data. These results show that QTGEN has the abil-
+ity to ﬁnd appropriate attributes as long as the number of desired
+attributes is set to a reasonable value.
+EFFECT OF MODEL PARAMETERS.
+
+In these experiments we report on the results of tuning the Dirich-
+let parameter φ that acts as a prior to the attribute-word multinomial
+distributions and the Gamma distribution parameters g1 and g2 that
+are used to generate the Poisson distributions for each attribute. The
+φ parameters controls the extent to which the modeling procedure
+relies on the observed data as opposed to the priors. The smaller the
+value of φ, the more the multinomial distribution of words associ-
+ated with each attribute is tuned to the data. In Figure 7 we plot the
+performance of QTGEN when run with different settings of φ. It is
+clear from the results that for a wide range of parameters values the
+results stay stable. Only in the case when the value of φ is very high
+do the results deteriorate since the system now relies on the prior
+too much and ignores the evidence of the data.
+
+The Gamma distribution parameters g1 and g2 control the Poisson
+parameters which in turn control the propensity of each attribute
+to generate words in the query. We performed experiments with
+
+ 0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0 0.1 0.2 0.3 0.4 0.5 0.6PRECISION (N)CORRECT RECALL (N)Automobile domainModelYearBrandParts#iters=100#iters=75#iters=50#iters=25#iters=10 0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0 0.1 0.2 0.3 0.4 0.5 0.6PRECISION (N)CORRECT RECALL (N)Automobile domaink=4k=5k=6k=7 0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 0 0.1 0.2 0.3 0.4 0.5 0.6PRECISION (N)CORRECT RECALL (N)Automobile domain0.010.1110WWW 2012 – Session: SearchApril 16–20, 2012, Lyon, France416Attribute
+Brand
+Model
+Year
+Parts
+Specs
+
+Words most frequently used in queries
+
+honda, toyota, chevy, ford, jeep, nissan, dodge, mustang, ranger
+truck, camaro, corvette, civic, bmw, accord, silverado, yukon, ram
+2010, 2007, 2008, 2006, 2004, 2005, engine, 2011, 2009, custom
+
+parts, accessories, couple, rims, reviews, problems, tires, manual, seat
+
+owners, belt, ﬂoor, door, coupe
+
+(a)
+
+Query Template
+Brand Model Year
+
+Brand Model Year Parts
+
+Brand Model Year Parts Specs
+
+Model Year Parts
+Brand Model Parts
+
+(b)
+
+Frequency Ad-clicks
+
+33.3%
+16.6%
+13.6%
+
+8%
+7%
+
+11%
+8.7%
+5.3%
+2.9%
+4.2%
+
+(a) 2 %
+
+(b) 5 %
+
+Table 2: Structure extracted by QTGEN for the Automobiles domain.
+Table (a) shows the attributes found along with the most popular words
+in them. The attribute name is the ground truth attribute it matched
+with in our evaluation. Table (b) shows the top-5 frequently used query
+templates found by QTGEN in the Automobiles domain. The frequency
+indicates the fraction of the query trafﬁc that is generated from this tem-
+plate. The Ad-clicks is fraction of all ad clicks on Automobiles domain
+queries that are on queries generated from this template.
+
+settings that forced attributes to generate very few words per query
+and others that allowed attributes to generate more. Our results were
+remarkably similar across these settings and we do not show them
+here due to paucity of space.
+
+Our results in this section show that QTGEN is extremely robust
+to changes in parameters values and performs well for all values in
+a reasonable range.
+5.4 Anecdotal Evidence and Discussion
+
+Here we present a qualitative evaluation of the attributes and tem-
+
+plates found by QTGEN and discuss potential applications.
+
+In Table 2 we have shown the template structure uncovered by
+QTGEN. Table 2(a) shows the attributes found along with the most
+popular words in their vocabularies. The attribute name in the table
+is the ground truth attribute that matched it. As is clear most of the
+words are grouped together into coherent attributes. Moreover, these
+attributes and their vocabularies closely match those in the manually
+constructed ground truth in Table 1.
+
+In Table 2(b) we have listed the ﬁve most popular query tem-
+plates, and the fraction of queries in our dataset covered by them,
+as detected by QTGEN. The results make intuitive sense. The most
+popular query template found by QTGEN is “Vehicle” queries (that
+covers 33% of queries in our set) and describes the vehicle of in-
+terest using the three most important attributes, Brand, Model, and
+Year. These users are most probably researching an automobile for
+a purchase or lease. Beyond this template the users are querying
+for more detailed information on speciﬁc vehicles: to do this they
+ﬁrst establish the identity of the vehicle using some combination of
+Brand, Model, and Year, and then express their information need via
+attributes Part and Spec. These “Parts” queries all together are about
+as frequent as the “Vehicle” queries in our dataset.
+
+In the ﬁnal column of Table 2 we list the fraction of all spon-
+sored search advertisement clicks (in the Automobiles domain in
+our dataset) due to queries that are generated from these templates.
+As we can see these query templates demonstrate a large difference
+in their tendency to attract ad-clicks from users. For example, the
+“Parts” queries contribute a larger fraction of ad-clicks while occur-
+ring a smaller fraction of times than the “Vehicle” queries. Hence,
+knowledge gathered by QTGEN on the template from which the
+query has been generated should be useful for inferring its advertis-
+ability [22]. Other potential applications of extracting the attributes
+and query templates can be in generating special case search expe-
+
+(c) 10 %
+
+(d) 50 %
+
+Figure 8: Clicks vs Impressions curves for models trained using vary-
+ing amounts of data in the Travel domain.
+
+% of Training data
+
+TERM + SMOOTH
+
+TERM + SMOOTH + QT
+
+Approaches
+
+2%
+5%
+10%
+50%
+100%
+
+6.26%
+6.57%
+4.29%
+2.81%
+-0.83%
+
+12.04 %
+10.41%
+6.20%
+4.18%
+1.35%
+
+Table 3: The %-improvement in the AUC of predicting the query-
+advertisability for different approaches. The two approaches using
+SMOOTH and QT are explained in this section. The improvements are
+measured over the TERM baseline. The numbers in bold represent im-
+provements that are statistically signiﬁcant at α = 0.01
+
+riences, such as returning on the search results page the price and
+availability of the automotive part plugged into the query template.
+5.5 Case Study: Query Advertisability
+
+The results from Table 2 show that the presence of certain ex-
+tracted templates and attributes is positively correlated with the click-
+through-rate (CTR) on sponsored search advertisements. Motivated
+by these observations, in this section we conduct experiments to
+validate the usefulness of templates extracted by QTGEN for the
+problem of predicting Query-Advertisability of tail queries [22].
+
+In brief, the search query frequencies are skewed as a power-law
+and a large fraction of queries are unique (or occur very few times).
+This makes predicting the CTR of sponsored search advertisements
+on these queries very challenging. One way is to predict the Ad-
+vertisability for these tail queries in an attempt to help the search
+engine decide whether to show advertisements for them.
+In [22]
+we proposed an approach for this task that was shown to outper-
+form state-of-the-art baselines. Due to paucity of space we refer
+the reader to the original paper [22] for details of the proposed ap-
+proach. Here we only describe how we enhance this approach using
+query templates learnt by QTGEN.
+EXPERIMENTAL SETUP.
+
+The approach proposed in [22] is based on learning word-speciﬁc
+scores that are then combined to predict the query-advertisability;
+we call this approach TERM. We then learn the query templates
+for the training set of these tail queries and hence the assignment
+of each term to an attribute. We then augment the query with these
+learnt attributes and learn the attribute-speciﬁc scores. Our two en-
+hancements of the TERM baseline are as follows:
+1) TERM + SMOOTH: Here each term’s score is smoothed using
+the attribute it is assigned to by adding (a fraction of) the attribute
+
+WWW 2012 – Session: SearchApril 16–20, 2012, Lyon, France417impression and click counts to the term’s. This is likely to help for
+rare terms and in cases where very little data is available to reliably
+estimate term-speciﬁc scores. The weight to be given to the attribute
+impressions is tuned on a validation set and varies with number of
+training data points. Finally, only the smoothed term-speciﬁc scores
+are then combined into the query-advertisability score.
+2) TERM + SMOOTH + QT: In this baseline we perform smoothing
+as above. In addition, however, we combine term-speciﬁc scores
+as well as attribute-speciﬁc scores to learn the query-advertisability
+score. The methodology for combining these scores is exactly the
+same as in [22].
+
+As before, in order to remove the effects of particular topics and
+obtain robust results, the experiments were performed on 43793,
+83387, and 15050 tail queries from the Automobiles, Travel, and
+Movies domains, respectively, randomly sampled from the Yahoo!
+query logs. Most of these queries occurred once with less than 5%
+occurring twice. Each of the approaches orders the queries in terms
+of their predicted advertisability scores and we report the AUC [12]
+of the clicks-vs-impressions plots (see Figure 8). Queries in each
+domain were evaluated separately since the presence of exclusive
+templates makes the predicted scores a little difﬁcult to compare.
+The AUC values reported in Table 3 are weighted average across
+the domains, with tests in each domain averaged over 100 runs with
+randomly selected training points. 40% of queries in each domain
+were put into the training set, 10% for tuning the SMOOTH param-
+eter, and rest for testing. Care was taken to ensure that the queries
+used in the test data had occurred later in time than the ones used
+for training and validation. To simulate low-data situations we sub-
+sampled the training data to 2%, 5%, 10%, and 50%.
+RESULTS AND DISCUSSION.
+
+The averaged AUC results are in Table 3 and results from the
+Travel domain are plotted in Figure 8. The main points to note are
+that we get huge percentage improvements from the addition of tem-
+plates found by QTGEN in situations when very little training data
+is present. This is because attribute-speciﬁc scores are estimated
+over a larger number of terms making them more robust than term-
+speciﬁc scores, and using them to smooth the latter improves accu-
+racy signiﬁcantly. Moreover, note that even the presence of certain
+attributes (SMOOTH + QT) gives the algorithm an additional accu-
+racy boost over just using SMOOTH; this was as expected from the
+observations in Table 2. While the improvements are overwhealm-
+ing for smaller training set sizes, the effect remains until at least
+50% of the training data is available.
+
+To conclude, the main goal of this experiment was for us to ver-
+ify that QTGEN ﬁnds good query template assignments by showing
+that these assigned attributes help in estimating query-advertisability.
+As the plots in Figure 8(a) and 8(b) show, the very strong base-
+line [22] is essentially random in very low-data situations. How-
+ever, the accuracy signiﬁcantly improves with the addition of query
+templates. Moreover, even in settings with more data the beneﬁt of
+using query templates persists.
+
+6. SUMMARY
+
+In this paper we focused on the goal of automatically enrich-
+ing short keyword search queries by ﬁnding domain-speciﬁc query
+templates in a completely unsupervised manner. More speciﬁcally,
+we gave a generative model based approach that ﬁnds query tem-
+plates as well as query attributes and their vocabularies, without
+any human intervention. We empirically demonstrated the perfor-
+mance of our approach by comparing it against two state-of-the-art
+approaches on real datasets. Finally, we showed an application of
+query templates to computational advertising. In particular, we sig-
+
+niﬁcantly improved the performance of an approach for predicting
+query advertisability by supplementing query keywords with their
+attributes and template information.
+
+7. REFERENCES
+[1] Mallet. http://mallet.cs.umass.edu/.
+[2] Powerset. wikipedia.org/wiki/Powerset_(company).
+[3] G. Agarwal, G. Kabra, and K. C.-C. Chang. Towards rich query
+
+interpretation: walking back and forth for mining query templates. In
+19th WWW, 2010.
+
+[4] R. A. Baeza-Yates and B. Ribeiro-Neto. Modern Information
+
+Retrieval. Addison-Wesley Longman, Boston, MA, 1999.
+[5] S. Bergsma and Q. I. Wang. Learning noun phrase query
+
+segmentation. In EMNLP-CoNLL, 2007.
+
+[6] D. Blei, A. Ng, and M. Jordan. Latent dirichlet allocation. Journal of
+
+Machine Learning Research, 3, 2003.
+
+[7] A. Broder. A taxonomy of web search. SIGIR Forum, 36, 2002.
+[8] A. Broder, M. Ciaramita, M. Fontoura, E. Gabrilovich, V. Josifovski,
+D. Metzler, V. Murdock, and V. Plachouras. To swing or not to swing:
+Learning when (not) to advertise. In 17th CIKM, 2008.
+
+[9] A. Z. Broder, M. Fontoura, E. Gabrilovich, A. Joshi, V. Josifovski,
+
+and T. Zhang. Robust classiﬁcation of rare queries using web
+knowledge. In 30th SIGIR, 2007.
+
+[10] I. S. Dhillon and D. S. Modha. Concept decompositions for large
+sparse text data using clustering. Machine Learning, 42(1), 2001.
+
+[11] S. Goel, A. Broder, E. Gabrilovich, and B. Pang. Anatomy of the long
+
+tail: ordinary people with extraordinary tastes. In 3rd, 2010.
+
+[12] M. Gonen. Receiver operating characteristic (ROC) curves. SAS Users
+
+Group International (SUGI), 31, 2006.
+
+[13] T. Grifﬁths. Gibbs sampling in the generative model of latent dirichlet
+
+allocation. Technical report, Stanford University, 2002.
+
+[14] T. Grifﬁths and M. Steyvers. Finding scientiﬁc topics. Proceedings of
+
+the National Academy of Sciences, 101, 2004.
+
+[15] J. Guo, G. Xu, X. Cheng, and H. Li. Named entity recognition in
+
+query. In 32nd SIGIR, 2009.
+
+[16] Q. Guo and E. Agichtein. Exploring mouse movements for inferring
+
+query intent. In 31st SIGIR, 2008.
+
+[17] L. Hubert and P. Arabie. Comparing partitions. Journal of
+
+Classiﬁcation, 2, 1985.
+
+[18] A. Jain, U. Ozertem, and E. Velipasaoglu. Synthesizing high utility
+
+suggestions for rare web search queries. In 34th SIGIR, 2011.
+[19] Y. Li, B.-J. P. Hsu, C. Zhai, and K. Wang. Unsupervised query
+
+segmentation using clickthrough for information retrieval. In 34th
+SIGIR, 2011.
+
+[20] M. Pa¸sca. Weakly-supervised discovery of named entities using web
+
+search queries. In 16th CIKM, 2007.
+
+[21] S. Pandey and K. Punera. Unsupervised extraction of template
+
+structure in web search queries. www.ideal.ece.utexas.edu/
+~kunal/papers/querytemplates_long2011.pdf.
+
+[22] S. Pandey, K. Punera, M. Fontoura, and V. Josifovski. Estimating
+
+advertisability of tail queries for sponsored search. In SIGIR, 2010.
+
+[23] P. Pantel and A. Fuxman. Jigs and lures: Associating web queries with
+
+structured entities. In ACL, 2011.
+
+[24] K. Punera and S. Merugu. The anatomy of a click: modeling user
+
+behavior on web information systems. In 19th CIKM, 2010.
+
+[25] N. Sarkas, S. Paparizos, and P. Tsaparas. Structured annotations of
+
+web queries. In SIGMOD, 2010.
+
+[26] A. Strehl and J. Ghosh. Cluster ensembles – a knowledge reuse
+
+framework for combining multiple partitions. JMLR, 3, 2002.
+
+[27] I. Szpektor, A. Gionis, and Y. Maarek. Improving recommendation for
+
+long-tail queries via templates. In 20th WWW, 2011.
+
+[28] L. Tang, S. Rajan, and V. K. Narayanan. Large scale multi-label
+
+classiﬁcation via metalabeler. In 18th WWW, 2009.
+
+[29] X. Wang, D. Chakrabarti, and K. Punera. Mining broad latent query
+
+aspects from search sessions. In 15th KDD, 2009.
+
+[30] G. Xu, S.-H. Yang, and H. Li. Named entity mining from
+
+click-through data using weakly supervised latent dirichlet allocation.
+In 15th KDD, 2009.
+
+WWW 2012 – Session: SearchApril 16–20, 2012, Lyon, France418

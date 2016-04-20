@@ -1,0 +1,418 @@
+Peer-to-peer (P2P) (cid:2)le sharing applications have dramatically grown in popularity over the past few years, and today constitute a Copyright is held by the author/owner(s).
+signi(cid:2)cant share of the total traf(cid:2)c in many networks.
+These applications have proliferated in variety and have become increasingly sophisticated along a number of dimensions including increased scalability, more functionality, better search capabilities and download times, etc.
+In particular the newer generation P2P applications are incorporating various strategies to avoid detection.
+Access networks as well as enterprise networks require the ability to accurately identify the different P2P applications and their associated network traf(cid:2)c, for a range of uses, including network operations and management, application-speci(cid:2)c traf(cid:2)c engineering, capacity planning, provisioning, service differentiation and cost reduction.
+For example, enterprises would like to provide a degraded service (via rate-limiting, service differentiation, blocking) to P2P traf(cid:2)c to ensure good performance for enterprise critical applications, and/or enforce corporate rules guiding running of peer-to-peer.
+Broadband ISPs would like to limit the P2P traf(cid:2)c to limit the cost they are charged by upstream ISPs.
+All these require the capability to accurately identify P2P network traf(cid:2)c.
+Application identi(cid:2)cation inside IP networks, in general, can be dif(cid:2)cult.
+In an ideal situation, a network administrator would possess precise information on the applications running inside the network, along with unambiguous mappings between each application and its network traf(cid:2)c (e.g., by port numbers used, IP addresses sourcing and receiving the particular application data, etc.).
+However, in general, such information is rarely available, up-to-date or complete, and identifying either the applications or their associated traf(cid:2)c is a challenging proposition.
+In addition, traditional techniques like network port-based classi(cid:2)cation of applications have now become problematic.
+Although the earlier P2P systems mostly used default network ports for communication, we have found that substantial P2P traf(cid:2)c nowadays is transmitted over a large number of nonstandard ports, making default port-based classi(cid:2)cation less accurate.
+In this paper, we report on our exploration of online, in-network P2P application detection based on application signatures.
+The following are some key requirements for such an application-level (cid:2)l-ter.
+It must be accurate, have low overheads, and must be robust to effects like packet losses, asymmetric routing, etc.
+(details in Sections 2 and 3) that make it dif(cid:2)cult/impossible for a monitoring point to observe all the application-level data in a connection (cid:3)owing by.
+We designed a real-time classi(cid:2)cation system which operates on individual packets in the middle of the network, and developed application-level signatures for a number of popular P2P applications.
+Our signatures can be used directly to monitor and (cid:2)lter P2P traf(cid:2)c.
+Evaluations using large packet traces at different Internet loca-
+tions show that the individual signature-based classi(cid:2)cation (i) has good accuracy properties (low false positives and negatives), even in situations where not all packets in a connection are observed by the monitoring point, (ii) can scale to handle large traf(cid:2)c volumes in the order of several Gbps (GigaBits per second), and (iii) can signi(cid:2)cantly improve the P2P traf(cid:2)c volume estimates over what pure network port based approaches provide.
+Our (cid:2)lter has been successfully deployed and is currently running at multiple network monitoring locations.
+A lot of existing research on P2P traf(cid:2)c characterization has only considered traf(cid:2)c on default network ports (e.g., [11, 18, 17]).
+A recent work [12] uses application signatures to characterize the workload of Kazaa downloads.
+But they do not provide any evaluation of accuracy, scalability or robustness features of their signature.
+Signature based traf(cid:2)c classi(cid:2)cation has been mainly performed in the context of network security such as intrusion and anomaly detection (e.g.
+[5, 4, 19, 14]) where one typically seeks to (cid:2)nd a signature for an attack.
+In contrast our approach identi(cid:2)es P2P traf(cid:2)c for network planning and research purposes.
+This work, is therefore, more closely related to [8] which provides a set of heuristics and signatures to identify Internet chat traf(cid:2)c. There is also a large body of literature on extracting information from packet traces (e.g., [9]); however, none of these works provides and evaluates application layer P2P signatures.
+The remainder of this paper is organized as follows.
+Section 2 highlights the issues involved in identifying P2P traf(cid:2)c in real time inside the network.
+Section 3 discusses some of the design choices we made in our approach.
+Section 4 derives the actual signatures used for P2P detection, and Section 5 describes our implementation of an online P2P application classi(cid:2)er using these signatures.
+Section 6 presents the evaluation setting, and Section 7 describes the evaluation results.
+Finally, Section 8 concludes the paper.
+We (cid:2)rst outline some key requirements of any mapping technique for identifying traf(cid:2)c on high speed links inside the network.
+Accuracy: The technique should have low false positives (identifying other traf(cid:2)c as peer-to-peer) and low false negatives (missing peer-to-peer traf(cid:2)c).
+Scalability: The technique must be able to process large traf(cid:2)c volumes in the order of several hundred thousand to several million connections at a time, with good accuracy, and yet not be computationally expensive.
+Robustness: Traf(cid:2)c measurement in the middle of the network has to deal with the effects of asymmetric routing (2 directions of a connection follow different paths), packet losses and reordering.
+The above requirements indicate there are tradeoffs in terms of the level of accuracy, scalability and robustness that can be achieved.
+On one end of this spectrum is the current practice of TCP/UDP port number based application identi(cid:2)cation.
+Port number based application identi(cid:2)cation uses known TCP/UDP port numbers to identify traf(cid:2)c (cid:3)ows in the network.
+It is highly scalable since only the UDP/TCP port numbers have to be recorded to identify an application.
+It is also highly robust since a single packet is suf(cid:2)cient to make an application identi(cid:2)cation.
+Unfortunately port number based application identi(cid:2)cation is becoming increasingly inaccurate in identifying P2P traf(cid:2)c. For example, we observed in our traf(cid:2)c traces that a large amount of Kazaa traf(cid:2)c is not using the default Kazaa port numbers most likely (cid:151) we speculate (cid:151) to avoid detection.
+To address this problem we developed and evaluated a set of application layer signatures to improve the accuracy of P2P traf(cid:2)c detection.
+In particular this approach tries to determine common signatures in the TCP/UDP payload of P2P applications.
+A key challenge in realizing such signatures is the lack of openly available reliable, complete, uptodate and standard protocol speci-(cid:2)cations.
+This is partly due to developmental history and partly a result of whether the protocols are open or proprietary.
+First, the protocols are mostly not standardized and they are evolving.
+For some protocols (e.g., Gnutella), there exists some documentation, but it is not complete, or uptodate.
+In addition, there are various different implementations of Gnutella clients which do not comply with the speci(cid:2)cations in the available documentation, raising potential inter-operability issues.
+For a user, this will manifest itself in the form of sometimes poor search performance.
+For an application classi(cid:2)er to be accurate, it is important to identify signatures that span all the variants or at least the dominantly used ones.
+At the other end of the spectrum is a protocol like Kazaa, which is developed by a single organization and therefore exhibits a more homogeneous protocol deployment, but is a proprietary protocol with no authoritative protocol description openly available.
+Finally, just access to the protocol speci(cid:2)cation is not suf(cid:2)cient - we need signatures that conform to the design decisions outlined above.
+Our approach to signature identi(cid:2)cation has involved combining information available documentation, with information gleaned from analysis of packet-level traces to develop potential signatures.
+Multiple iterations were used to evaluate the signatures against network traf(cid:2)c data to improve the accuracy and computation overheads.
+Our main goal is to derive application layer signatures for P2P protocols which achieve high accuracy and robustness while being able to apply them at least at Gigabit Ethernet speeds in real time.
+As we will discuss in Section 7 we achieved these goals by making the following high level design choices.
+UDP versus TCP: P2P traf(cid:2)c in principle can (cid:3)ow over UDP and TCP.
+Since currently most P2P protocols transmitted their data via TCP we focus on signatures found within TCP based P2P traf(cid:2)c. Obviously our signatures could be extended to UDP if so desired.
+Packets versus Streams: The P2P application layer signatures can be applied to individual TCP segments or to fully reassembled TCP connection data streams.
+The advantage of applying them to TCP data streams is that duplicate data has been removed and that signatures can match data which is transmitted in multiple TCP segments.
+However, the drawback of applying the signatures to TCP data streams is that the TCP segments have to be reassembled in real time on the monitoring device.
+In our current design we chose to apply the signatures to individual TCP segments which allows us to achieve higher speeds.
+We therefore focus on developing signatures that do not span multiple TCP packet boundaries.
+As we will demonstrate we still achieve high accuracy for the   applications with the signatures that we develop.
+Location of Signature: Again to improve performance we focus on (cid:2)nding signatures which appear in the beginning of the (cid:2)le downloads.
+Using this approach allows us to focus our
+ nection.
+We will study how many packets our signatures required in Section 7.
+Robustness to network effects: We also aim to develop signatures that can independently identify each direction of an application-level communication.
+This is to enhance the potential of identifying connections for which the (cid:2)lter does not observe one direction of the traf(cid:2)c (due to asymmetric network routing), or misses some signature-carrying packets in one or (caused by either router-based load split-both directions ting [16] or other routing instabilities).
+Independent iden-ti(cid:2)cation of each direction also serves to decrease the potential of misclassi(cid:2)cation, by either reinforcing the marking (if both directions identify the same application) or (cid:3)agging a potential discord (if the 2 directions are identi(cid:2)ed with different applications).
+Note that for some usages, such as accounting for total P2P traf(cid:2)c or identifying if some P2P communication is being used, where it is more important to identify that some P2P communications is being used, the last potential (of multiple classi(cid:2)cations of the directions) is not an issue.
+Early Discard: For ef(cid:2)ciency reasons, we shall consider both signatures that identify an application as well as those that indicate that a connection does not belong to an application.
+The latter category of signatures allows us to quickly identify packets that are not likely application packets, and thereby frees up resources for examining more promising candidates.
+Signaling versus Transport: Since the bulk of P2P traf(cid:2)c is related to (cid:2)le downloads and not due to (cid:2)le searches (signaling) we chose to concentrate our efforts on identifying signatures for (cid:2)le downloads rather than the signaling part of P2P protocols.
+Historically in the client/server model content is stored on the server and all clients download content from the server.
+One drawback of this model is that if the server is overloaded, the server becomes the bottleneck.
+The P2P (cid:2)le sharing model addresses this problem by allowing peers to exchange content directly.
+To perform these (cid:2)le sharing tasks, all popular P2P protocols allow a random host to act as both a client and a server to its peers, even though some P2P protocols do not treat all hosts equally.
+Typically the following two phases are involved if a requester desires to download content: Signaling: During the signaling phase a client searches for the content and determines which peers are able and willing to provide the desired content.
+In many protocols this does not involve any direct communication with the peer which will eventually provide the content.
+Download: In this phase the requester contacts one or multiple peers directly to download the desired content.
+In addition to the two phases described above many P2P protocols also exchange keep-alive messages or synchronize the server lists between servers.
+In the remainder of the paper we focus on the download phase of the (cid:2)ve most popular P2P protocols (Kazaa, Gnutella, eDon-key, DirectConnect, and BitTorrent).
+We decided to only track the download phase since it allows us to capture the majority of P2P traf(cid:2)c. We will also only classify the (cid:2)rst download in a TCP connection.
+This simpli(cid:2)cation is reasonable since it is highly unlikely that two different applications will share a single TCP connection.
+In the remainder of this Section we will discuss the signatures we discovered for these (cid:2)ve protocols.
+Unless otherwise speci(cid:2)ed, all the identi(cid:2)ed signatures are case insensitive.
+Gnutella is a completely distributed protocol.
+In a Gnutella network, every client is a server and vice versa.
+Therefore the client and server are implemented in a single system, called servent.
+A servent connects to the Gnutella network through establishing a TCP connection to another servent on the network.
+Once a servent has connected successfully to the network, it communicates with other servents using Gnutella protocol descriptors for searching the network - this is the signaling phase of the protocol.
+The actual (cid:2)le download is achieved using a HTTP-like protocol between the requesting servent and a servent possessing the requested (cid:2)le.
+To develop the Gnutella signature we inspected multiple Gnutella connections and observed that the request message for Gnutella TCP connection creation assumes following format: GNUTELLA CONNECT/<protocol version string>\n\n And the response message for Gnutella TCP connection creation assumes: GNUTELLA OK\n\n We also observed that there is an initial request-response handshake within each content download.
+In the download request the servent uses the following HTTP request headers: GET /get/<File Index>/<File Name> /HTTP/1.0 \r \n Connection: Keep-Alive\r\n Range: byte=0-\r\n User-Agent: <Name>\r\n \r\n The reply message contains the following HTTP response headers: HTTP 200 OK\r\n Server: <Name>\r\n Content-type: \r\n Content-length: \r\n \r\n Based on these observations and performance consideration, we recommend the following signatures for identifying Gnutella data downloads:  The (cid:2)rst string following the TCP/IP header is  GNUTELLA ,  GET , or  HTTP .
+If the (cid:2)rst string is  GET  or  HTTP , there must be a (cid:2)eld with one of following strings: User-Agent: <Name> UserAgent: <Name> Server: <Name>
+    where is one of the following: LimeWire, Bear-Share, Gnucleus, MorpheusOS, XoloX, MorpheusPE, gtk-gnutella, Acquisition, Mutella-0.4.1, MyNapster, Mutella-
+Comeback, Go, PHEX, SwapNut, Mutella-0.4.0, Shareaza, Mutella-0.3.9b, Morpheus, FreeWire, Openext, Mutella-0.3.3, Phex.
+Generally it is much cheaper to match a string with a (cid:2)xed offset than a string with varying locations.
+Hence we include  GET  and  HTTP  here to help early discard the packets, which do not start with  GNUTELLA , and also are non-HTTP packets.
+For robustness, we included the signatures for the request and response header.
+This way, we can identify Gnutella traf(cid:2)c even if we only see one direction of the traf(cid:2)c.
+An eDonkey network consists of clients and servers.
+Each client is connected to one main server via TCP.
+During the signaling phase, it (cid:2)rst sends the search request to its main server.
+(Optionally, the client can send the search request directly to other servers via UDP - this is referred to as extended search in eDonkey.)
+To download a (cid:2)le subsequently from other clients, the client establishes connections to the other clients directly via TCP, then asks each client for different pieces of the (cid:2)le.
+After examining eDonkey packets, we discovered that both signaling and downloading TCP packets have the following common eDonkey header directly following the TCP header:
+ Marker +-+-+-+-+-+-+-+-+ | | +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ | | +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ | Message type | +-+-+-+-+-+-+-+-+ packet Length (4 Bytes) where the marker value is always 0xe3 in hex, the packet length is speci(cid:2)ed in network byte order and the value is the byte length of the content of the eDonkey message excluding the marker 1 byte and the length (cid:2)eld 4 bytes.
+Utilizing these discoveries, we recommend the following signatures for identifying eDonkey packets: For TCP signaling or handshaking data packets, we use two steps to identify eDonkey packets.
+ The (cid:2)rst byte after the IP+TCP header is the eDonkey marker.
+ The number given by the next 4 bytes is equal to the size of the entire packet after excluding both the IP+TCP header bytes and 5 extra bytes.
+Since the accuracy for identifying the P2P connections is proportional to the length of the signatures, we tend to include as many (cid:2)elds as we can so long as they do not increase the computational complexity signi(cid:2)cantly.
+Here both marker and length (cid:2)elds have a (cid:2)xed offset, therefore the computational complexity is the same (O(1)) for matching one of them or both, but the accuracy is improved by times compared with matching the marker (cid:2)eld alone.
+We have also identi(cid:2)ed the signatures for UDP handshaking messages.
+However, since UDP is only used for extended searching, and is rare compared with TCP communications, we do not report it in this study.
+ The DirectConnect network is composed of hubs, clients, and a single superhub with multiple servers.
+All of them listen on TCP port 411 to connect and exchange commands such as search request.
+Clients (peers) store (cid:2)les and respond to search requests for those (cid:2)les.
+The single superhub acts as a name service for all the hubs.
+All hubs register with the superhub and clients discover hubs by asking the superhub.
+Each of the clients has a username (a.k.a.
+nick).
+Normally the clients listen at port 412 for client connections.
+If the port 412 is already in use, clients will use ports 413, 414 and so on.
+DirectConnect uses TCP for client to server and client to client communication, while UDP is used for communication between servers.
+The TCP/UDP data is a series of commands or a public chat message.
+In this study, we focus on the TCP commands.
+The TCP commands are identi(cid:2)ed with following form: $command_type field1 field2 ...|  , and ends with character   which starts with character    .
+The list of valid command types for TCP communications are: MyN-ick, Lock, Key, Direction, GetListLen, ListLen, MaxedOut, Error, Send, Get, FileLength, Canceled, HubName, ValidateNick, Vali-dateDenide, GetPass, Mypass, BadPass, Version, Hello, Logedin, MyINFO, GetINFO, GetNickList, NickList, OpList, To, Connect-ToMe, MultiConnectToMe, RevConnectToMe, Search, MultiSearch, SR, Kick, OpForceMove, ForceMove, Quit.
+To improve the evaluation performance we evaluate this signature in the following two steps:
+ of the packet is    .
+ , and the last byte
+  , the string terminated by a space is one of the valid TCP commands listed above.
+Although we are matching a list of strings which can be an expensive operation, we shall only perform the string match on packets which pass the (cid:2)rst test.
+The BitTorrent network consists of clients and a centralized server.
+Clients connect to each other directly to send and receive portions of a single (cid:2)le.
+The central server (called a tracker) only coordinates the action of the clients, and manages connections.
+Unlike the protocols discussed above, the BitTorrent server is not responsible for locating the searching (cid:2)les for the clients, instead the BitTorrent network client locates a torrent (cid:2)le through the Web, and initiates the downloading by clicking on the hyperlink.
+Hence there is no signaling communication for searching in the BitTorrent network.
+To identify BitTorrent traf(cid:2)c, we focus on the downloading data packets between clients only since the communication between the client and server is negligible.
+The communication between the clients starts with a handshake followed by a never-ending stream of length-pre(cid:2)xed messages.
+We discovered that the BitTorrent header of the handshake messages assumes following format: <a character(1 byte)><a string(19 byte)> The (cid:2)rst byte is a (cid:2)xed character with value    , and the string value is  BitTorrent protocol .
+Based on this common header, we use following signatures for identifying BitTorrent traf(cid:2)c:   The (cid:2)rst byte in the TCP payload is the character 19 (0x13).
+ The next 19 bytes match the string  BitTorrent protocol .
+The signatures identi(cid:2)ed here are 20 bytes long with (cid:2)xed locations, therefore they are very accurate and cost-effective.
+   
+ The Kazaa network is a distributed self-organized network.
+In a Kazaa network, clients with powerful connections, and with fast computers are automatically selected as Supernodes.
+Supernodes are local search hubs.
+Normal clients connect to their neighboring Supernodes to upload information about (cid:2)les that they share, and to perform searches.
+In turn Supernodes query each other to ful(cid:2)ll the search.
+The request message in a Kazaa download contains the following HTTP request headers: GET /.files HTTP/1.1\r\n Host: IP address/port\r\n UserAgent: KazaaClient\r\n X-Kazaa-Username: \r\n X-Kazaa-Network: KaZaA\r\n X-Kazaa-IP: \r\n X-Kazaa-SupernodeIP: \r\n The Kazaa response contains the following HTTP response headers: HTTP/1.1 200 OK\r\n Content-Length: \r\n Server: KazaaClient\r\n X-Kazaa-Username: \r\n X-Kazaa-Network: \r\n X-Kazaa-IP: \r\n X-Kazaa-SupernodeIP: \r\n Content-Type: \r\n For higher Kazaa version (v1.5 or higher), a peer may send an encrypted short message before it sends back above response.
+Note that both messages include a (cid:2)eld called X-Kazaa-SupernodeIP.
+This (cid:2)eld speci(cid:2)es the IP address of the supernode to which the peer is connected including the TCP/UDP supernode service port.
+This information could be used to identify signaling using (cid:3)ow records of all communication.
+Using the special HTTP headers found in the Kazaa data download we recommend the following two steps to identify Kazaa down-loads:
+  GET , and  HTTP .
+Similar to our Gnutella signatures we include  GET  and  HTTP  to early discard non-HTTP packets, so that we can avoid searching through the whole packet to match  X-Kazaa  if the packet has a low probability to contain HTTP request or response headers.
+As stated earlier we concentrate on P2P application detection in TCP traf(cid:2)c. In particular we decomposed our P2P signatures into (cid:2)xed pattern matches at (cid:2)xed offsets within a TCP payload and variable pattern matches with variable offset within a TCP payload.
+The (cid:2)xed offset operation can be implemented cheaply whereas variable pattern matches are substantially more expensive.
+To be able to execute the decomposed signatures on real network traf(cid:2)c we implemented them in the context of the Gigascope [7] high speed traf(cid:2)c monitor.
+In this section we will (cid:2)rst discuss the issues involved in evaluating (cid:2)xed and variable offset signatures and then discuss how we implement them in the context of Gigas-cope.
+Implementing a (cid:2)xed pattern match at a (cid:2)xed offset within a TCP payload is rather trivial.
+The complexity of this operation in the worst case is the size of the pattern matched.
+Despite this simplicity it is useful to provide multiple library functions which perform this operation using slightly different parameters to allow for the easy implementation of diverse signatures.
+For example, in the context of P2P signatures the offset could be speci(cid:2)ed from the beginning or end of the TCP payload and the pattern matches could be a byte, a word in little endian byte order, a word in big endian byte order, or a string.
+Therefore, we implemented a library which provides the following functions: byte match offset: returns true if a byte matches the byte in the TCP payload on a given offset.
+If the offset is negative it is calculated from the end of the TCP payload.
+word match offset: similar to byte match offset, except that a word is compared.
+This function takes as additional argument a (cid:3)ag indicating the byte order of the data in the TCP payload.
+string match offset: similar to byte match offset, except that a (cid:2)xed length sequence of bytes (string) is compared.
+There are multiple ways to implement matches at variable offsets in an input stream that involve variable length strings.
+As discussed in Section 3 we decided to perform the matches on a per packet basis, trading off higher performance against matching strings which span multiple packets.
+Using this approach all variable matches we need to perform can be expressed as a regular expression match over TCP payloads.
+For example, the Gnutella data download signature can be expressed as:  (cid:136)(Server:|User-Agent:)[ \t]*(LimeWire| BearShare|Gnucleus|Morpheus|XoloX| gtk-gnutella|Mutella|MyNapster|Qtella| AquaLime|NapShare|Comback|PHEX|SwapNut| FreeWire|Openext|Toadnode)  Due to the fact that it is expensive to perform full regular expression matches over all TCP payloads we exploit the fact that the required regular expression matches are of a limited variety.
+In particular all of the signatures we need to evaluate can be expressed as stringset1.
+*stringset2 where stringset1 and stringset2 contain a list of possible strings.
+This allows us to use the following algorithms for our signatures: character long string in a  Standard regex (SR): This is the regular expression match function found in the standard c library on FreeBSD 4.7.
+ AST regex (AR): Part of the AST library [10], this code is based on the Boyer Moore string search algorithm [6] extended to handle alternation of (cid:2)xed strings.
+To search for an character sequence, the Boyer-Moore algorithm has worst case time complexity time on natural, but often runs in language text for small values of  Karp-Rabin (KR): This is a probabilistic string matching technique [13] that compares the hash value of the pattern against the hash value of the sub text of a given search text.
+The , but for many worst case complexity of Karp-Rabin is situations is often  !
+")(* +& .
+! "
+$#%'& .
+! "
+,#-)& ! "
+)&
+
+
+
+ ./ Gigascope is a high speed traf(cid:2)c monitor which can perform a (2x2.4 variety of traf(cid:2)c measurement tasks at speeds up to OC-Gbps).
+To evaluate our signature based P2P classi(cid:2)cation we included the libraries described above into the Gigascope framework and wrote a set of Gigascope con(cid:2)guration (cid:2)les based on our P2P signatures.
+In the Gigascope framework these con(cid:2)guration (cid:2)les are translated into C code which is subsequently compiled.
+The resulting executable is used to perform the network monitoring in real time.
+Gigascope automatically breaks complex computation into multiple tasks exploiting multiple processors if available.
+In addition to the real-time P2P detection task we also used Gigascope to collect large datasets for our accuracy evaluation as discussed in Section 7.
+When we con(cid:2)gured our Gigascope instance we utilized the fact that (cid:2)xed offset matches are substantially cheaper to execute than variable offset matches.
+For example, to identify the DirectConnect protocol we need to perform a regular expression match for: types|MyNick|Lock|Key|Direction| GetListLen|ListLen|MaxedOut|Error| Send|Get|FileLength|Canceled|HubName| ValidateNick|ValidateDenide|GetPass| MyPass|BadPass|Version|Hello|LogedIn| MyINFO|GetINFO|GetNickList|NickList| OpList|To|ConnectToMe|MultiConnectToMe| RevConnectToMe|Search|MultiSearch|SR| Kick|OpForceMove|ForceMove|Quit However, we also know that the (cid:2)rst byte of the DirectConnect TCP payload needs to be 36 and the last byte 124.
+We therefore con(cid:2)gured the Gigascope to only try the regular expression match for DirectConnect if the (cid:2)xed offset (cid:2)elds match.
+Note that we used a similar approach for Gnutella and Kazaa which both use the HTTP protocol for their data transfer.
+Our setup only performs the regular expression match if the TCP payload starts with GET or HTTP indicating a HTTP payload.
+In addition to (cid:2)nding packets which identify a particular connection as belonging to a particular P2P application the classi(cid:2)er also maintains an accounting state about each TCP connection.
+This accounting state is collected by tracking the TCP handshakes for each TCP connection and accounting all packets with the same IP address port number pairs towards the same TCP connection.
+A TCP connection record is emitted if either the connection has been closed for two minutes, no traf(cid:2)c has been seen for 8 minutes (the typical TCP keep alive interval) or the record is older than 30 minutes.
+In particular each connection state contains:  Byte count in each direction  Number of packets with zero payload in each direction  Number of packets with nonzero payload in each direction  First signature match in each direction TCP connection reconstruction in the middle of the network is challenging due to the existence of packet reordering, and asymmetric routing, and losses, and the need to scale to large numbers of connections.
+For our purpose, the more lightweight approach of TCP connection accounting is suf(cid:2)cient.
+Currently our implementation also only inspects the (cid:2)rst fragment of an IP data-gram which was fragmented.
+We could enhance our implementation to reassemble IP fragments, however, it would only provide a marginal bene(cid:2)t since TCP uses MTU discovery to avoid fragmentation.
+For example, in our experiments we observed less than
+ To demonstrate the feasibility of our goal of fast P2P detection using application layer signatures we evaluate our signatures in the three dimensions introduced in Section 2.
+We evaluate our signature-based classi(cid:2)er in terms of accuracy, robustness and scal-ability.
+We analyzed two full packet traces from different network vantage points using the Gigascope.
+Internet Access Trace: The (cid:2)rst trace was collected on an access network to a major backbone and contains typical Internet traf(cid:2)c. The trace covers a 24 hour period on a Tuesday in November 2003 and a 18 hour period on a Sunday in November 2003.
+The total traf(cid:2)c volume was GB of com-million TCP connec-pressed data and corresponded to tions.
+ .10 VPN Trace: The VPN (Virtual Private Network) trace was collected on a T3 (45 Mbps) link connecting a VPN containing 500 employees to the Internet.
+The router on this link blocks P2P ports and corporate policy prohibits the use of P2P applications within the VPN.
+Therefore, this link has a low probability of carrying P2P traf(cid:2)c. This trace contains
+ packets.
+The data was collected in November 2003.
+There are two types of classi(cid:2)cation inaccuracies, both undesirable  The classi(cid:2)er erroneously identi(cid:2)es non-application traf(cid:2)c as application traf(cid:2)c. One metric to measure this error is the False Positive (FP).
+ The classi(cid:2)er fails to identify application traf(cid:2)c as such.
+One measure of this error is the False Negative (FN) metric.
+denote the total application traf(cid:2)c (total bytes, connec-Let , the total actual traf(cid:2)c tions etc.)
+identi(cid:2)ed by the signature, and for that application, and be the total amount of non-application traf(cid:2)c identi(cid:2)ed as application-traf(cid:2)c. Then the FP and FN ratios are computed as .
+Low false positives :<>= and negatives are important to ensure that conclusions drawn from signature based P2P monitoring are accurate.
+and The misclassi(cid:2)cation can be caused by various factors including (i) the proposed application signature being too restrictive or too general (identifying only part of the application traf(cid:2)c and/or misidentifying other traf(cid:2)c as the P2P application), (ii) the individual packet-based marking approach could also cause errors as we do not consider any signatures that might be spanning packet boundaries, and (cid:2)nally, (iii) our reconstruction of bidirectional TCP connections from packets could have inaccuracies, e.g., if the timeout used to determine the end of a connection causes a single application connection to be split into multiple connections.
+In that case, because the application signatures typically occur at the beginning of a TCP connection, our scheme would be unable to recognize some of the split-created connections.
+To demonstrate the robustness to some of the network effects discussed in Sections 2(cid:150)3, we explore the impact on our classi(cid:2)cation (cid:2)lter to loss of information in one direction.
+We report the amount of traf(cid:2)c which can be identi(cid:2)ed based on only one traf(cid:2)c direction of a TCP connection, as a fraction of that amount which can be identi(cid:2)ed by capturing either traf(cid:2)c direction of a TCP connection.
+/ 
+ : :
+ For the application-signature based classi(cid:2)cation to be usable, the technique has to be able to scale to high speed network links with large numbers of P2P connections.
+We evaluate the scalability of our technique in two ways:  Number of packets to be examined: We explore the minimum number of packets that need to be checked before we achieve a signature match, for each P2P connection.
+It is desirable that most P2P traf(cid:2)c can be identi(cid:2)ed by considering only a very small number of packets at the beginning of each connection.
+ Micro-benchmarking: The primary component of our signature evaluation is the string search we have to perform on all TCP payloads.
+We therefore, evaluate the performance of the string search operation using three different algorithms described in Section 5.
+This evaluation uses the Internet Access Trace and measures the time it takes to process one hour GBytes) for each of the string based worth of trace data ( signatures introduced in Section 4.
+The experiments were performed on a Dell Power Edge 2650 with GBytes of RAM and two 2.8GHz processors running FreeBSD 4.7.
+In this section we report our experimental results.
+Because of strict (cid:2)rewall restrictions as well as active monitoring and enforcement of corporate rules on use of P2P applications, the VPN Trace offered us a large data set that was expected to contain little or no P2P traf(cid:2)c. We applied our classi(cid:2)er in real time to the VPN traf(cid:2)c to measure the false positive ratio of our technique.
+Our approach was to investigate manually any TCP connection which is identi(cid:2)ed as a P2P connection.
+If in fact the content of the connection did not belong to a P2P protocol we count the connection as a false positive.
+Our signatures initially identi(cid:2)ed 2610 packets as P2P packets out of 2.8 billion packets.
+We then examined the 2610 packets to determine their status.
+We identi(cid:2)ed manually that 82 of these packets contain the string  X-Kazaa , which is the signature for Kazaa protocol, and the rest of them (2528) contain the string  BitTorrent Protocol , which is the signature for BitTorrent protocol.
+We subsequently informed the operator of the VPN about these policy violations.
+Our signatures, therefore, resulted in at most 2610 TeraBytes) and zero false pos-false positives out of itives assuming that our manual veri(cid:2)cation is correct.
+billion ( A second test involved the Internet Access trace.
+Recall that our approach involved applying each P2P application signature to individual packets, and in case of a match marking that packet as a candidate for that application.
+We found that there was not a single instant where the same packet was classi(cid:2)ed as belonging to more than one of the P2P applications.
+Also there was no case where different packets in the same direction or in different directions of a TCP connection were marked as different applications.
+This result is important as it suggests that the signatures themselves and the packet-based marking approach were able to unambiguously distinguish between the (cid:2)ve different P2P applications.
+?0 0
+ We next explore the extent of misclassi(cid:2)cation where the chosen signature fails to identify the application traf(cid:2)c. The Internet Access Trace is used to measure the false negative ratio of our signatures.
+For this evaluation we assume that all traf(cid:2)c on well-known default P2P port numbers is P2P traf(cid:2)c and that this traf(cid:2)c contains a representative mix of P2P protocol versions.
+Therefore, any TCP connection on this port number which carries data should be classi(cid:2)ed as P2P traf(cid:2)c by our signatures and doing so tests our signatures on a representative mix of protocol versions.
+If a TCP connection on such a port is not identi(cid:2)ed as P2P traf(cid:2)c we count the connection as a false negative.
+Note that this approach does not make any assumptions about the traf(cid:2)c on non-P2P ports (cid:150) in particular we do not assume that it is not P2P traf(cid:2)c.
+Alternative approaches for examining false negatives would include getting the traf(cid:2)c dataset by either running each P2P application in an isolated testbed, or running a P2P client and SuperNode locally that communicate with other nodes in the Internet.
+Given the multiple variants of each protocol, concerns about the need to get packet traces that are representative, and legal issues in actively joining such a system, we adopted the approach of passive monitoring at representative network locations.
+Some of the missed traf(cid:2)c may be the P2P signaling communications which we excluded from our signature coverage.
+The FN ratio for eDonkey is signi(cid:2)cantly lower than Gnutella, Kazaa and BitTorrent, since we included part of the eDonkey signaling in our coverage.
+Note for DirectConnect, our signatures covered both data and signaling and the FN ratio is almost zero, indicating a near-perfect match.
+The FN numbers are also upper bounds on the missing signaling overhead.
+Finally note that the FN numbers that we present here are estimates, because it is entirely possible that the default port(s) are being used by applications other than the speci(cid:2)c P2P protocol.
+For instance, while BT uses ports 6881-6889, port 6883 and 6888 respectively are also associated with DeltaSourceDarkStar [3], and MUSE.
+Similarly, ports (default DirectConnect ports) are associated in the IANA database [2] to other applications.
+Given the low False Positive characteristics demonstrated by the signatures, the FN ratios we obtain above are likely to be overestimates
+ , Kazaa , BitTorrent
+
+ , eDonkey (cid:2)c for this test: Gnutella nect We use the following ports [3, 2, 1] for identifying the P2P traf-, DirectCon-
+.
+Table 1 presents the FN ratio for the different applications.
+For presents the total traf(cid:2)c for all connec-each application, column tions that use the default application port(s) at at least one endpoint, and column depicts how much of that traf(cid:2)c the signature-based classi(cid:2)cation missed.
+We (cid:2)nd the FN ratio is less than   .
+for all the protocols except BitTorrent for which it is about Some of the missed traf(cid:2)c can be attributed to TCP connections where there were no application-level packets exchanged, e.g., for connections with some or part of the SYN-SYNACK-ACK handshake that occurs at the beginning of a TCP connection.
+The application signature-based classi(cid:2)cation would miss such connections.
+To quantify how this might impact traf(cid:2)c accounting, the second set of numbers in each row in Table 1 depict the total traf-(cid:2)c based on port numbers and the corresponding FN ratio, when we consider only connections that have at least one packet with application-level payload (data beyond the TCP/IP header) in at least one direction.
+For Gnutella, it reduces from .
+For each of the other protocols, the FN ratio remains very similar to the (cid:147)all connections(cid:148) case.
+This might indicate that missing the no-application payload connections does not signi(cid:2)cantly limit the accuracy of the signatures in accounting for the traf(cid:2)c volume.
+.10
+ 0  to 
+ .
+/ /      Protocol Gnutella Kazaa DirectConnect BitTorrent eDonkey All Connections Port-based (MB)
+
+
+
+
+
+
+
+
+
+
+ Connections with payload
+ Port-based (MB)
+
+
+
+
+
+
+
+
+
+ Table 1: False Negative for different P2P protocol signatures.
+of the actual False Negative if there was only P2P application traf-(cid:2)c running on the default ports.
+Finally, the FN values also provide upper bound estimates on how much other traf(cid:2)c is delivered on the same default ports.
+We next explore the robustness of our signatures to loss of information in one direction using the Internet Access trace.
+Recall that this trace was collected at a gateway between the local network and the Internet.
+We consider two directions: direction corresponds to data being transmitted from inside to the Internet, and the reverse direction.
+Using auxiliary interface information, we are able to identify for each TCP connection, which packets are transmitted in each of the 2 directions.
+There are some connections for which we observe only one direction at this link - the other direction being routed (due to asymmetric routing) over some other link.
+These latter connections are excluded from the study.
+For this evaluation, we consider only those connections that route both directions of traf(cid:2)c through our monitoring router.
+We consider the subset of connections that our classi(cid:2)er was able to identify based on signature matches in either or both directions.
+For this traf(cid:2)c, for each of the 2 directions identi(cid:2)ed above, we identify the fraction of traf(cid:2)c that is identi(cid:2)able based on signature matches with only packets transmitted in that direction.
+We are effectively trying to evaluate a scenario where the connection level summary statistics may be available for both directions (using, e.g., tools like Cisco Net-(cid:3)ow [15] which are deployed at routers throughout many ISPs and are more ubiquitous compared to packet monitors), but the packet classi(cid:2)cation monitor only has access to one direction of the packet data.
+Table 2 shows the results.
+We (cid:2)nd that whichever direction we select, across all the applications, one-way signature detection is able to detect the vast majority of the connections.
+This is good news, because it suggests that the signature based detection is quite robust to asymmetric routing which is quite prevalent in the Internet today.
+This vindicates our strategy of trying to develop signatures for identifying either direction of a TCP connection.
+We next consider the following question: How many application level packets have to be examined on a per connection basis to identify a P2P connection?
+For the Internet Access data set, for all the connections identi(cid:2)ed to belong to one of the (cid:2)ve P2P applications by our signature-based classi(cid:2)cation, we compute the minimum number of packets in either direction that are processed before the (cid:2)rst successful match with a signature occurs.
+Fig. 1 plots, for each P2P application, the cumulative percentage of application traf(cid:2)c that was successfully identi(cid:2)ed based on examining at most .
+The graphs indicate that to identify most of the traf(cid:2)c, for each connection a handful of packets need to be examined before a match is obtained - a welcome news from the ef(cid:2)ciency viewpoint.
+packets, for a range of values of To evaluate the cost of variable offset matches we measured the performance impact of variable offset matches for the three proto-) % ( d e i f i t n e d i c i f f a r
+ e v i t l a u m u
+
+
+
+
+
+ Gnutella Kazaa DirectConnect BitTorrent eDonkey
+
+
+
+
+
+ Number of packets examined Figure 1: Scalability: The cumulative distribution of total application traf(cid:2)c identi(cid:2)ed by examining at most packets, as a function of .
+cols which require this type of search.
+In particular we tested the Kazaa, Gnutella and DirectConnect signatures.
+The signatures in particular contained: character case-insensitive keyword.
+Kazaa: One Gnutella: Two groups of keywords separated by a random number of whitespaces.
+The (cid:2)rst group contained two keywords combined by a logical OR operation, and the second group contained keywords also combined by logical OR opera-
+tions.
+The total size of the regular expression expressing this signature was characters.
+DirectConnect: The DirectConnect signature consists of 36 keywords all combined by logical OR operations.
+*.
+Using the three regular expression algorithms described in Section 5 we measured the bit rate at which we can apply the signatures   minute traces randomly chosen from the to all packets using Internet Access Trace.
+The total data in these traces was GB.
+To contrast the performance of each search algorithm, we (cid:2)rst loaded each   minute trace once to warm up the (cid:2)le cache, and then measured the time taken to load the trace from the (cid:2)le cache.
+On our Dell Power Edge with two GB of RAM running FreeBSD , this resulted in an average data streaming rate of Gbps if no search was performed.
+Ghz processors and Table 3 shows the relative performance of each algorithm compared to the average throughput of just loading the data from a warm (cid:2)le cache.
+The results show clearly that the Boyer Moor based AST regex search outperforms its competitors by more than one order of magnitude.
+It also shows that the most complex signature of DirectConnect reduces our system throughput to .10 .10 ?0 /0
+
+ .
+/ .
+ protocol Gnutella Kazaa DirectConnect BitTorrent eDonkey Identi(cid:2)ed Traf(cid:2)c (%) Interface 2 Interface1
+
+
+
+
+
+
+
+
+
+ Table 2: robustness of signature based identi(cid:2)cation.
+Protocol Kazaa Gnutella DirectConnect libc AST regex Karp Rabin
+
+
+
+
+
+
+
+
+ Table 3: Performance of search algorithms for different P2P protocol signatures relative to the system throughput.
+compared to the throughput when no variable offset match needs to be performed.
+In our system this is still in excess of Mbps.
+This throughput combined with the cheap (cid:2)ltering provided by the (cid:2)xed offset matches for DirectConnect is more than suf(cid:2)cient to Gbps) and Kazaa sustain Gigabit Ethernet links.
+Both Gnutella ( ( Gbps) even perform above the Gigabit Ethernet mark without 0 any (cid:2)xed offset based (cid:2)ltering.
+Additional savings can be achieved by only inspecting the (cid:2)rst packet as previously shown.
+This will allow us to perform this type of signature-based traf(cid:2)c identi(cid:2)ca-tion at very high rates.
+0
+ As discussed earlier in the paper, the limitations of using port-numbers for application classi(cid:2)cation was one motivator for this research.
+Our evaluations above indicate that our identi(cid:2)cation technique has good accuracy, can scale to large traf(cid:2)c volumes, and, in particular, has very low False Positives.
+We next use the Internet Access Data set to illustrate quantitatively, how a purely port-based approach would fare against the signature-based identi-(cid:2)cation.
+Note that the choice of what goes in the list of default ports would impact the above performance.
+For this experiment, we selected the list of default ports based on information from multiple sources including the IANA database [2], Internet Storm Center mapping [3], and CISCO documentation.
+The resulting list is identical to the one used for the FN experiments (Section 7.1.2), except that for Gnutella, we add the ports .
+   , and   @*.
+Column in Table 4 presents for each P2P application, the total traf(cid:2)c based on the default ports.
+Column presents the total P2P traf(cid:2)c identi(cid:2)ed using application signatures expressed as a percentage of corresponding the value in column .
+The data indicates that for some protocols like Kazaa, Gnutella and DirectConnect, a signi(cid:2)cant proportion of the traf(cid:2)c is channeled on nonstandard ports, and would be missed by the port-based classi(cid:2)cation.
+For example, the application signatures identi(cid:2)ed more than times more traf(cid:2)c than that obtained using the Kazaa port.
+BitTorrent and eDonkey in contrast seem to be at present mostly using their default ports.
+The percentages in Table 4 could also be impacted by the possibility that the numbers in Column also include non-application traf(cid:2)c sharing the default port.
+If that extra traf(cid:2)c could be iden-ti(cid:2)ed and removed, the percentages might increase.
+To remove the effect of such non-application traf(cid:2)c, we next compute the total traf(cid:2)c identi(cid:2)ed by the application signatures transmitted on nonstandard ports, as a fraction of the total application signature-identi(cid:2)ed traf(cid:2)c. The results are shown in Table 5.
+In this paper we demonstrated the feasibility, robustness and accuracy of application signature based P2P detection in high speed networks.
+In particular we described and evaluated the P2P signature of the (cid:2)ve most commonly used P2P applications.
+Our work will directly bene(cid:2)t network operators who have a need to identify P2P traf(cid:2)c today, and researchers who want to accurately study the behavior of P2P networks using data based on accurate application identi(cid:2)cation in contrast to port number based application classi(cid:2)-cation used in the literature today.
+As a more general contribution we evaluated multiple algorithms to perform application layer signature matches, and demonstrated that complex application layer signatures can be evaluated on high speed links.
+As we expect that in the future more and more protocols which want to avoid detection will use encryption we believe that application layer signatures will eventually have the same fate as port number based application classi(cid:2)cation has today.
+Our future work therefore focuses on exploiting other characteristics of data transfers such as communication patterns, timings and traf(cid:2)c volumes to perform application classi(cid:2)cation.
+Additionally we are investigating how to adapt signatures if new protocol versions are introduced.
+We would like to thank Glenn Fowler for providing us with the AST software library and Phong Vo for valuable discussions on string matching algorithms.
+We also thank the anonymous reviewers whose suggestions bene(cid:2)ted the (cid:2)nal version of the paper.

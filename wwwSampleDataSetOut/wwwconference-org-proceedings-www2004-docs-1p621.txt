@@ -1,0 +1,1815 @@
+Analysis of Interacting BPEL Web Services
+
+Xiang Fu
+
+Tevﬁk Bultan
+
+fuxiang@cs.ucsb.edu
+
+bultan@cs.ucsb.edu
+
+Jianwen Su
+
+su@cs.ucsb.edu
+
+Department of Computer Science
+
+University of California
+
+Santa Barbara, CA 93106-5110
+
+ABSTRACT
+This paper presents a set of tools and techniques for analyz-
+ing interactions of composite web services which are speci-
+(cid:12)ed in BPEL and communicate through asynchronous XML
+messages. We model the interactions of composite web ser-
+vices as conversations, the global sequence of messages ex-
+changed by the web services. As opposed to earlier work,
+our tool-set handles rich data manipulation via XPath ex-
+pressions. This allows us to verify designs at a more de-
+tailed level and check properties about message content. We
+present a framework where BPEL speci(cid:12)cations of web ser-
+vices are translated to an intermediate representation, fol-
+lowed by the translation of the intermediate representation
+to a veri(cid:12)cation language. As an intermediate representa-
+tion we use guarded automata augmented with unbounded
+queues for incoming messages, where the guards are ex-
+pressed as XPath expressions. As the target veri(cid:12)cation lan-
+guage we use Promela, input language of the model checker
+SPIN. Since SPIN model checker is a (cid:12)nite-state veri(cid:12)ca-
+tion tool we can only achieve partial veri(cid:12)cation by (cid:12)xing
+the sizes of the input queues in the translation. We propose
+the concept of synchronizability to address this problem. We
+show that if a composite web service is synchronizable, then
+its conversation set remains same when asynchronous com-
+munication is replaced with synchronous communication.
+We give a set of su(cid:14)cient conditions that guarantee syn-
+chronizability and that can be checked statically. Based on
+our synchronizability results, we show that a large class of
+composite web services with unbounded input queues can be
+completely veri(cid:12)ed using a (cid:12)nite state model checker such as
+SPIN.
+
+Categories and Subject Descriptors
+H.1.1 [Models and Principles]: Systems and Informa-
+tion Theory|(E.4) formal models of communication; D.2.4
+[Software Engineering]: Software/Program Veri(cid:12)cation|
+formal methods, model checking
+
+General Terms
+Veri(cid:12)cation, Design
+
+Keywords
+Web Service, asynchronous communication, conversation,
+synchronizability, model checking, XPath, BPEL, SPIN.
+
+Copyright is held by the author/owner(s).
+WWW2004, May 17–22, 2004, New York, New York, USA.
+ACM 1-58113-844-X/04/0005.
+
+1.
+
+INTRODUCTION
+
+A fundamental goal of web services is to have a collection
+of network-resident software services accessible via standard-
+ized protocols, whose functionality can be automatically dis-
+covered and integrated into applications or composed to
+form more complex services. While several established and
+emerging standards bodies (e.g., [19, 24, 2, 23, 8] etc.) are
+rapidly laying out the foundations that the industry will
+build upon, there are many research challenges behind web
+services that are less well-de(cid:12)ned and understood [13]. This
+paper attempts to address the aspect of \global behaviors"
+of interacting web services.
+
+At an elementary level, a web service is composed of \ac-
+tivities" whose execution performs tasks of interest, and
+\messages" that enable the service to participate in a more
+complex web service. Activities resemble traditional pro-
+grams; messages are necessary to allow individual web ser-
+vices to interact with each other while maintaining their
+autonomy. Our objective is to understand the role of mes-
+saging in composing web services and to develop tools for
+analyzing interactions of composite web services.
+
+In our earlier work [5, 11], we introduced a global behavior
+model for interacting web services based on their \conver-
+sations", i.e., the global sequence of messages recorded in
+the order in which they are sent. Such message-oriented be-
+havior modeling is not only simple, but more importantly,
+it requires web services to reveal the least amount of infor-
+mation that is necessary to make meaningful compositions.
+Thus complex internal states (e.g. in legacy systems) can
+be hidden. Interestingly, conversations immediately permit
+temporal properties to be expressed on and veri(cid:12)ed against
+composite web services.
+
+A top-down speci(cid:12)cation approach based on conversation
+protocols was proposed in [5, 11]. A conversation protocol
+is a (cid:12)nite state automaton which speci(cid:12)es the desired set
+of conversations of a composite web service. The model
+used in [5, 11] does not have message contents and hence,
+abstracts away the data semantics. To capture data seman-
+tics, in our technical report [10], we developed the notion
+of a guarded automaton. Each transition of a guarded au-
+tomaton is equipped with a guard that is expressed using
+an XPath [26] expression. The use of XPath expressions as
+guards allows us to express the manipulation of XML mes-
+sage contents in a conversation protocol.
+
+Contrary to the top-down speci(cid:12)cation approach adopted
+in [5, 10, 11], this paper studies the bottom-up composi-
+tion of BPEL [2] web services, and makes the following new
+contributions:
+
+621Behavior 
+
+BPEL, WSCI
+
+Interface
+
+Message
+
+Type
+
+Data
+
+WSDL
+
+SOAP
+
+XML Schema
+
+XML
+
+s
+d
+r
+a
+d
+n
+a
+t
+S
+ 
+e
+c
+i
+v
+r
+e
+S
+ 
+b
+e
+W
+
+E
+E
+2
+J
+ 
+n
+u
+S
+
+ 
+,
+t
+e
+N
+
+.
+ 
+t
+f
+o
+s
+o
+r
+c
+i
+
+M
+
+ 
+n
+o
+i
+t
+a
+t
+n
+e
+m
+e
+l
+p
+m
+
+I
+
+s
+m
+r
+o
+f
+t
+a
+l
+
+P
+
+Assessor
+
+LoanProcess
+
+WSDL
+
+BPEL
+
+Figure 1: Web Service Standards Stack
+
+Figure 2: WSDL Ports and BPEL Web Services
+
+1. To facilitate the translation of BPEL web services, we
+extend the guarded automata model in [10] by allowing
+the use of local XML variables in a guarded automa-
+ton. We develop a tool which translates BPEL web
+services to this extended guarded automata model.
+
+2. We further extend the translation tool developed in
+[10] from guarded automata to Promela, the input lan-
+guage for the SPIN model checker [12]. The extension
+handles local variables in guarded automata, and sup-
+ports asynchronous messaging with input queues. (In
+[10] a composite web service is speci(cid:12)ed in a top-down
+fashion starting with a single guarded automaton and
+input queues are not handled in the translation.) The
+combination of the two translation tools allows us to
+model check properties of BPEL web services without
+abstracting away their data semantics.
+
+3. We develop su(cid:14)cient conditions for the equivalence
+of conversations under synchronous and (the usual)
+asynchronous communication semantics. We demon-
+strate that \synchronizable" composite web services
+allow \complete" and more e(cid:14)cient veri(cid:12)cations. We
+present an improvement to the autonomy condition.
+With a slight modi(cid:12)cation this result can also improve
+the realizability conditions given in [11].
+
+Our results form a framework for developing analysis, ver-
+i(cid:12)cation, and design tools for web services.
+In particular,
+the use of the guarded automata model as an intermediate
+representation for composite web services results in a mod-
+ular and extensible architecture for our web service anal-
+ysis tool: multiple web service speci(cid:12)cation languages can
+be supported at the front-end, and various model checking
+tools (as well as the synchronizability analysis introduced in
+this paper) can be employed at the back-end.
+
+The rest of the paper is organized as follows. Section 2 dis-
+cusses general notions of web services and interaction mod-
+els, which provides the context for the technical problems
+discussed in this paper. Section 3 de(cid:12)nes a formal model for
+the technical development. Section 4 presents two transla-
+tion algorithms from BPEL to guarded automata, and from
+guarded automata to Promela, respectively. Section 5 im-
+proves the results presented in Section 4 by proposing the
+notion of synchronizability, and gives su(cid:14)cient conditions
+for synchronizability. Finally Section 6 concludes the paper.
+
+2. WEB SERVICE INTERACTIONS
+
+Figure 1 displays the stack of standards for web services
+where XML [25] sits as the foundation. Since communi-
+cating web services can be deployed on di(cid:11)erent locations
+using di(cid:11)erent implementation platforms, agreeing on a set
+
+of standards for data transmission and service descriptions
+is clearly very important. Web services interact with each
+other using XML messages. XML Schema [27] provides es-
+sentially the type system for XML messages. Communica-
+tion protocols such as SOAP [19] can then be used to trans-
+mit XML messages. The interfaces of web services can be
+described in WSDL [24] which, most importantly, de(cid:12)nes
+the ports that web services can connect to in order to inter-
+act with each other. Although a WSDL speci(cid:12)cation de(cid:12)nes
+the public interface of a web service, it does not provide any
+information about its behavior. Behavioral descriptions of
+web services can be de(cid:12)ned using higher level standards such
+as BPEL [2], WSCI [23], BPML [3], DAML-S [8], etc. Web
+service development based on these standards is supported
+by di(cid:11)erent (and competing) implementation platforms such
+as .Net [21] and J2EE [15].
+
+Consider a loan processing service (similar to the exam-
+ple in [2]) that consists of services for loan processing, risk
+assessment, etc., and a customer process. For example, the
+interface of the web service for risk assessment can be de-
+(cid:12)ned using WSDL (\Assessor" in Figure 2). The WSDL
+speci(cid:12)cation for the risk assessment service de(cid:12)nes a port
+that a loan processing service can connect to. The loan pro-
+cessing service in Figure 2 (right) provides not only a WSDL
+port for the customer process to connect, but it also spec-
+i(cid:12)es the behavior of the loan processing service in BPEL,
+describing how it interacts with other services including the
+risk assessment service.
+
+One can use pre- and post-conditions to associate behav-
+ioral descriptions for \atomic" web services that are speci-
+(cid:12)ed in WSDL [17]. These pre- and post-conditions can be
+used to reason about the composed behaviors of web services
+[13]. However, BPEL provides more expressive behavioral
+descriptions. BPEL not only allows manipulation of XML
+data structures using XPath expressions [26], but also pro-
+vides programming constructs such as sequence, conditional
+and case statements, parallelism, and loops.
+
+LoanProcess
+
+r
+e
+m
+o
+
+t
+s
+u
+C
+
+A
+s
+s
+e
+s
+s
+o
+r
+
+Figure 3: Interacting BPEL Web Services
+
+622Conversation
+Schema
+
+Peer A
+
+msg1
+
+msg2,
+msg6
+
+Peer B
+
+msg4
+
+msg3,
+msg5
+
+Peer C
+
+Peer A
+
+Input
+Queue
+
+!msg1
+
+?msg2
+
+?msg6
+
+Peer B
+
+!msg3
+
+?msg4
+
+?msg1
+
+!msg2
+
+!msg5
+
+!msg6
+
+Peer C
+
+?msg3
+
+?msg5
+
+!msg4
+
+In our model, messages are XML documents and types of
+messages correspond to XML Schemas. For each message
+type c 2 M , let dom(c) denote all the XML documents that
+are of type c. Given a set of message types M , we de(cid:12)ne
+the message alphabet as (cid:6) =  
+c2M fcg (cid:2) dom(c). Each
+element m 2 (cid:6) is called a message. Let type(m) 2 M
+denote the type of message m. We say that m is an instance
+of type(m).
+3.1 Guarded Automata Peers
+
+...
+
+?
+
+G(msg1 (cid:1)F(msg3 (cid:218) msg5))
+
+Virtual Watcher
+
+LTL property
+
+Figure 4: A Simple Example Demonstrating Our
+Model
+
+Figure 3 shows a part of the composite loan processing
+web service that includes LoanProcess, Assessor, and Cus-
+tomer. The individual services may be speci(cid:12)ed in BPEL or,
+in simple cases, WSDL. The directed edges represent the
+communication links among the individual services. Note
+that Assessor may contact Customer directly. As a result,
+there is no single web service that can keep track of the
+\global" state of the service execution (i.e., there is no me-
+diator process as described in [13]). Clearly, analyzing inter-
+actions of such web services presents a great challenge due
+to their distributed behavior [13].
+
+Our goal in this paper is to analyze and verify proper-
+ties of composite web services consisting of multiple BPEL
+web services communicating asynchronously such as the one
+shown in Figure 3.
+
+3. A FORMAL MODEL FOR
+
+INTERACTING WEB SERVICES
+
+In this section, we give a formal model for composite
+web services which consists of multiple peers communicating
+with asynchronous messaging. Figure 4 gives an informal il-
+lustration of our conversation based model. A composite
+web service consists of a conversation schema that speci(cid:12)es
+the set of peers and the messages transmitted among peers,
+and a set of guarded automata specifying the behavior of
+each individual peer. As communication among web ser-
+vices is asynchronous, each peer is equipped with a FIFO
+queue to store incoming messages. We assume that there
+is a virtual watcher which records the sequence of messages
+as they are sent by the peers. The sequence of messages
+recorded by the watcher is called a conversation. (Note that
+the virtual watcher is a construct we use to reason about
+the interactions among di(cid:11)erent peers and it is not imple-
+mented.) A conversation can be regarded as a linearization
+of the message events, similar to the approach used in de(cid:12)n-
+ing the semantics of Message Sequence Charts [16] in [1].
+
+Formally, a composite web service is a tuple S = h(P; M );
+A1; : : : ; Ani, where (P; M ) is a conversation schema, n =
+jP j and each Ai is an implementation for peer pi 2 P . A
+conversation schema is a pair (P; M ) where P is a (cid:12)nite set
+of peers and M is a (cid:12)nite set of message types. Each message
+type c 2 M is transmitted between only one pair of peers.
+
+i
+
+i
+
+; M out
+
+i
+
+i
+
+; Li; Ti; si; Fi; (cid:1)i), where M in
+
+For each peer pi, its implementation Ai is a guarded au-
+tomaton (M in
+(M out
+)
+are incoming (outgoing) message types for pi, Li is the set
+of local variables for pi, and Ti, si, Fi are the set of states,
+the initial state, and the set of (cid:12)nal states, respectively. Like
+messages, we assume that local variables are also XML doc-
+uments. For each local variable l 2 Li, we use dom(l) to
+denote all the XML documents that match to the type dec-
+laration of l. Similar to message types, the types of local
+variables also correspond to XML Schemas.
+
+Each transition (cid:28) 2 (cid:1)i of the guarded automaton for the
+peer pi has a source state q1 2 Ti and a destination state
+q2 2 Ti and is in one of the following three forms:
+
+1. local-transition, (cid:28) = (q1; g; q2), where g is the transi-
+tion guard. The transition changes the state of the
+automaton from q1 to q2 and updates the local vari-
+ables based on the guard g.
+
+2. receive-transition, (cid:28) = (q1; ?a; q2), where a 2 M in
+.
+The transition changes the state of the automaton
+from q1 to q2 and removes the received message (of
+type a) from the input queue of peer pi.
+
+i
+
+3. send-transition, (cid:28) = (q1; (!b; g); q2), where b 2 M out
+and g is the transition guard. The transition changes
+the state of the automaton from q1 to q2 and appends
+the sent message (of type b) to the input queue of the
+receiving peer.
+
+i
+
+Note that, sent messages are not received (consumed) syn-
+chronously, rather, they are instantaneously appended to
+the appropriate input queue. A message is received only
+after it moves to the head of the input queue.
+
+A guard consists of a guard condition and a set of as-
+signments. A send- or local-transition is taken only if the
+guard condition evaluates to true, and receive-transitions
+have no guards because they simply consume a message
+from the head of the input queue.
+If the transition is a
+send-transition, then the assignments of the guard specify
+the contents of the message that is being sent. If the transi-
+tion is a local-transition, then the assignments of the guard
+update the values of the local variables.
+
+Given a send-transition (cid:28) = (s; (!b; g); t) where peer pi is
+the sender for the message type b, guard g is a predicate of
+the following form: g(m; ~m (cid:2) ~l ), where m is the message
+being sent, the vector ~m contains the last instance of each
+message type that is received or sent by peer pi (i.e., M in
+i [
+M out
+) and ~l represents the values of the local variables in
+i
+Li.
+
+Given a local-transition (cid:28) = (s; g; t) for peer pi, guard g
+is a predicate of the following form: g(~l; ~m (cid:2) ~l ), where ~m
+and ~l are as described above, and the (cid:12)rst vector denotes
+
+623the values of the local variables immediately after the tran-
+sition (cid:28) is executed, and ~m (cid:2) ~l denotes the values of the
+messages and the local variables just before the transition (cid:28)
+is executed.
+3.2 Conversations
+
+As explained above, in our model of a composite web ser-
+vice, each peer has a queue for all of its input messages and
+may send messages to the input queues of other peers. To
+model the global behavior of the composite web service we
+de(cid:12)ne a virtual watcher that records the sequence of mes-
+sages as they are sent by the peers [5].
+
+Formally, given a composite web service S = h(P; M );
+A1; : : : ; Ani, a global con(cid:12)guration of S is a (3n+3)-tuple of
+the form (Q1;~l1; t1; :::; Qn;~ln; tn; w; ~s; ~r) where
+
+(cid:15) for each j 2 [1::n], Qj 2 (cid:6)(cid:3) is the content of the input
+queue of peer pj, the vector ~lj denotes the values of
+the local variables of pj, tj is the state of pj, and
+
+(cid:15) w 2 (cid:6)(cid:3) is the sequence of messages recorded by the
+
+global watcher, and
+
+(cid:15) message vectors ~s and ~r record the latest sent and
+
+received instances (resp.) for each message type.
+
+It is straightforward to de(cid:12)ne a derivation relation between
+two con(cid:12)gurations based on the transition relations of the
+peers such that (cid:13) ! (cid:13)0 if and only if there exists a peer pi
+and a transition (cid:28) 2 (cid:1)i such that executing the transition (cid:28)
+in con(cid:12)guration (cid:13) results in the con(cid:12)guration (cid:13) 0 [11]. Note
+that each send operation appends the message 1) to the
+input queue of the receiver and 2) to the global watcher at
+the same time.
+
+A run of S is a (cid:12)nite sequence of con(cid:12)gurations (cid:13) = (cid:13)0;
+(cid:13)1; (cid:13)2; :::; (cid:13)j(cid:13)j(cid:0)1 that satis(cid:12)es the following conditions: 1)
+(cid:13)0 = ((cid:15),~?; s1; :::; (cid:15); ~?; sn; (cid:15); ~?; ~?) is the initial con(cid:12)gura-
+tion, where si is the initial state of pi for each i 2 [1::n]
+and ~? denotes uninitialized messages and local variables;
+2) for each 0 (cid:20) i < j(cid:13)j (cid:0) 1, (cid:13)i ! (cid:13)i+1; and 3) (cid:13)j(cid:13)j(cid:0)1 =
+1; :::; (cid:15);~ln; s0
+((cid:15);~l1; s0
+n; w; ~s; ~c), is a (cid:12)nal con(cid:12)guration, where
+for each peer pi, s0
+i 2 Fi. Note that the input queues for the
+peers are empty in a (cid:12)nal con(cid:12)guration (i.e., every message
+that has been sent is received).
+
+We call the message sequences observed by the watcher
+the conversations of the composite web service. Formally,
+a (cid:12)nite word w 2 (cid:6)(cid:3) is a conversation of a composite web
+service S if there exists a run (cid:13) = (cid:13)0; (cid:13)1; (cid:13)2; :::; (cid:13)j(cid:13)j(cid:0)1 of S
+such that, the value of the watcher in the (cid:12)nal con(cid:12)guration
+(cid:13)j(cid:13)j(cid:0)1 is w. Let L(S) denote the set of conversations of S.
+We use the temporal logic LTL [18] to express properties
+of conversations [11]. We de(cid:12)ne the set of atomic propo-
+sitions as follows: Each atomic proposition is either of the
+form c where c is a message type (i.e., c 2 M ), or c.pred,
+where c 2 M and pred is a predicate over the contents of
+c. We denote that a message m 2 (cid:6) satis(cid:12)es an atomic
+proposition   by m j=  , where
+
+m j=   i(cid:11)   type(m) =  
+
+type(m) = c ^ pred(m) = true
+
+if   2 M
+if   = c:pred
+
+LTL formulas are constructed from atomic propositions, log-
+ical operators ^; _, and :, and temporal operators X (mean-
+ing \next"), G (\globally"), U (\until"), and F (\eventu-
+ally"). The semantics of LTL temporal operators can be
+
+easily de(cid:12)ned on (cid:12)nite length conversations. Given a com-
+posite web service S and an LTL property (cid:30), we say that
+S j= (cid:30), i(cid:11) for all w 2 L(S), w j= (cid:30).
+
+For example, the LTL property
+
+G(msg1 ) F(msg3 _ msg5))
+
+shown in Figure 4 denotes that every msg1 will be eventually
+followed by a msg3 or msg5. The composite web service in
+Figure 4 satis(cid:12)es this property since all the conversations
+generated by this composite web service satisfy the property.
+We say that a composite web service S over a schema
+(P; M ) has (cid:12)nite content if for each message type c 2 M ,
+dom(c) is a (cid:12)nite set and for each local variable l 2 Li for
+each i 2 [1::n], dom(l) is a (cid:12)nite set. We have the following
+undecidability result [11]:
+
+Given a composite web service S with (cid:12)nite con-
+tent and an LTL property (cid:30), checking S j= (cid:30) is
+undecidable.
+
+Hence, even for protocols with (cid:12)nite content, veri(cid:12)cation
+of composite web services is an undecidable problem. This is
+due to presence of unbounded queues used for asynchronous
+communication.
+In the next section we will show that, if
+we put a bound on the sizes of the input queues we can
+use existing model checking tools to analyze properties of
+composite web services.
+
+4. MODEL CHECKING INTERACTING
+
+BPEL WEB SERVICES
+
+In this section we discuss the use of the SPIN model
+checker [12] for veri(cid:12)cation of interacting BPEL web ser-
+vices. The input language of SPIN is called Promela, a mod-
+eling language for (cid:12)nite-state concurrent processes. SPIN
+model checker veri(cid:12)es (or falsi(cid:12)es, by generating counter-
+examples) LTL properties of Promela speci(cid:12)cations using an
+exhaustive state space search [12]. Given a set of interacting
+web services speci(cid:12)ed as BPEL processes with WSDL ports,
+we generate a Promela speci(cid:12)cation which corresponds to
+the composite web service. The Promela speci(cid:12)cation con-
+tains a set of concurrent processes which communicate via
+asynchronous channels. We implement the translation in
+two phases: (1) from BPEL processes to guarded automata
+model described in Section 3, and (2) from the guarded
+automata model to Promela processes with asynchronous
+communication channels. The guards in the intermediate
+guarded automata model are XPath expressions manipulat-
+ing the XML documents with XML Schema types.
+
+This two step translation has several advantages: (a) The
+intermediate guarded automata model enables us to imple-
+ment static analysis techniques such as synchronizability
+analysis described in the next section; (b) We are able to
+use our translator from guarded automata to Promela de-
+scribed in [10] in implementing the back-end translation; (c)
+Decoupling the front- and back-ends of the translator will
+enable us to target multiple web service languages at the
+front-end (e.g., WSCI [23], DAML-S [8]) and multiple veri-
+(cid:12)cation languages (e.g., SMV [7], Action Language Veri(cid:12)er
+[6]) at the back-end in the future.
+4.1 Translation from BPEL to Automata
+
+Given a set of BPEL process speci(cid:12)cations and the related
+WSDL port declarations, we can construct a correspond-
+ing composite web service speci(cid:12)ed using guarded automata.
+
+624BPEL
+
+Sample Code
+
+Translation
+
+assign
+
+receive
+
+invoke
+
+<assign ...>
+
+<copy>
+<from="yes"/>
+<to var="aprvInfo"
+
+part="accept"/>
+
+</copy>
+
+</assign>
+
+<receive ...
+
+operation="approve"
+variable="request"
+
+/>
+
+<scope>
+
+<invoke ...
+
+operation="approve"
+invar="request"
+outvar="aprvInfo />
+
+<catch ...
+
+faultname="loanfault"
+< ... handler1 ... />
+
+</catch>
+
+</scope>
+
+[ aprvInfo / accept := ‘yes’ ]
+
+[request := approve_In]
+
+? ? approve_In
+
+[approve_In := request]
+
+!! approve_In
+
+loanfault
+
+? ? loanfault
+
+?? approve_Out
+
+[aprvInfo :=
+approve_Out]
+
+handler1
+
+sequence
+
+<sequence ... >
+
+< ... act1 ... >
+< ... act2 ... >
+
+</sequence>
+
+fault1
+
+fault2
+
+act1
+
+act2
+
+(cid:13)ow
+
+<flow ...>
+
+< ... act1 ...>
+
+<source
+
+linkname="link1"
+condition="cond1"/>
+
+</act1>
+< ... act2 ...>
+
+<target
+
+linkname="link1/>
+
+</act2>
+
+</flow>
+
+act1
+
+[b_link1]
+
+[b_link1 :=
+cond1 ]
+
+product act2
+
+Figure 5: From BPEL to Guarded Automata
+
+We (cid:12)rst construct the conversation schema, and then trans-
+late the control (cid:13)ow of each BPEL process. As BPEL pro-
+cess speci(cid:12)cations are fed as input, the peer list P of the
+schema tuple (P; M ) is already known. Message types M
+are extracted from WSDL (cid:12)les. For each input/output/fault
+parameter of an operation in each port and each service
+link of each BPEL process, a message type is declared. For
+example if a BPEL process loanProcess has an operation
+approve declared in a port aprvPT, and its input parame-
+ter is of WSDL message format creditInfo, a message type
+loanProcess aprvPT approve In will be declared in the com-
+position schema, and creditInfo is used as its domain type.
+When the name of an operation is unique among ports, our
+tool will omit the port name in the generated message name
+for simplicity (e.g. the approve Out in Figure 5). In BPEL,
+the type of the contents of a message can be de(cid:12)ned using
+WSDL message declaration constructs, or SOAP de(cid:12)nition
+or XML Schema, we translate all possible formats to MSL
+[4], a formal model for XML Schema.
+
+Next we discuss the translation of BPEL control (cid:13)ow and
+data manipulation. In Figure 5 we present the guarded au-
+tomata translation for some typical language constructs in
+BPEL language. As shown in the (cid:12)gure, each BPEL lan-
+guage construct is translated into a guarded automaton with
+one single initial state and one single (cid:12)nal state. For exam-
+ple, the assign statement is translated to a one-transition
+automaton where the XPath expression guard of the transi-
+
+tion expresses the assignment. Note that BPEL has several
+di(cid:11)erent approaches for navigating messages (e.g. the key-
+word part used in the example or using XPath expressions).
+We translate all of them to equivalent XPath expressions,
+and these XPath expressions are then embedded into the
+guards of the generated transitions. The receive statement
+is translated into a two-transition automaton, where the (cid:12)rst
+transition receives the message and the second transition as-
+signs the input variable. Similarly, the main body of the
+invoke statement is translated to an automaton where the
+(cid:12)rst transition sends the input message for the operation
+that is being invoked, and the following two transitions re-
+ceive the response and assign the output variable (assuming
+there are no exceptions). Note that, exceptions might arise
+during invoke, and we have to generate additional transi-
+tions to handle them. For each fault there is a transition
+which leads to an \exception exit", where the information
+about the fault is associated with the exception exit. When
+a fault handler is wrapped around an invoke statement, our
+translator connects the fault handler with the corresponding
+exception exit.
+
+BPEL control (cid:13)ow constructs such as sequence, switch,
+and while are used to compose atomic constructs we dis-
+cussed above.
+In Figure 5 we display the translation for
+sequence. We connect the (cid:12)nal state and initial state with
+local transitions, and unmark the (cid:12)nal state of all activities
+except the last one. The information about exception exits
+are recollected and properly maintained. Other control (cid:13)ow
+constructs can be handled similarly by embedding the con-
+trol (cid:13)ow to the transitions of the guarded automata. Finally,
+for flow construct (which is the concurrent composition of
+its branches), we simply construct the Cartesian product of
+all its branches. There might be control dependency links
+among the activities in di(cid:11)erent (cid:13)ow branches. We map
+each link into a boolean variable, and their semantics are
+re(cid:13)ected in the guards of the transitions appended to each
+activity.
+
+Translation of the control (cid:13)ow of BPEL to (cid:12)nite state ma-
+chines or petri-nets has been discussed in [9, 17]. The dif-
+ference in our work is that we handle XML based data ma-
+nipulation using guarded automata with guards expressed
+as XPath expressions. This enables us to verify properties
+about XML data manipulation. Such analysis cannot be
+done using approaches presented in [9, 17] since they ab-
+stract away the data content.
+
+4.2 Translation from Automata to Promela
+
+Given a composite web service speci(cid:12)ed using interacting
+guarded automata, we translate it into a Promela speci(cid:12)ca-
+tion which consists of a set of concurrent processes, one for
+each guarded automaton. Each concurrent process is associ-
+ated with an asynchronous communication channel storing
+its input messages.
+
+An example Promela output that is generated by our
+translator is shown in Figure 6. The (cid:12)rst part of the Promela
+code consists of type declarations and global variable de(cid:12)-
+nitions. Each MSL type declaration used in conversation
+schema is mapped into a record type (typedef) in Promela.
+As in our guarded automata model, strings are used as con-
+stants only, they are mapped to mtype, the enumerated type
+in Promela (e.g. the element name in creditInfo is originally
+a string). As shown in Figure 6, each message type in a
+conversation schema has three corresponding global vari-
+
+625e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+e
+/* type declaration */
+typedef creditInfo{
+
+mtype name; ...
+
+}
+...
+/* message declaration */
+creditInfo aprv_In_s, aprv_In_r, stub_aprv_In;
+...
+/* enumerate type of msgs and states of peers*/
+mtype = {m_aprv_In, ....
+
+m_loanaprv_s1, ... }
+
+mtype msg;
+...
+/* channels */
+chan ch_loanaprv = [8] of {mtype, creditInfo, appeal};
+chan ch_customer= [8] of {mtype, aprvInfo};
+...
+proctype loanaprv(){
+
+mtype state;
+/* definition of local variables */
+creditInfo request; ...
+/* definition of auxiliary variables used
+
+to evaluate XPath expressions */
+
+bool bVar_0, ...
+
+do::
+
+/* evaluation of transition conditions */
+... bCond1 = true; ...
+
+/* nondeterministically select transitions to fire */
+if
+
+/* transition t1: s1 -> s2, ?aprv_In */
+::state == m_loanaprv_s1 && bCond1 &&
+
+ch_loanaprv ? [m_aprv_In] ->
+
+atomic{
+
+ch_loanaprv ?
+
+m_aprv_In, aprv_In_r, stub_appeal;
+
+state = m_loanaprv_s2 ;
+
+}
+
+/* transition t2: s2 -> s3, !aprv_Out,
+
+[cond2 => aprv_Out//accept = ’yes’ ] */
+
+::state == m_loanaprv_s2 && bCond2 ->
+
+atomic{
+
+aprv_Out_s.accept = m_yes;
+ch_customer ! m_aprv_Out, aprv_Out_s;
+state = m_loanaprv_s3;
+msg = m_aprv_Out
+
+}
+...
+/* may jump out if it is a final state */
+:: state == m_final -> break;
+
+fi;
+
+od;
+
+}
+proctype customer(){ ... }
+proctype assessor(){ ... }
+proctype approver(){ ... }
+init{
+
+/* initialization */
+...
+atomic{
+
+run loanaprv(); run customer(); ...
+
+}
+
+}
+
+Figure 6: An Example Promela Translation
+
+ables declared: one for recording its last sent instance (e.g.
+aprv In s for message type aprv In), one for recording its
+last received instance(e.g. aprv In r), and one \stub" vari-
+able used in channel operations (e.g.
+stub aprv In). For
+each message type, we also declare a corresponding enu-
+merated constant, e.g., m aprv In for aprv In. The set of all
+these enumerated constants constitutes the domain of enu-
+merated variable msg, which is used to store the type of the
+latest transmitted message.
+
+A channel variable is declared for each peer to simulate
+its input queue. For example channel ch loanaprv is the
+queue of peer loanaprv and its length is 8. The contents
+of a channel includes all input message types of that peer.
+In this example, peer loanaprv has two input message types:
+aprv In and appeal. Note that in each send/receive operation
+of a channel, we actually send one message only, and other
+elements have to be (cid:12)lled with stub messages. The (cid:12)rst
+mtype element in a channel content indicates the message
+type that is being transmitted.
+
+In the Promela code, each automaton is translated to a
+process type (proctype).
+In the example shown in Figure
+6, we have four process types loanaprv, customer, approver
+and assessor. The default main process in Promela is called
+init. The init process in Figure 6 initializes all global vari-
+ables (initialization can be non-deterministic) and spawns
+four processes, creating one process instance for each pro-
+cess type.
+
+Inside each proctype the local variables are declared (cid:12)rst,
+followed by the auxiliary variables used for the evaluation of
+XPath expressions. An enumerated (mtype) variable state
+is used to record the current state of the automaton. The
+main body of the process is a single loop. In each iteration
+of the loop, (cid:12)rst enabling condition of each transition guard
+is evaluated and the result is stored in the corresponding
+boolean variable for that condition. For example, the cond1
+in Figure 6 records the evaluation results for the enabling
+condition of transition t1.
+
+In Promela, if statements can have multiple branches
+with a test condition for each branch, similar to a switch
+statement. One of the branches of the if statement with
+a test condition that evaluates to true is nondeterministi-
+cally chosen and executed. In the Promela translation for
+a guarded automaton, each transition of the automaton is
+translated into a branch of the if statement inside the main
+do loop body. The test condition for each branch checks
+whether the current state is the source state of the corre-
+sponding transition, and whether the enabling condition of
+the corresponding transition evaluates to true. For receive-
+transitions, we check if the head of the channel contains the
+right message type by testing the (cid:12)rst element of the channel
+content. (Note that Promela statement channel ?
+messages
+has side e(cid:11)ects and cannot be used as a boolean condition,
+hence we have to use channel ?
+[...] statement, which
+checks the receive executability only but does not execute
+the receive operation.) If the head of the channel matches
+the message type of the receive operation, we consume the
+message, do the assignment, and update the local variable
+state. The handling of send-transitions is similar, and the
+only di(cid:11)erence is that we need to update global variable msg
+while sending the message. Finally, if the state is a (cid:12)nal
+state, a nondeterministic choice can be made to jump out of
+the loop and terminate.
+
+The translation of XPath expression to Promela is not a
+trivial problem. For example, consider the aprv In message
+and suppose that it has an element preferred term which is
+a list of desired (APR/termLength) pair proposed by the
+customer, and the maximal length of the list is 10. Then
+the XPath expression
+
+aprv In / preferred term / termLength == 6
+
+is translated into the following code:
+
+bool bResult = false;
+int i=0;
+do
+:: i<10 ->
+
+if
+:: aprv.preferred_term[i].termLength == 6
+
+-> bResult = true
+
+:: else -> skip;
+fi;
+
+:: else -> break;
+od;
+
+The XML Schema element preferred term is translated
+into an array type in Promela. The key step in the gen-
+
+626erated code above is to search for the proper array index
+which satis(cid:12)es the condition evaluation. When XPath func-
+tions such as last() and position() need to be handled, the
+translation becomes more complicated. The translation of
+XPath expressions to Promela code is discussed in [10] and
+we will omit the details here.
+
+4.3 A Case Study
+
+Using the translation tools described above, we translated
+the \Loan Processing Example" in the BPEL document [2]
+to Promela, and used the SPIN model checker to verify it.
+The source code (BPEL and WSDL (cid:12)les) of the example is
+taken from the IBM BPWS4J tool sample set [14]. Since no
+BPEL (cid:12)les are provided for the other three peers (customer,
+loan assessor, and loan approver) involved in the interaction,
+we supplied their BPEL implementations.
+
+The control logic of the loan approval process is as follows:
+If the loan amount in the request sent by the customer is
+lower than a certain amount, and if the loan assessor gives
+a \low-risk" assessment, the loan approval process approves
+the loan request; otherwise it will wait for the approver to
+make the (cid:12)nal decision. The main body of the loan approval
+process is a flow construct, where its branches consist of
+invoke, receive, reply, assign statements. There are six de-
+pendence links among these concurrently running branches,
+and an exception handler is wrapped around the flow con-
+struct.
+
+We considered the following two properties of the inter-
+actions. The (cid:12)rst is satis(cid:12)ed by the composite web service,
+while the second is not.
+
+G(LA aprv In s ! F(LA aprv Out s _ LA aprv Fault))
+G(LA aprv In s.amount>2 ! F LA aprv Out s.accept!= m yes)
+
+Here LA aprv (cid:3) are messages related to the approve opera-
+tion of the loan approval process. The (cid:12)rst property states
+that when the customer sends a request to the loan approval
+process, eventually it will either get an output message or a
+fault. The second property states that if the request amount
+is greater than 2 (since our domain is 4 here), it will even-
+tually get rejected. (This property is false because the loan
+approval process passes the decision to the loan approver,
+and loan approver can still approve the request.)
+
+Our tool translates the four BPEL (cid:12)les and corresponding
+WSDL (cid:12)les into one Promela speci(cid:12)cation. In the generated
+Promela code there are seven integer variables, which leads
+to a large state space. To limit the state space, we set the
+integer domain to 4, and change the condition of request
+amount in the speci(cid:12)cation accordingly.
+
+The (cid:12)rst property is veri(cid:12)ed in about 2 minutes with 980
+thousand states explored. We tried di(cid:11)erent channel sizes
+from 1 to 10, and the veri(cid:12)cation cost changes very little.
+But if we increase the integer domain, the veri(cid:12)cation cost
+increases exponentially and uses up the memory resource.
+
+For the second property, SPIN identi(cid:12)es the error very
+quickly. When integer domain is 4, it only takes 0.2 seconds
+to (cid:12)nd and generate the error trace. The veri(cid:12)cation cost
+does not increase with the integer domain, which should be
+attributed to the depth-(cid:12)rst search approach used in SPIN
+to locate error (however for the correct property we have
+to exhaust the whole state space). The cost also does not
+increase with channel sizes.
+
+r
+e
+t
+s
+e
+u
+q
+e
+r
+
+?a1
+
+!e
+
+!r1
+
+!r2
+
+!e
+
+!r1
+
+!e
+
+!r1
+
+?a2
+
+?a2
+
+!r2
+
+!r2 ?a1
+
+?a
+
+!r
+
+!a1
+
+?r2
+
+!a1
+
+?r2
+
+?r
+
+!a
+
+?r1
+
+r
+e
+v
+r
+e
+s
+
+?e
+
+!a2
+
+?r1
+
+!a2
+
+?e
+
+?r2
+
+?e
+
+?r1
+
+Example 1
+
+Example 2
+
+Example 3
+
+Figure 7: Three Composite Web Service Examples
+
+5. SYNCHRONIZABILITY
+
+Consider the three example composite web services given
+in Figure 7. Each composite web service consists of two
+peers: a requester and a server. For each \request" message
+(represented as ri) sent by the requester, the server will re-
+spond with a corresponding \acknowledgment" (ai). How-
+ever this response may not be immediate (e.g.
+in Example
+1). Finally the \end" message (e) concludes the interaction
+between the requester and the server.
+
+We can verify properties of these examples by translat-
+ing them to Promela as described in the previous section.
+However, as discussed above, we need to bound the sizes of
+the input queues (communication channels in Promela) to
+be able to verify a composite web service using SPIN, since
+it is a (cid:12)nite state model checker. In fact, based on the un-
+decidability of LTL veri(cid:12)cation (Section 3), it is generally
+impossible to verify the behavior of a composite web service
+with unbounded queues. In general, best we can do is partial
+veri(cid:12)cation, i.e., to verify behavior of a composite web ser-
+vice for queues with a (cid:12)xed length. Note that the absence
+of errors using such an approach does not guarantee that
+the composite web service is correct. Interestingly, in this
+section we will show that, Examples 2 and 3 are di(cid:11)erent
+from Example 1 in Figure 7 in that the properties of Exam-
+ples 2 and 3 can in fact be veri(cid:12)ed for unbounded message
+queues, whereas for Example 1 we can only achieve partial
+veri(cid:12)cation.
+
+First, note that in Example 1 the requester can send an
+arbitrary number of messages before the server starts con-
+suming them. Hence the conversation set of Example 1 is
+not a regular set [5]. Actually it is a subset of (r1jr2ja1ja2)(cid:3)e
+where the number of ri and ai messages are equal and in any
+pre(cid:12)x the number of ri messages is greater than or equal to
+the number of ai messages [5]. It is not surprising that we
+cannot map the behavior of Example 1 to a (cid:12)nite state pro-
+cess. Another problem with Example 1 is the fact that its
+state space increases exponentially with the sizes of the in-
+put queues. Hence, even partial veri(cid:12)cation for large queue
+sizes becomes intractable.
+
+In Example 2 the requester and server processes move in a
+lock-step fashion, and it is easy to see that the conversations
+generated by Example 2 is (r1a1 j r2a2)(cid:3)e, i.e., a regular set.
+In fact, the composite web service described in Example 2
+has a (cid:12)nite set of reachable states. During any execution
+of Example 2 at any state, there is at most one message
+in each queue. Based on the results we will present in this
+
+627section, we can statically conclude that properties of Exam-
+ple 2 can be veri(cid:12)ed using synchronous communication (in
+other words, using input queues of size 0).
+
+Example 3 has an in(cid:12)nite state space as Example 1 and
+unlike Example 2. In other words, the number of messages
+in the input queues for Example 3 is not bounded. Similar
+to Example 1, the state space of Example 3 also increases
+exponentially with the sizes of the queues. However, unlike
+Example 1, the conversation set of Example 3 is regular.
+Although Example 3 has an in(cid:12)nite state space, we will show
+that the properties of Example 3 can also be veri(cid:12)ed for
+arbitrary queue sizes.
+
+ 3.5e+06
+ 3e+06
+ 2.5e+06
+ 2e+06
+ 1.5e+06
+ 1e+06
+ 500000
+ 0
+
+s
+e
+t
+a
+t
+S
+
+Example 1
+Example 2
+Example 3
+
+ 0
+
+ 2
+
+ 4
+
+ 10  12  14  16
+
+ 8
+
+ 6
+Queue Size
+
+Figure 8: State Space and Queue Size
+
+We can experimentally demonstrate how state spaces of
+the examples in Figure 7 change with the increasing queue
+sizes. In Figure 8 we present the size of the reachable state
+space for the examples in Figure 7 computed using the SPIN
+model checker for di(cid:11)erent input queue sizes. The x-axis of
+the (cid:12)gure is the size of the input queues, and y-axis dis-
+plays the number of reachable states computed by SPIN. As
+shown in the (cid:12)gure, the state space of Example 2 is (cid:12)xed
+(always 43 states), however the state spaces of Examples 1
+and 3 increase exponentially with the queue size. Below we
+will show that we can verify behaviors of Examples 2 and 3
+for arbitrary queue sizes, although best we can do for Exam-
+ple 1 is partial veri(cid:12)cation. In particular, we will show that
+the communication among peers for Examples 2 and 3 are
+\synchronizable" and we can verify their properties using
+synchronous communication and guarantee that the veri(cid:12)ed
+properties hold for asynchronous communication with un-
+bounded queues.
+5.1 Synchronous Communication
+
+To further explore the di(cid:11)erences of Examples 2 and 3
+from Example 1, we de(cid:12)ne an alternative \synchronous" se-
+mantics for composite web services di(cid:11)erent than the one in
+Section 3. Intuitively, the synchronous semantics restricts
+that each peer consumes its incoming messages immediately.
+Therefore, there is no need to have the input message queue.
+Recall that a composite web service S is a tuple S =
+h(P; M ); A1, :::; Ani where each guarded automaton Ai de-
+scribes the behavior of a peer.
+In a global con(cid:12)guration
+(Q1;~l1; t1; :::; Qn;~ln; tn; w; ~s; ~r) of S, Qj’s (j 2 [1::n]) are the
+con(cid:12)gurations of the input queues. We now de(cid:12)ne a con-
+(cid:12)guration of a composite web service with the synchronous
+communication semantics, or sc-con(cid:12)guration, as a tuple
+(~l1; t1; :::;~ln; tn; w; ~s; ~r), which di(cid:11)ers from a con(cid:12)guration
+by dropping all input queues.
+
+When peers interact with each other through asynchro-
+nous communication, a send operation inserts a message
+to the input queue of the target peer and a receive oper-
+ation removes the message at the head of the input queue.
+The de(cid:12)nition of the derivation relation between two sc-
+con(cid:12)gurations is modi(cid:12)ed from the asynchronous case so
+that a send transition can only be executed instantaneously
+with a matching receive operation, i.e., sending and receiv-
+ing of a message occur synchronously. We call this semantics
+the synchronous communication semantics for a composite
+web service.
+
+The de(cid:12)nitions of the watcher and the conversation set
+are modi(cid:12)ed accordingly. In particular, given a composite
+web service S, let Lsyn(S) denote the conversation set un-
+der the synchronous communication semantics. A composite
+web service is synchronizable if its conversation set remains
+the same when the synchronous communication semantics
+is used, i.e., L(S) = Lsyn(S).
+
+Clearly, if a composite web service is synchronizable, then
+we can verify its behavior without any input queues and
+the results of the veri(cid:12)cation will hold for the behaviors of
+the composite web service in the presence of asynchronous
+communication with unbounded queues. In Section 5.2 we
+will give su(cid:14)cient conditions for synchronizability. Based
+on these conditions, we can show that Examples 2 and 3 in
+Figure 7 are indeed synchronizable.
+
+5.2 Synchronizability Analysis
+
+For a guarded automaton A = (M in; M out; L; T; s; F; (cid:1)),
+its skeleton is a standard (i.e. guardless) (cid:12)nite state automa-
+ton sk(A) = (M in; M out; T; s, F; (cid:1)0) where all local vari-
+ables are removed and each transition (cid:28) 0 2 (cid:1)0 is generated
+by dropping the guard of a corresponding transition (cid:28) in
+(cid:1). (The local-transitions of the guarded automata become
+(cid:15)-transitions in the skeleton.) Note that the language rec-
+ognized by the skeleton sk(A), i.e. L(sk(A)), is a subset of
+M (cid:3), while L(A) (cid:18) (cid:6)(cid:3).
+
+Given a set of guarded automata, their composition is
+synchronizable if the following three conditions are satis(cid:12)ed
+by their skeletons:
+1) Synchronous compatibility: If we construct the syn-
+chronous composition (i.e., Cartesian product) of the skele-
+tons, the resulting automaton does not contain a state where
+a peer pi is ready to send a message to peer pj but peer pj
+is not ready to receive the message.
+2) Autonomy: For each peer pi and each state sj of pi, at
+most one of the following three conditions hold: (a) the next
+transitions at sj (including transitions that are reachable
+through (cid:15)-transitions) are all send operations, (b) the next
+transitions at sj (including transitions that are reachable
+through (cid:15)-transitions) are all receive operations, or (c) sj
+is either a (cid:12)nal state or it can reach a (cid:12)nal state through
+(cid:15)-transitions.
+3) Lossless composition: Mark the initial state of each
+peer skeleton a (cid:12)nal state, and construct the Cartesian prod-
+uct of the peer skeletons. The projection of the Cartesian
+product to each peer should be equivalent to the original
+skeleton (with the initial state marked as a (cid:12)nal state).
+
+Theorem 1. Let S = h(P; M ); A1; :::; Ani be a compos-
+ite web service where their skeletons sk(A1); :::; sk(An) sat-
+isfy the above three synchronizability conditions, then S is
+synchronizable.
+
+628Web
+Services
+BPEL
+
+DAML-S
+
+WSCI
+
+. . .
+
+A Tool for Analysis and Verification of Web Services
+
+Intermediate
+Representation
+Guarded
+automata
+
+Front End
+
+Back End
+
+(bounded queue)
+
+Back End
+(synchronous
+communication)
+
+Synchronization 
+
+analysis
+
+Other analysis 
+
+techniques
+
+Verification
+Languages
+
+Promela
+SMV
+
+Action
+Language
+. . .
+
+Figure 9: Our Web Service Analysis and Veri(cid:12)cation Tool
+
+The synchronizability conditions listed above are derived
+from the realizability conditions for conversation protocols
+that we presented in [11]. A proof along the lines of the
+proof for realizability conditions given in [11] can be used to
+establish Theorem 1. Intuitively, we can show that, when a
+composite web service satis(cid:12)es the above three conditions,
+the input queue of each peer is empty whenever the peer
+sends out a message. Based on this observation, we can
+show that for each conversation there exists a corresponding
+execution in which the peers communicate synchronously.
+
+Note that both Examples 2 and 3 in Figure 7 are synchro-
+nizable whereas Example 1 is not (it violates the autonomy
+condition). Hence, we can verify the properties of Examples
+2 and 3 using synchronous communication (which can be
+achieved in SPIN by restricting the communication channel
+lengths to 0) and the results we obtain will hold for be-
+haviors generated using asynchronous communication with
+unbounded queues.
+
+Relaxing the Autonomy Condition. As we discussed
+in Section 4, the flow construct in BPEL speci(cid:12)cation gen-
+erates the Cartesian product of its (cid:13)ow branches when it
+is translated to the guarded automata. Unfortunately, such
+flow constructs are likely to violate the autonomy condi-
+tion given above. For example, assume that there are two
+branches inside a (cid:13)ow statement, and each branch is a sin-
+gle invoke operation which (cid:12)rst sends a request and then
+receives response.
+In the guarded automaton translation,
+there will be a state with one transition for sending out
+the request for one of the branches and another transition
+for receiving the response for the other branch. Note that
+such a state violates the autonomy condition. However, even
+the corresponding peer sends out a message while its input
+queue is not empty, since the Cartesian product of the (cid:13)ow
+branches includes all the permutations of the transitions in
+di(cid:11)erent branches we can show that there is an equivalent
+computation where the send operation is executed when the
+queue is empty, after the receive operation. We can gener-
+alize this scenario and we can relax the autonomy condition
+to single-entry single-exit permutation blocks. A permuta-
+tion block has no cycles and no (cid:12)nal states and contains all
+the permutations of the transitions from its entry to its exit.
+Then, we relax the autonomy condition by stating that all
+the states in a permutation block (including the entry but
+excluding the exit) satisfy the autonomy condition.
+
+Loan Processing Service Revisited. The \Loan Pro-
+cessing Example" discussed in Section 4 passes our syn-
+chronizability condition test, and we can safely verify the
+two LTL properties on its synchronous composition by set-
+ting the channel size to 0 in its Promela translation. The
+
+veri(cid:12)cation cost of channel size 0 is not signi(cid:12)cantly lower
+than that of the larger channel sizes. However even when
+the synchronous veri(cid:12)cation with synchronizability analy-
+sis does not reduce the state space much, it is still better
+than the partial veri(cid:12)cation because we are ensured that
+the veri(cid:12)ed properties work for asynchronous composition
+with unbounded queue size, while the partial veri(cid:12)cation
+can not. More examples of realizability/synchronizability
+analysis are available on our tool site [22].
+
+There are other ways to achieve decidability in analyzing
+queued or bu(cid:11)ered systems, for example, the realizability
+analysis of MSC graphs [1], and the use of sound WF-net
+(a variation of bounded petri-net) to analyze work(cid:13)ows [20].
+Both in [1] and [20], the main idea is to provide su(cid:14)cient
+conditions which guarantee that the queue (or bu(cid:11)er) sizes
+are bounded for any execution of the system. However, the
+synchronizability approach used in this paper is di(cid:11)erent.
+For example, in Example 3 of Figure 7, queue size of the
+server is not bounded during its composition with the re-
+quester but it is still synchronizable.
+
+6. CONCLUSIONS AND FUTURE WORK
+
+Our contributions in this paper and [10] together form a
+system for analyzing and verifying web services, as shown in
+Figure 9. Speci(cid:12)cally, the input to our tool is a composite
+web service speci(cid:12)cation and some LTL properties. Our tool
+can be used to check if the composite web service satis(cid:12)es
+the LTL properties. Currently, our tool accepts BPEL spec-
+i(cid:12)cations as input and translates them to guarded automata
+in our model. The guarded automata can be either trans-
+lated directly to Promela with bounded queues or synchro-
+nizability analysis can be used. Depending on the result of
+the synchronizability check, the system generates a Promela
+speci(cid:12)cation either with synchronous communication (if the
+check succeeds) or with bounded queues (otherwise). The
+SPIN model checker can then be invoked to do the veri(cid:12)ca-
+tion on the Promela speci(cid:12)cation.
+
+Clearly, the system can be extended in the future, as illus-
+trated in Figure 9. First, translation from other web service
+speci(cid:12)cation languages (such as DAML-S, WSCI, etc.) can
+be added to the front-end. This immediately allows veri-
+(cid:12)cation of web services de(cid:12)ned in these languages without
+changing the back-end. Second, di(cid:11)erent veri(cid:12)cation tools
+can be targeted at the back-end either to make veri(cid:12)cation
+more e(cid:14)cient or to have more expressive veri(cid:12)cation lan-
+guages. Finally, it is possible to add additional analysis tech-
+niques, such as automated abstraction, to the tool. Hence
+our guarded automata model provides a (cid:13)exible intermedi-
+ate representation that can be used for di(cid:11)erent analysis.
+
+629There also exist other challenges for applying model check-
+ing techniques to web services concerning extending the cur-
+rent model of guarded automata. In our current model, we
+assume that service links (channels) among peers are \pre-
+determined" and established prior to the interaction starts.
+Hence some advanced features in BPEL, for example, the
+endpoint references (to dynamically determine the peer to
+talk to), cannot be captured in the current model. Also
+our model does not handle dynamic process instantiation
+and correlation sets. Extending our model to address these
+issues is an interesting direction for future research.
+
+Acknowledgments
+Bultan was supported in part by NSF Career award
+CCR-9984822; Fu was partially supported by NSF grant
+IIS-0101134 and NSF Career award CCR-9984822; Su was
+also supported in part by NSF grants IIS-0101134 and IIS-
+9817432.
+
+7. REFERENCES
+
+[1] R. Alur, K. Etessami, and M. Yannakakis.
+
+Realizability and veri(cid:12)cation of MSC graphs. In
+Proceedings of 28th International Colloquium on
+Automata, Languages, and Programming, volume 2076
+of LNCS, pages 797 { 808. Springer, 2001.
+
+Conference on Automated Software Engineering
+Conference (ASE 2003), 2003.
+
+[10] X. Fu, T. Bultan, and J. Su. Model checking
+interactions of composite web services. UCSB
+Computer Science Department Technical Report
+(2004-05). (Available at
+http://www.cs.ucsb.edu/~su/tmp/Map2SPIN.pdf).
+
+[11] X. Fu, T. Bultan, and J. Su. Conversation protocols:
+
+A formalism for speci(cid:12)cation and veri(cid:12)cation of
+reactive electronic services. In Proceedings of 8th
+International Conference on Implementation and
+Application of Automata (CIAA), volume 2759 of
+LNCS, pages 188{200, 2003. Full version to appear in
+a special issue of Theoretical Computer Science.
+
+[12] G. J. Holzmann. The SPIN Model Checker: Primer
+
+and Reference Manual. Addison-Wesley, Boston,
+Massachusetts, 2003.
+
+[13] R. Hull, M. Benedikt, V. Christophides, and J. Su.
+
+E-services: A look behind the curtain. In Proceedings
+of 22nd ACM Symposium on Principles of Database
+Systems (PODS), pages 1 { 14, 2003.
+
+[14] IBM. IBM Business Process Execution Language for
+
+Web Service Java Run Time (BPWS4J).
+http://www.alphaworks.ibm.com/tech/bpws4j.
+
+[15] Gerry Miller. .Net vs. J2EE. Communications of the
+
+ACM, 46(6):64{67, June 2003.
+
+[16] Message Sequence Chart (MSC). ITU-T, Geneva
+
+[2] Business Process Execution Language for Web
+
+Recommendation Z.120, 1994.
+
+Services (BPEL), Version 1.1.
+http://www.ibm.com/developerworks/library/ws-bpel,
+May 2003.
+
+[3] Business Process Modeling Language (BPML).
+
+http://www.bpmi.org.
+
+[4] A. Brown, M. Fuchs, J. Robie, and P. Wadler. MSL a
+model for W3C XML Schema. In Proceedings of 10th
+World Wide Web Conference (WWW), pages
+191{200, 2001.
+
+[5] T. Bultan, X. Fu, R. Hull, and J. Su. Conversation
+
+speci(cid:12)cation: A new approach to design and analysis
+of e-service composition. In Proceedings of 12th World
+Wide Web Conference (WWW), pages 403 { 410, May
+2003.
+
+[6] T. Bultan and T. Yavuz-Kahveci. Action language
+
+veri(cid:12)er. In Proceedings of the 16th IEEE International
+Conference on Automated Software Engineering
+(ASE), pages 382{386, 2001.
+
+[7] J. Burch, E. Clarke, K. McMillan, D. Dill, and
+
+L. Hwang. Symbolic model checking: 1020 states and
+beyond. In IEEE Symposium on Logic in Computer
+Science, pages 428{439, 1990.
+
+[8] DAML-S (and OWL-S) 0.9 Draft Release.
+
+http://www.daml.org/services/daml-s/0.9/, May 2003.
+
+[9] H. Foster, S. Uchitel, J. Magee, and J. Kramer.
+
+Model-based veri(cid:12)cation of web service compositions.
+In Proceedings of the 18th IEEE International
+
+[17] S. Narayanan and S. A. Mcllraith. Simulation,
+veri(cid:12)cation and automated composition of web
+services. In Proceedings of the 11th International
+World Wide Web Conference, 2002.
+
+[18] A. Pnueli. A temporal logic of concurrent programs.
+
+Theoretical Computer Science, 13(1):45{60, 1981.
+[19] Simple Object Access Protocol (SOAP) 1.1. W3C
+
+Note 08, May 2000. http://www.w3.org/TR/SOAP/.
+
+[20] W. M. P. van der Aalst et al. Veri(cid:12)cation of work(cid:13)ow
+
+task structures: A petri-net-based approach.
+Information Systems, 25(1):43{69, 2000.
+
+[21] Joseph Williams. The web services debate J2EE vs.
+
+.Net. Communications of the ACM, 46(6):59{63, June
+2003.
+
+[22] Web Service Analysis Tool (WSAT).
+
+http://www.cs.ucsb.edu/~su/WSAT.
+
+[23] Web Service Choreography Interface (WSCI) 1.0.
+
+http://www.w3.org/TR/2002/NOTE-wsci-20020808/,
+August 2002.
+
+[24] Web Services Description Language (WSDL) 1.1.
+
+http://www.w3.org/TR/wsdl, March 2001.
+
+[25] Extensible Markup Language (XML).
+
+http://www.w3c.org/XML.
+
+[26] XML Path Language (XPath) Version 1.0.
+
+http://www.w3.org/TR/xpath, 1999.
+
+[27] XML Schema. http://www.w3c.org/XML/Schema.
+
+630

@@ -1,0 +1,1640 @@
+YAGO: A Core of Semantic Knowledge
+
+Unifying WordNet and Wikipedia
+
+Fabian M. Suchanek
+
+Max-Planck-Institut
+
+Saarbr¨ucken / Germany
+
+suchanek@mpii.mpg.de
+
+Gjergji Kasneci
+Max-Planck-Institut
+
+Saarbr¨ucken / Germany
+kasneci@mpii.mpg.de
+
+Gerhard Weikum
+Max-Planck-Institut
+
+Saarbr¨ucken / Germany
+weikum@mpii.mpg.de
+
+ABSTRACT
+We present YAGO, a light-weight and extensible ontology
+with high coverage and quality. YAGO builds on entities
+and relations and currently contains more than 1 million
+entities and 5 million facts. This includes the Is-A hierarchy
+as well as non-taxonomic relations between entities (such
+as hasWonPrize). The facts have been automatically ex-
+tracted from Wikipedia and uniﬁed with WordNet, using
+a carefully designed combination of rule-based and heuris-
+tic methods described in this paper. The resulting knowl-
+edge base is a major step beyond WordNet:
+in quality by
+adding knowledge about individuals like persons, organiza-
+tions, products, etc. with their semantic relationships – and
+in quantity by increasing the number of facts by more than
+an order of magnitude. Our empirical evaluation of fact cor-
+rectness shows an accuracy of about 95%. YAGO is based on
+a logically clean model, which is decidable, extensible, and
+compatible with RDFS. Finally, we show how YAGO can be
+further extended by state-of-the-art information extraction
+techniques.
+
+Categories and Subject Descriptors
+H.0 [Information Systems]: General
+
+General Terms
+Knowledge Extraction, Ontologies
+
+Keywords
+Wikipedia, WordNet
+
+INTRODUCTION
+
+1.
+1.1 Motivation
+
+[5]) and word sense disambiguation (e.g.
+
+Many applications in modern information technology uti-
+lize ontological background knowledge. This applies above
+all to applications in the vision of the Semantic Web, but
+there are many other application ﬁelds. Machine translation
+(e.g.
+[3]) exploit
+lexical knowledge, query expansion uses taxonomies (e.g.
+[16, 11, 27]), document classiﬁcation based on supervised or
+semi-supervised learning can be combined with ontologies
+(e.g. [14]), and [13] demonstrates the utility of background
+knowledge for question answering and information retrieval.
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2007, May 8–12, 2007, Banff, Alberta, Canada.
+ACM 978-1-59593-654-7/07/0005.
+
+Furthermore, ontological knowledge structures play an im-
+portant role in data cleaning (e.g., for a data warehouse) [6],
+record linkage (aka. entity resolution) [7], and information
+integration in general [19].
+
+But the existing applications typically use only a single
+source of background knowledge (mostly WordNet [10] or
+Wikipedia). They could boost their performance, if a huge
+ontology with knowledge from several sources was available.
+Such an ontology would have to be of high quality, with ac-
+curacy close to 100 percent, i.e. comparable in quality to
+an encyclopedia. It would have to comprise not only con-
+cepts in the style of WordNet, but also named entities like
+people, organizations, geographic locations, books, songs,
+products, etc., and also relations among these such as what-
+is-located-where, who-was-born-when, who-has-won-which-
+prize, etc. It would have to be extensible, easily re-usable,
+and application-independent. If such an ontology were avail-
+able, it could boost the performance of existing applications
+and also open up the path towards new applications in the
+Semantic Web era.
+
+1.2 Related Work
+
+Knowledge representation is an old ﬁeld in AI and has
+provided numerous models from frames and KL-ONE to
+recent variants of description logics and RDFS and OWL
+(see [22] and [24]). Numerous approaches have been pro-
+posed to create general-purpose ontologies on top of these
+representations. One class of approaches focuses on extract-
+ing knowledge structures automatically from text corpora.
+These approaches use information extraction technologies
+that include pattern matching, natural-language parsing,
+and statistical learning [25, 9, 4, 1, 23, 20, 8]. These tech-
+niques have also been used to extend WordNet by Wikipedia
+individuals [21]. Another project along these lines is Know-
+ItAll [9], which aims at extracting and compiling instances
+of unary and binary predicate instances on a very large scale
+– e.g., as many soccer players as possible or almost all com-
+pany/CEO pairs from the business world. Although these
+approaches have recently improved the quality of their re-
+sults considerably, the quality is still signiﬁcantly below that
+of a man-made knowledge base. Typical results contain
+many false positives (e.g., IsA(Aachen Cathedral, City), to
+give one example from KnowItAll). Furthermore, obtaining
+a recall above 90 percent for a closed domain typically en-
+tails a drastic loss of precision in return. Thus, information-
+extraction approaches are only of little use for applications
+that need near-perfect ontologies (e.g.
+for automated rea-
+soning). Furthermore, they typically do not have an explicit
+(logic-based) knowledge representation model.
+
+WWW 2007 / Track: Semantic WebSession: Ontologies697Due to the quality bottleneck, the most successful and
+widely employed ontologies are still man-made. These in-
+clude WordNet [10], Cyc or OpenCyc [17], SUMO [18], and
+especially domain-speciﬁc ontologies and taxonomies such as
+SNOMED1 or the GeneOntology2. These knowledge sources
+have the advantage of satisfying the highest quality expecta-
+tions, because they are manually assembled. However, they
+suﬀer from low coverage, high cost for assembly and quality
+assurance, and fast aging. No human-made ontology knows
+the most recent Windows version or the latest soccer stars.
+
+1.3 Contributions and Outline
+
+This paper presents YAGO3, a new ontology that com-
+bines high coverage with high quality.
+Its core is assem-
+bled from one of the most comprehensive lexicons available
+today, Wikipedia. But rather than using information ex-
+traction methods to leverage the knowledge of Wikipedia,
+our approach utilizes the fact that Wikipedia has category
+pages. Category pages are lists of articles that belong to a
+speciﬁc category (e.g., Zidane is in the category of French
+football players4). These lists give us candidates for enti-
+ties (e.g. Zidane), candidates for concepts (e.g. IsA(Zidane,
+FootballPlayer)) [15] and candidates for relations (e.g. isC-
+itizenOf(Zidane, France)). In an ontology, concepts have to
+be arranged in a taxonomy to be of use. The Wikipedia
+categories are indeed arranged in a hierarchy, but this hier-
+archy is barely useful for ontological purposes. For example,
+Zidane is in the super-category named ”Football in France”,
+but Zidane is a football player and not a football. WordNet,
+in contrast, provides a clean and carefully assembled hierar-
+chy of thousands of concepts. But the Wikipedia concepts
+have no obvious counterparts in WordNet.
+
+In this paper we present new techniques that link the
+two sources with near-perfect accuracy. To the best of
+our knowledge, our method is the ﬁrst approach that ac-
+complishes this uniﬁcation between WordNet and facts de-
+rived from Wikipedia with an accuracy of 97%. This al-
+lows the YAGO ontology to proﬁt, on one hand, from the
+vast amount of individuals known to Wikipedia, while ex-
+ploiting, on the other hand, the clean taxonomy of concepts
+from WordNet. Currently, YAGO contains roughly 1 million
+entities and 5 million facts about them.
+
+YAGO is based on a data model of entities and binary re-
+lations. But by means of reiﬁcation (i.e., introducing iden-
+tiﬁers for relation instances) we can also express relations
+between relation instances (e.g., popularity rankings of pairs
+of soccer players and their teams) and general properties of
+relations (e.g., transitivity or acyclicity). We show that, de-
+spite its expressiveness, the YAGO data model is decidable.
+YAGO is designed to be extendable by other sources – be
+it by other high quality sources (such as gazetteers of geo-
+graphic places and their relations), by domain-speciﬁc ex-
+tensions, or by data gathered through information extrac-
+tion from Web pages. We conduct an enrichment experi-
+ment with the state-of-the-art information extraction system
+Leila[25]. We observe that the more facts YAGO contains,
+the better it can be extended. We hypothesize that this pos-
+itive feedback loop could even accelerate future extensions.
+The rest of this paper is organized as follows. In Section
+2 we introduce YAGO’s data model. Section 3 describes the
+
+1http://www.snomed.org
+2http://www.geneontology.org/
+3Yet Another Great Ontology
+4Soccer is called football in some countries
+
+sources from which the current YAGO is assembled, namely,
+Wikipedia and WordNet. In Section 4 we give an overview of
+the system behind YAGO. We explain our extraction tech-
+niques and we show how YAGO can be extended by new
+data. Section 5 presents an evaluation, a comparison to
+other ontologies, an enrichment experiment and sample facts
+from YAGO. We conclude with a summary in Section 6.
+
+2. THE YAGO MODEL
+
+2.1 Structure
+
+To accommodate the ontological data we already ex-
+tracted and to be prepared for future extensions, YAGO
+must be based on a thorough and expressive data model.
+The model must be able to express entities, facts, relations
+between facts and properties of relations. The state-of-the-
+art formalism in knowledge representation is currently the
+Web Ontology Language OWL [24]. Its most expressive vari-
+ant, OWL-full, can express properties of relations, but is
+undecidable. The weaker variants of OWL, OWL-lite and
+OWL-DL, cannot express relations between facts. RDFS,
+the basis of OWL, can express relations between facts, but
+provides only very primitive semantics (e.g. it does not know
+transitivity). This is why we introduce a slight extension of
+RDFS, the YAGO model. The YAGO model can express
+relations between facts and relations, while it is at the same
+time simple and decidable.
+
+As in OWL and RDFS, all objects (e.g. cities, people,
+even URLs) are represented as entities in the YAGO model.
+Two entities can stand in a relation. For example, to state
+that Albert Einstein won the Nobel Prize, we say that the
+entity Albert Einstein stands in the hasWonPrize rela-
+tion with the entity Nobel Prize. We write
+
+AlbertEinstein hasWonPrize NobelPrize
+
+Numbers, dates, strings and other literals are represented as
+entities as well. This means that they can stand in relations
+to other entities. For example, to state that Albert Einstein
+was born in 1879, we write:
+
+AlbertEinstein bornInYear 1879
+
+Entities are abstract ontological objects, which are
+language-independent in the ideal case. Language uses
+words to refer to these entities. In the YAGO model, words
+are entities as well. This makes it possible to express that a
+certain word refers to a certain entity, like in the following
+example:
+
+”Einstein” means AlbertEinstein
+
+This allows us to deal with synonymy and ambiguity. The
+following line says that ”Einstein” may also refer to the mu-
+sicologist Alfred Einstein:
+
+”Einstein” means AlfredEinstein
+
+We use quotes to distinguish words from other entities. Sim-
+ilar entities are grouped into classes. For example, the class
+physicist comprises all physicists and the class word com-
+prises all words. Each entity is an instance of at least one
+class. We express this by the type relation:
+
+AlbertEinstein type physicist
+
+Classes are also entities. Thus, each class is itself an instance
+of a class, namely of the class class. Classes are arranged
+
+WWW 2007 / Track: Semantic WebSession: Ontologies698in a taxonomic hierarchy, expressed by the subClassOf re-
+lation:
+
+physicist subClassOf scientist
+
+In the YAGO model, relations are entities as well. This
+makes it possible to represent properties of relations (like
+transitivity or subsumption) within the model. The follow-
+ing line, e.g., states that the subClassOf relation is tran-
+sitive by making it an instance of the class transitive-
+Relation:
+
+subclassOf type transitiveRelation
+
+The triple of an entity, a relation and an entity is called
+a fact. The two entities are called the arguments of the
+fact. Each fact is given a fact identiﬁer. As RDFS, the
+YAGO model considers fact identiﬁers to be entities as well.
+This allows us to represent for example that a certain fact
+was found at a certain URL. For example, suppose that the
+above fact (Albert Einstein, bornInYear, 1879) had the
+fact identiﬁer #1, then the following line would say that this
+fact was found in Wikipedia:
+
+#1 foundIn http : //www.wikipedia.org/Einstein
+
+We will refer to entities that are neither facts nor relations
+as common entities. Common entities that are not classes
+will be called individuals. Then, a YAGO ontology over a
+ﬁnite set of common entities C, a ﬁnite set of relation names
+R and a ﬁnite set of fact identiﬁers I is a function
+y : I → (I ∪ C ∪ R) × R × (I ∪ C ∪ R)
+
+A YAGO ontology y has to be injective and total to ensure
+that every fact identiﬁer of I is mapped to exactly one fact.
+Some facts require more than two arguments (for example
+the fact that Einstein won the Nobel Prize in 1921). One
+common way to deal with this problem is to use n-ary re-
+lations (as for example in won-prize-in-year(Einstein,
+Nobel-Prize, 1921)).
+In a relational database setting,
+where relations correspond to tables, this has the disadvan-
+tage that much space will be wasted if not all arguments of
+the n-ary facts are known. Worse, if an argument (like e.g.
+the place of an event) has not been foreseen in the design
+phase of the database, the argument cannot be represented.
+Another way of dealing with an n-ary relation is to intro-
+duce a binary relation for each argument (e.g. winner,prize,
+time). Then, an n-ary fact can be represented by a new
+entity that is linked by these binary relations to all of its
+arguments (as is proposed for OWL):
+
+AlbertEinstein winner EinsteinWonNP1921
+NobelPrize prize EinsteinWonNP1921
+1921 time EinsteinWonNP1921
+
+However, this method cannot deal with additional argu-
+ments to relations that were designed to be binary. The
+YAGO model oﬀers a simple solution to this problem: It is
+based on the assumption that for each n-ary relation, a pri-
+mary pair of its arguments can be identiﬁed. For example,
+for the above won-prize-in-year-relation, the pair of the
+person and the prize could be considered a primary pair.
+The primary pair can be represented as a binary fact with
+a fact identiﬁer:
+
+#1 : AlbertEinstein hasWonPrize NobelPrize
+
+All other arguments can be represented as relations that
+hold between the primary pair and the other argument:
+
+#2 : #1 time 1921
+
+2.2 Semantics
+This section will give a model-theoretic semantics to
+YAGO. We ﬁrst prescribe that the set of relation names R
+for any YAGO ontology must contain at least the relation
+names type, subClassOf, domain, range and subRelation-
+Of. The set of common entities C must contain at least
+the classes entity, class, relation, acyclicTransitive-
+Relation and classes for all literals (as evident from the
+following list). For the rest of the paper, we assume a given
+set of common entities C and a given set of relations R.
+The set of fact identiﬁers used by a YAGO ontology y is
+implicitly given by I = domain(y). To deﬁne the semantics
+of a YAGO ontology, we consider only the set of possible
+facts F = (I ∪ C ∪ R) × R × (I ∪ C ∪ R). We deﬁne a
+rewrite system → ⊆ P(F ) × P(F ), i.e. → reduces one
+set of facts to another set of facts. We use the shorthand
+notation {f1, ..., fn} ,→ f to say that
+
+F ∪ {f1, ..., fn} → F ∪ {f1, ..., fn} ∪ {f}
+
+for all F ⊆ F, i.e. if a set of facts contains the facts f1, ..., fn,
+then the rewrite rule adds f to this set. Our rewrite system
+contains the following (axiomatic) rules:5
+∅ ,→ (domain, domain, relation)
+∅ ,→ (domain, range, class)
+∅ ,→ (range, domain, relation)
+∅ ,→ (range, range, class)
+∅ ,→ (subClassOf, type, acyclicTransitiveRelation)
+∅ ,→ (subClassOf, domain, class)
+∅ ,→ (subClassOf, range, class)
+∅ ,→ (type, range, class)
+∅ ,→ (subRelationOf, type, acyclicTransitiveRelation)
+∅ ,→ (subRelationOf, domain, relation)
+∅ ,→ (subRelationOf, range, relation)
+∅ ,→ (boolean, subClassOf, literal)
+∅ ,→ (number, subClassOf, literal)
+∅ ,→ (rationalNumber, subClassOf, number)
+∅ ,→ (integer, subClassOf, rationalNumber)
+∅ ,→ (timeInterval, subClassOf, literal)
+∅ ,→ (dateTime, subClassOf, timeInterval)
+∅ ,→ (date, subClassOf, timeInterval)
+∅ ,→ (string, subClassOf, literal)
+∅ ,→ (character, subClassOf, string)
+∅ ,→ (word, subClassOf, string)
+∅ ,→ (URL, subClassOf, string)
+
+it contains
+
+6= subRelationOf, r
+
+6= type, c
+
+for all
+6=
+r1
+6= subRelationOf,
+6= acyclicTransitiveRelation, c2
+6=
+
+Furthermore,
+the following rules
+r, r1, r2 ∈ R, x, y, c, c1, c2 ∈ I ∪ C ∪ R,
+type, r2
+r
+acyclicTransitiveRelation:
+(1) {(r1, subRelationOf, r2), (x, r1, y)} ,→ (x, r2, y)
+(2) {(r, type, acyclicTransitiveRelation), (x, r, y), (y, r, z)}
+(3) {(r, domain, c), (x, r, c)} ,→ (x, type, c)
+(4) {(r, range, c), (x, r, y)} ,→ (y, type, c)
+(5) {(x, type, c1), (c1, subClassOf, c2)} ,→ (x, type, c2)
+
+,→ (x, r, z)
+
+Theorem 1: [Convergence of →]
+Given a set of facts F ⊂ F , the largest set S with F →∗ S
+is unique.
+
+(The theorems are proven in the appendix.) Given a YAGO
+ontology y, the rules of → can be applied to its set of facts,
+5The class hierarchy of literals is inspired by SUMO[18]
+
+WWW 2007 / Track: Semantic WebSession: Ontologies699range(y). We call the largest set that can be produced by
+applying the rules of → the set of derivable facts of y, D(y).
+Two YAGO ontologies y1, y2 are equivalent if the fact iden-
+tiﬁers in y2 can be renamed so that
+
+(y1 ⊆ y2 ∨ y2 ⊆ y1) ∧ D(y1) = D(y2)
+
+The deductive closure of a YAGO ontology y is computed by
+adding the derivable facts to y. Each derivable fact (x, r, y)
+needs a new fact identiﬁer, which is just fx,r,y. Using a
+relational notation for the function y, we can write this as
+y∗ := y ∪ { (fr,x,y, (r, x, y)) |
+
+(x, r, y) ∈ D(y) , (r, x, y) 6∈ range(y) }
+
+A structure for a YAGO ontology y is a triple of
+
+• a set U (the universe)
+• a function D : I ∪ C ∪ R → U (the denotation)
+• a function E : D(R) → U ×U (the extension function)
+Like in RDFS, a YAGO structure needs to deﬁne the exten-
+sions of the relations by the extension function E. E maps
+the denotation of a relation symbol to a relation on universe
+elements. We deﬁne the interpretation Ψ with respect to a
+structure < U ,D,E > as the following relation:
+
+Ψ := {(e1, r, e2) | (D(e1),D(e2)) ∈ E(D(r))}
+
+We say that a fact (e1, r, e2) is true in a structure, if it
+is contained in the interpretation. A model of a YAGO
+ontology y is a structure such that
+
+1. all facts of y∗ are true
+2. if Ψ(x, type, literal) for some x, then D(x) = x
+3. if Ψ(r, type, acyclicTransitiveRelation) for some r,
+
+then there exists no x such that Ψ(x, r, x)
+
+A YAGO ontology y is called consistent iﬀ there exists a
+model for it. Obviously, a YAGO ontology is consistent iﬀ
+6 ∃x, r : (r, type, acyclicTransitiveRelation) ∈ D(y)
+
+∧ (x, r, x) ∈ D(y)
+
+Since D(y) is ﬁnite, the consistency of a YAGO ontology is
+decidable. A base of a YAGO ontology y is any equivalent
+YAGO ontology b with b ⊆ y. A canonical base of y is a
+base so that there exists no other base with less elements.
+
+Theorem 2: [Uniqueness of the Canonical Base]
+The canonical base of a consistent YAGO ontology is unique.
+
+In fact, the canonical base of a YAGO ontology can be com-
+puted by greedily removing derivable facts from the ontol-
+ogy. This makes the canonical base a natural choice to eﬃ-
+ciently store a YAGO ontology.
+2.3 Relation to Other Formalisms
+
+The YAGO model is very similar to RDFS. In RDFS, rela-
+tions are called properties. Just as YAGO, RDFS knows the
+properties domain, range, subClassOf and subPropertyOf
+(i.e. subRelationOf). These properties have a semantics
+that is equivalent to that of the corresponding YAGO re-
+lations. RDFS also knows fact identiﬁers, which can occur
+as arguments of other facts. The following excerpt shows
+how some sample facts of Section 2.1 can be represented in
+RDFS. Each fact of YAGO becomes a triple in RDFS.
+
+<rdf:Description
+
+rdf:about="http://mpii.mpg.de/yago#Albert_Einstein">
+<yago:bornInYear rdf:ID="f1">1879</yago:bornInYear>
+
+</rdf:Description>
+<rdf:Description
+
+rdf:about="http://mpii.mpg.de/yago#f1">
+<yago:foundIn rdf:ID="f2" rdf:resource="http:..."/>
+
+</rdf:Description>
+
+However, RDFS does not have a built-in transitive relation
+or an acyclic transitive relation, as YAGO does. This en-
+tails that the property acyclicTransitiveRelation can be
+deﬁned and used, but that RDFS would not know its se-
+mantics.
+
+YAGO uses fact identiﬁers, but it does not have built-
+in relations to make logical assertions about facts (e.g.
+it
+does not allow to say that a fact is false). If one relies on
+the denotation to map a fact identiﬁer to the corresponding
+fact element in the universe, one can consider fact identi-
+ﬁers as simple individuals. This abandons the syntactic link
+between a fact identiﬁer and the fact. In return, it opens
+up the possibility of mapping a YAGO ontology to an OWL
+ontology under certain conditions. OWL has built-in coun-
+terparts for almost all built-in data types, classes, and rela-
+tions of YAGO. The only concept that does not have an ex-
+act built-in counterpart is the acyclicTransitiveRelation.
+However, this is about to change. OWL is currently being
+reﬁned to its successor, OWL 1.1. The extended description
+logic SROIQ [12], which has been adopted as the logical
+basis of OWL 1.1, allows to express irreﬂexivity and transi-
+tivity. This allows to deﬁne acyclic transitivity. We plan to
+investigate the relation of YAGO and OWL once OWL 1.1
+has been fully established.
+
+3. SOURCES FOR YAGO
+3.1 WordNet
+
+WordNet is a semantic lexicon for the English language
+developed at the Cognitive Science Laboratory of Prince-
+ton University. WordNet distinguishes between words as
+literally appearing in texts and the actual senses of the
+words. A set of words that share one sense is called a
+synset. Thus, each synset identiﬁes one sense (i.e., se-
+mantic concept). Words with multiple meanings (ambigu-
+ous words) belong to multiple synsets. As of the current
+version 2.1, WordNet contains 81,426 synsets for 117,097
+unique nouns. (Wordnet also includes other types of words
+like verbs and adjectives, but we consider only nouns in
+this paper.) WordNet provides relations between synsets
+such as hypernymy/hyponymy (i.e., the relation between a
+sub-concept and a super-concept) and holonymy/meronymy
+(i.e., the relation between a part and the whole); for this
+paper, we focus on hypernyms/hyponyms. Conceptually,
+the hypernymy relation in WordNet spans a directed acyclic
+graph (DAG) with a single source node called Entity.
+3.2 Wikipedia
+
+Wikipedia is a multilingual, Web-based encyclopedia. It is
+written collaboratively by volunteers and is available for free.
+We downloaded the English version of Wikipedia in January
+2007, which comprised 1,600,000 articles at that time. Each
+Wikipedia article is a single Web page and usually describes
+a single topic.
+
+The majority of Wikipedia pages have been manually as-
+signed to one or multiple categories. The page about Albert
+
+WWW 2007 / Track: Semantic WebSession: Ontologies700Einstein, for example, is in the categories German language
+philosophers, Swiss physicists, and 34 more. Conve-
+niently, the categorization of Wikipedia pages and their link
+structure are available as SQL tables, so that they can be
+exploited without parsing the actual Wikipedia articles.
+
+4. THE YAGO SYSTEM
+
+Our system is designed to extract a YAGO ontology from
+WordNet and Wikipedia. Currently, the relations of YAGO
+are ﬁxed. Their properties (such as domain and range) are
+described in Table 2.
+
+YAGO is designed to be extendable, i.e. new facts from
+new sources can be added to the ontology. For this purpose,
+each fact is tagged with a conﬁdence value between 0 and
+1. Currently, all facts are tagged with their empirical conﬁ-
+dence estimation (see Section 5.1.1), which lies between 0.90
+and 0.98. Facts extracted by other techniques (e.g. based
+on statistical learning) can have smaller conﬁdence values.
+
+4.1 Knowledge Extraction
+
+4.1.1 The type relation
+
+Since Wikipedia knows far more individuals than Word-
+Net, the individuals for YAGO are taken from Wikipedia.
+Each Wikipedia page title is a candidate to become an
+individual
+in YAGO. For example, the page title ”Al-
+bert Einstein” is a candidate to become the individual
+AlbertEinstein in our ontology.
+The page titles in
+Wikipedia are unique.
+
+The Wikipedia Category System. To establish for
+each individual its class, we exploit the category system of
+Wikipedia. There are diﬀerent types of categories: Some
+categories, the conceptual categories, indeed identify a class
+for the entity of the page (e.g. Albert Einstein is in the cat-
+egory Naturalized citizens of the United States). Other cat-
+egories serve administrative purposes (e.g. Albert Einstein
+is also in the category Articles with unsourced statements),
+others yield relational information (like 1879 births) and
+again others indicate merely thematic vicinity (like Physics).
+Identifying Conceptual Categories. Only the concep-
+tual categories are candidates for serving as a class for the
+individual. The administrative and relational categories are
+very few (less than a dozen) and can be excluded by hand.
+To distinguish the conceptual categories from the thematic
+ones, we employ a shallow linguistic parsing of the category
+name (using the Noun Group Parser of [26]). For example, a
+category name like Naturalized citizens of the United States
+is broken into a pre-modiﬁer (Naturalized ), a head (citizens)
+and a post-modiﬁer (of the United States). Heuristically, we
+found that if the head of the category name is a plural word,
+the category is most likely a conceptual category. We used
+the Pling-Stemmer from [26] to reliably identify and stem
+plural words. This gives us a (possibly empty) set of con-
+ceptual categories for each Wikipedia page. Conveniently,
+articles that do not describe individuals (like hub pages) do
+not have conceptual categories. Thus, the conceptual cat-
+egories yield not only the type relation, but also, as its
+domain, the set of individuals. It also yields, as its range, a
+set of classes.
+
+4.1.2 The subClassOf relation
+
+The Wikipedia categories are organized in a directed
+acyclic graph, which yields a hierarchy of categories. This
+hierarchy, however, reﬂects merely the thematic structure
+
+of the Wikipedia pages (e.g., as mentioned in the introduc-
+tion, Zidane is in the category Football in France). Thus,
+the hierarchy is of little use from an ontological point of
+view. Hence we take only the leaf categories of Wikipedia
+and ignore all other categories (such as Football in France).
+Then we use WordNet to establish the hierarchy of classes,
+because WordNet oﬀers an ontologically well-deﬁned taxon-
+omy of synsets.
+
+Integrating WordNet Synsets. Each synset of Word-
+Net becomes a class of YAGO. Care is taken to exclude the
+proper nouns known to WordNet, which in fact would be in-
+dividuals (Albert Einstein, e.g., is also known to WordNet,
+but excluded). There are roughly 15,000 cases, in which an
+entity is contributed by both WordNet and Wikipedia (i.e.
+a WordNet synset contains a common noun that is the name
+of a Wikipedia page). In some of these cases, the Wikipedia
+page describes an individual that bears a common noun as
+its name (e.g. ”Time exposure” is a common noun for Word-
+Net, but an album title for Wikipedia). In the overwhelming
+majority of the cases, however, the Wikipedia page is simply
+about the common noun (e.g. the Wikipedia page ”Physi-
+cist” is about physicists). To be on the safe side, we always
+give preference to WordNet and discard the Wikipedia in-
+dividual in case of a conﬂict. This way, we lose information
+about individuals that bear a common noun as name, but
+it ensures that all common nouns are classes and no entity
+is duplicated.
+
+Establishing subClassOf. The subClassOf hierarchy
+of classes is taken from the hyponymy relation from Word-
+Net: A class is a subclass of another one, if the ﬁrst synset is
+a hyponym of the second. Now, the lower classes extracted
+from Wikipedia have to be connected to the higher classes
+extracted from WordNet. For example, the Wikipedia class
+American people in Japan has to be made a subclass of the
+WordNet class person. To this end, we use the following
+algorithm:
+
+head =headCompound(c)
+pre =preModiﬁer(c)
+post =postModiﬁer(c)
+head =stem(head)
+If there is a WordNet synset s for pre + head
+
+Function wiki2wordnet(c)
+Input: Wikipedia category name c
+Output: WordNet synset
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10 fail
+
+return s1
+
+return s
+
+If there are WordNet synsets s1, ...sn for head
+
+(ordered by their frequency for head)
+
+We ﬁrst determine the head compound, the pre-modiﬁer
+and the post-modiﬁer of the category name (lines 1-3). For
+the Wikipedia category American people in Japan, these
+are ”American”, ”people” and ”in Japan”, respectively. We
+stem the head compound of the category name (i.e. people)
+to its singular form (i.e. person) in line 4. Then we check
+whether there is a WordNet synset for the concatenation of
+pre-modiﬁer and head compound (i.e. American person).
+If this is the case, the Wikipedia class becomes a subclass
+of the WordNet class (lines 5-6). If this is not the case, we
+exploit that the Wikipedia category names are almost exclu-
+sively endocentric compound words (i.e. the category name
+is a hyponym of its head compound, e.g. ”American per-
+son” is a hyponym of ”person”). The head compound (per-
+son) has to be mapped to a corresponding WordNet synset
+
+WWW 2007 / Track: Semantic WebSession: Ontologies701(s1, ..., sn in line 7). This mapping is non-trivial, since one
+word may refer to multiple synsets in WordNet. We exper-
+imented with diﬀerent disambiguation approaches. Among
+others, we mapped the co-occurring categories of a given
+category to their possible synsets as well and determined
+the smallest subgraph of synsets that contained one synset
+for each category. These approaches lead to non-satisfactory
+results.
+
+Finally, we found that the following solution works best:
+WordNet stores with each word the frequencies with which
+it refers to the possible synsets. We found out that map-
+ping the head compound simply to the most frequent synset
+(s1) yields the correct synset in the overwhelming major-
+ity of cases. This way, the Wikipedia class American peo-
+ple in Japan becomes a subclass of the WordNet class per-
+son/human.
+
+Exceptions. There were only a dozen prominent excep-
+tions, which we corrected manually. For example, all cate-
+gories with the head compound capital in Wikipedia mean
+the ”capital city”, but the most frequent sense in WordNet
+is ”ﬁnancial asset”. In summary, we obtain a complete hier-
+archy of classes, where the upper classes stem from WordNet
+and the leaves come from Wikipedia.
+
+4.1.3 The means relation
+
+Exploiting WordNet Synsets. Wikipedia and Word-
+Net also yield information on word meaning. WordNet for
+example reveals the meaning of words by its synsets. For
+example, the words ”urban center” and ”metropolis” both
+belong to the synset city. We leverage this information in
+two ways. First, we introduce a class for each synset known
+to WordNet (i.e. city). Second, we establish a means re-
+lation between each word of synset and the corresponding
+class (i.e. (”metropolis”, means, city)).
+
+Exploiting Wikipedia Redirects. Wikipedia con-
+tributes names for the individuals by its redirect system: a
+Wikipedia redirect is a virtual Wikipedia page, which links
+to a real Wikipedia page. These links serve to redirect users
+to the correct Wikipedia article. For example, if the user
+typed ”Einstein, Albert” instead of ”Albert Einstein”, then
+there is a virtual redirect page for ”Einstein, Albert” that
+links to ”Albert Einstein”. We exploit the redirect pages to
+give us alternative names for the entities. For each redirect,
+we introduce a corresponding means fact (e.g. (”Einstein,
+Albert”, means, Albert Einstein)).
+
+Parsing Person Names. The YAGO hierarchy of
+classes allows us to identify individuals that are persons.
+If the words used to refer to these individuals match the
+common pattern of a given name and a family name, we
+extract the name components and establish the relations
+givenNameOf and familyNameOf. For example, we know
+that Albert Einstein is a person, so we introduce the facts
+(”Einstein”, familyNameOf, Albert Einstein) and (”Al-
+bert”, givenNameOf, Albert Einstein). Both are sub-
+relations of means, so that the family name ”Einstein”,
+for example, also means Albert Einstein. We used the
+Name Parser from [26] to identify and decompose the per-
+son names.
+
+4.1.4 Other relations
+
+Exploiting Wikipedia Categories. We exploit rela-
+tional Wikipedia categories for the extraction of the follow-
+ing relations: bornInYear, diedInYear, establishedIn,
+locatedIn, writtenInYear, politicianOf, and has-
+WonPrize. For the extraction of the bornInYear and
+
+diedInYear facts we make use of the categories ending with
+“ births” and “ deaths” respectively. For example, if a page
+is in the category “1879 births”, it means that the corre-
+sponding individual is a person born in 1879.
+
+The establishedIn facts are extracted from categories
+ending with “ establishments”. For example, if a page is in
+the category 1980 establishments, this means that the cor-
+responding individual (mostly an organization) was estab-
+lished in 1980. We normalize vague date expressions (like
+“5’th century BC ”) to a common form (e.g. -500).
+
+The locatedIn facts are extracted from categories that
+imply that all its members share a geographical location.
+For example, if a page is in the category Cities in Germany,
+this indicates that the corresponding individual is located in
+Germany. We make use of categories starting with Countries
+in..., Rivers of..., Attractions in... and similar ones. Note
+that we do not need to extract the classes for the individuals,
+since this information has already been extracted within the
+scope of the type relation.
+
+Further relations that we considered are the writ-
+tenInYear relation which holds between books and the
+year in which they appeared, the politicianOf relation
+which holds between politicians and states as well as the
+hasWonPrize relation which concerns prize winners and
+the prizes they won. The facts for these three relations were
+extracted analogously to the afore mentioned facts.
+
+Filtering the Results. Not all facts extracted this
+way constitute valid facts in the YAGO ontology, be-
+cause their arguments may not be known entities in
+YAGO. For example, Eugene of Savoy is in the cat-
+egory “Governors of the Habsburg Netherlands”, but we
+cannot admit the fact (Eugene of Savoy, politicianOf,
+Habsburg Netherlands), because Habsburg Netherlands is
+not a page in Wikipedia and hence not an entity in YAGO.
+This is why a cleaning step is necessary, in which the sys-
+tem ﬁlters out all facts with arguments that are not in the
+domain of the previously established type relation. Despite
+the huge number of extracted facts, the actual extraction
+process took only a few hours. This is because it is not nec-
+essary to access the Wikipedia pages themselves – let alone
+parse them or POS-tag them. All information is derived
+from the category lists.
+
+4.1.5 Meta-relations
+
+Descriptions. Due to its generality, the YAGO ontology
+can store meta-relations uniformly together with usual re-
+lations. For example, we store for each individual the URL
+of the corresponding Wikipedia page. This will allow future
+applications to provide the user with detailed information on
+the entities. We introduce the describes relation between
+the individual and its URL for this purpose.
+
+Witnesses. YAGO is prepared to be extended by new
+facts.
+If a new fact was extracted from a particular Web
+page, we call this page the witness for the fact. We introduce
+the foundIn relation, which holds between a fact and the
+URL of the witness page. We use the extractedBy rela-
+tion to identify the technique by which a fact was extracted.
+The information about witnesses will enable applications to
+use, e.g., only facts extracted by a certain technique, facts
+extracted from a certain source or facts of a certain date.
+
+Context. Last, we store for each individual the individu-
+als it is linked to in the corresponding Wikipedia page. For
+example, Albert Einstein is linked to Relativity Theory.
+For this purpose, we introduce the context relation be-
+tween individuals. This will allow applications to use re-
+
+WWW 2007 / Track: Semantic WebSession: Ontologies702lated terms for disambiguation purposes. Diﬀerent from a
+simple co-occurrence table of words, the context relation
+connects entities instead of words, i.e.
+its arguments are
+already disambiguated.
+4.2 YAGO Storage
+
+The YAGO model itself is independent of a particular data
+storage format. To produce minimal overhead, we decided
+to use simple text ﬁles as an internal format. We maintain a
+folder for each relation and each folder contains ﬁles that list
+the entity pairs. We store only facts that cannot be derived
+by the rewrite rules of YAGO (see 2.2), so that we store in
+fact the unique canonical base of the ontology.
+
+Furthermore, we provide conversion programs to convert
+the ontology to diﬀerent output formats. First, YAGO is
+available as a simple XML version of the text ﬁles. Fur-
+thermore, YAGO can be converted to a database table.
+The table has the simple schema FACTS(factId, arg1,
+relation, arg2, confidence). We provide software to
+load YAGO into an Oracle, Postgres or MySQL database.
+For our experiments, we used the Oracle version of YAGO.
+Last, we also provide an RDFS version of YAGO, as ex-
+plained in Section 2.3.
+4.3 Enriching YAGO
+
+YAGO is designed to be extendable by new facts. An
+application that adds new facts to the YAGO ontology is
+required to obey the following protocol. Suppose that the
+application wishes to add the fact (x, r, y). First, it has to
+map x and y to existing entities in the YAGO ontology. This
+task is essentially a word sense disambiguation problem, in
+which the “words” x and y have to be disambiguated to
+YAGO entities. For the disambiguation, the application can
+make use of the extensive information that YAGO provides
+for the existing entities: the relations to other entities, the
+words used to refer to the entities, and the context of the
+entities, as provided by the context relation.
+If x or y
+do not yet exist in the ontology, they have to be added as
+new entities. Next, r has to be mapped to a relation in the
+YAGO ontology. Currently, YAGO comprises only a ﬁxed
+set of relations, which simpliﬁes this task. The application
+should provide a conﬁdence value c ∈ [0, 1] for the proposed
+fact (x, r, y).
+
+If (x, r, y) exists already in the ontology, the application
+merely adds a new witness for this fact. Supposing that the
+fact identiﬁer of the existing fact is f and that the witness
+is w, the new fact would be (f, foundIn, w) with conﬁdence
+c. Then, the conﬁdence of the existing fact has to be recom-
+puted as an aggregation of the conﬁdences of the witnesses.
+We propose to take the maximum, but other options can
+be considered.
+If (x, r, y) does not yet exist in the ontol-
+ogy, the application has to add the fact together with a
+new fact identiﬁer. We propose to use name spaces as in
+OWL/RDFS: each application has a universally unique id
+and the fact identiﬁer is composed of the application id and
+a running number. Section 5.3 shows how the enrichment
+can be implemented in practice.
+
+5. EVALUATION AND EXPERIMENTS
+5.1 Manual evaluation
+
+5.1.1 Accuracy
+
+We were interested in the accuracy of YAGO. To evaluate
+the accuracy of an ontology, its facts have to be compared to
+
+some ground truth. Since there is no computer-processable
+ground truth of suitable extent, we had to rely on manual
+evaluation. We presented randomly selected facts of the on-
+tology to human judges and asked them to assess whether
+the facts were correct. Since common sense often does not
+suﬃce to judge the correctness of YAGO facts, we also pre-
+sented them a snippet of the corresponding Wikipedia page.
+Thus, our evaluation compared YAGO against the ground
+truth of Wikipedia (i.e., it does not deal with the problem
+of Wikipedia containing false information). Of course, it
+would be pointless to evaluate the portion of YAGO that
+stems from WordNet, because we can assume human ac-
+curacy here. Likewise, it would be pointless to evaluate the
+non-heuristic relations in YAGO, such as describes, means,
+or context. This is why we evaluated only those facts that
+constitute potentially weak points in the ontology. To be
+sure that our ﬁndings are signiﬁcant, we computed the Wil-
+son interval for α = 5%.
+
+Table 1: Accuracy of YAGO
+
+Relation
+
+# evalu- Accuracy
+
+subClassOf
+type
+familyNameOf
+givenNameOf
+establishedIn
+bornInYear
+diedInYear
+locatedIn
+politicianOf
+writtenInYear
+hasWonPrize
+
+ated facts
+298
+343
+221
+161
+170
+170
+147
+180
+176
+172
+122
+
+97.70% ± 1.59%
+94.54% ± 2.36%
+97.81% ± 1.75%
+97.62% ± 2.08%
+90.84% ± 4.28%
+93.14% ± 3.71%
+98.72% ± 1.30%
+98.41% ± 1.52%
+92.43% ± 3.93%
+94.35% ± 3.33%
+98.47% ± 1.57%
+
+The evaluation shows very good results. Especially the
+crucial type relation and the link between WordNet and
+Wikipedia, subClassOf, turned out to be very accurate.
+But our heuristic algorithms cannot always achieve an ac-
+curacy of 100%. This may also have to do with the in-
+consistency of the underlying sources. For example, for the
+relation bornInYear, most false facts stem from erroneous
+Wikipedia categories (e.g. some person born in 1802 is in
+the Wikipedia category 1805 births). In addition, the eval-
+uation of an ontology is sometimes a philosophical issue. To
+start with, even simple relations suﬀer from vagueness (e.g.
+is Lake Victoria locatedIn Tanzania, if Tanzania borders
+the lake? Is an economist who works in France a French
+Economist, even if he was born in Ireland?). Next, it is not
+always clear whether an entity should be an individual or
+a class (e.g. a judge might decide that physics is an indi-
+vidual, because it is an instance of science). YAGO, how-
+ever, in accordance with WordNet, sees abstract notions in
+general as classes, because they can have subclasses (e.g.,
+physics can have the subclass astrophysics). Further-
+more, not everybody may agree on the deﬁnition of synsets
+in WordNet (e.g., a palace is in the same synset as a castle
+in WordNet). These cases of disputability are inherent even
+to human-made ontologies. Thus, we can be extremely sat-
+isﬁed with our results. Further note that these values mea-
+sure just the potentially weakest point of YAGO, as all other
+facts were derived non-heuristically.
+
+It is diﬃcult to compare YAGO to other information ex-
+traction approaches, because the approaches usually diﬀer
+in the choice of relations and in the choice of the sources.
+YAGO is tailored to Wikipedia and WordNet, but it comes
+
+WWW 2007 / Track: Semantic WebSession: Ontologies703with a multitude of interconnected relations. Furthermore,
+accuracy can usually be varied at the cost of recall. Ap-
+proaches that use pattern matching (e.g. the Espresso Sys-
+tem [20] or Leila [25]) typically achieve accuracy rates of
+50%-92%, depending on the extracted relation. State-of-
+the-art taxonomy induction as described in [23] achieves an
+accuracy of 84%. KnowItAll [9] and KnowItNow [4] are re-
+ported to have accuracy rates of 85% and 80%, respectively.
+
+5.1.2
+
+Size
+
+Table 2 shows the number of facts for each relation in
+YAGO. The overall number of ontological facts is about 5
+million. This number is completed by the respective witness
+facts and approximately 40 million context facts.
+
+Table 2: Size of YAGO (facts)
+
+Relation
+Domain
+subClassOf
+class
+type
+entity
+context
+entity
+describes
+word
+bornInYear
+person
+diedInYear
+person
+establishedIn
+entity
+locatedIn
+object
+writtenInYear book
+politicianOf
+hasWonPrize
+means
+familyNameOf
+givenNameOf
+
+organization
+person
+word
+word
+word
+
+Range
+class
+class
+entity
+entity
+year
+year
+year
+region
+year
+person
+prize
+entity
+person
+person
+
+# Facts
+143,210
+1,901,130
+∼40,000,000
+986,628
+188,128
+92,607
+13,619
+59,716
+9,670
+3,599
+1,016
+1,598,684
+223,194
+217,132
+
+Table 3 shows the number of entities in YAGO.
+
+Table 3: Size of YAGO (entities)
+14
+Relations
+149,162
+Classes
+Individuals (without words)
+907,462
+
+It is not easy to compare the size of YAGO to other on-
+tologies, because the ontologies usually diﬀer in their struc-
+ture, their relations and their domain. For informational
+purposes, we list the number of entities and facts that are
+reported for some of the most important other domain-
+independent ontologies in Table 4.
+
+Table 4: Size of other ontologies
+Ontology
+Facts
+25,860
+KnowItNow [4]
+29,835
+KnowItAll [9]
+60,000
+SUMO [18]
+207,016
+WordNet [10]
+OpenCyc [17]
+306,000
+2,200,000
+Cyc [17]
+
+Entities
+N/A
+N/A
+20,000
+117,597
+47,000
+250,000
+
+With the exception of Cyc (which is not publicly available),
+the facts of these ontologies are in the hundreds of thou-
+sands, whereas the facts of YAGO are in the millions.
+5.2 Sample facts
+
+Table 5 shows some sample facts of YAGO. In YAGO, the
+word ”Paris”, can refer to 71 distinct entities. We list some
+interesting ones. The football player Zinedine Zidane, e.g.,
+is an instance of 24 diﬀerent classes in our ontology. We list
+some of them. In the table, type+subclass means that the
+
+individual is an instance of a class that is a subclass of the
+given class.
+
+Table 5: Sample facts of YAGO
+
+Zidane
+Zidane
+Zidane
+Zidane
+”Paris”
+”Paris”
+”Paris”
+”Paris”
+Paris, France
+Paris, France
+Paris, France
+Paris, France
+
+football player
+Person from Marseille
+Legion d’honneur recipient
+1972
+
+type+subclass
+type
+type
+bornInYear
+familyNameOf Priscilla Paris
+givenNameOf
+means
+means
+locatedIn
+type+subclass
+type
+establishedIn
+
+Paris Hilton
+Paris, France
+Paris, Texas
+France
+capital
+Eurovision host city
+-300
+
+We also provide an interface to query YAGO in a SPARQL-
+like fashion [28] 6. A query is a list of facts containing vari-
+ables and regular expressions. Preprocessing ensures that
+words in the query are considered in all their possible mean-
+ings. The query algorithms are not in the scope of this
+paper. Here, we only show some sample queries to illustrate
+the applicability of YAGO (Table 6).
+
+Table 6: Sample queries on YAGO
+
+Query
+When was ”Mostly Harmless” written?
+(Mostly Harmless,writtenInYear,$y)
+Which humanists were born in 1879?
+($h, type subClassOf*, humanist)
+($h, bornInYear, 1879)
+Which locations in Texas and
+Illinois bear the same name?
+($t, locatedIn, Texas)
+($n, means, $t)
+($n, means, $k)
+($k, locatedIn, Illinois)
+
+Result
+$y=1992
+
+$h=Albert Einstein
+and 2 more
+
+$n=”Farmersville”
+and 121 more
+
+5.3 Enrichment experiment
+
+To demonstrate how an application can add new facts to
+the YAGO ontology, we conducted an experiment with the
+knowledge extraction system Leila [25]. Leila is a state-of-
+the-art system that uses pattern matching on natural lan-
+guage text. It can extract facts of a certain given relation
+from Web documents. We trained Leila for the headquar-
+teredIn relation (as described in [26]). This relation holds
+between a company and the city of its headquarters. We ran
+Leila on a corpus of 150 news documents to extract pairs
+of companies and headquarters. Each extracted pair is a
+if Leila extracted the pair Microsoft
+candidate fact (e.g.
+/ Redmond, then (Microsoft, headquarteredIn, Redmond)
+is a candidate fact). Since the headquarteredIn relation
+is not part of YAGO, no candidate fact is already present in
+YAGO. For each candidate fact, the company and the city
+have to be mapped to the respective individuals in YAGO.
+To disambiguate the company name, we proceeded as fol-
+lows: By the means relation, one can ﬁnd out which indi-
+viduals in YAGO the company name refers to.
+If exactly
+one of these individuals is an instance of the class company,
+we map the company name to this individual. If multiple
+individuals are instances of the class company, we cannot be
+
+6Available at http://www.mpii.mpg.de/~suchanek/yago
+
+WWW 2007 / Track: Semantic WebSession: Ontologies704sure which one is meant. In this case, we abandon the can-
+didate fact, because we aim at a high accuracy at the cost
+of a potentially lower coverage (this did not happen in our
+experiment). If no individual is a company, we introduce the
+company name as a new individual for YAGO.
+
+To disambiguate the city name, we proceed similarly. We
+identify a set of potential individuals by the means relation
+together with the constraint that the individual be a city.
+If no individual is a city, we abandon the fact because we
+assume that Wikipedia knows all major cities.
+If multi-
+ple individuals are a city, we use a simple disambiguation
+heuristic: We pick the city located in the state that is men-
+tioned most frequently in the article. If no such city exists,
+the fact is abandoned. This way, both the company and the
+city get mapped to the respective YAGO individuals.
+
+The conﬁdence of the new fact is computed as a normal-
+ization of the conﬁdence score returned by Leila. Table
+7 shows the number of company names and headquar-
+teredIn facts contributed by Leila.
+
+Table 7: Leila headquarteredIn facts
+
+Abandoned candidates
+
+because of an unknown city
+because of an ambiguous city
+because of an ambiguous company
+Total
+
+Inserted candidates
+
+with a known company name
+with a new company name
+Total
+
+32
+33
+0
+65
+
+10
+70
+80
+
+In the above merging process, entities that are already
+present in the ontology can help to disambiguate new en-
+tities. Hence we assume that the more facts and entities
+YAGO contains, the better it can be extended by new facts.
+The better YAGO can be extended, the more facts it will
+contain. This mutual contribution could constitute a posi-
+tive re-enforcement loop, which could help future expansion.
+
+6. CONCLUSION
+
+In this paper, we presented YAGO, a large and extendable
+ontology of high quality. YAGO contains 1 million entities
+and 5 million facts – more than any other publicly available
+formal ontology. As our evaluation shows, YAGO has a
+near-human accuracy around 95%.
+
+Our data model deﬁnes a clear semantics for YAGO. It
+is decidable and it guarantees that the smallest ontology in
+a set of equivalent ontologies is unique, so that there is a
+canonical way to store a YAGO ontology.
+
+We demonstrated how YAGO can be extended by facts
+extracted from Web documents through state-of-the-art ex-
+traction techniques. We observed that the more facts YAGO
+contains, the easier it is to extend it by further facts.
+We hypothesize that this positive feedback loop could fa-
+cilitate the growth of the knowledge base in the future.
+YAGO is available in diﬀerent export formats,
+including
+plain text, XML, RDFS and SQL database formats at
+http://www.mpii.mpg.de/~suchanek/yago.
+
+YAGO opens the door to numerous new challenges. On
+the theoretical side, we plan to investigate the relationship
+between OWL 1.1 and the YAGO model, once OWL 1.1 has
+been fully developed. This might necessitate extensions or
+additional semantic restrictions of the YAGO model. On
+the practical side, we plan to enrich YAGO by further facts
+that go beyond the current somewhat arbitrary relations
+
+– including high conﬁdence facts from gazetteers, but also
+extracted information from Web pages.
+In particular, we
+envisage to analyze and exploit the positive feedback loop
+of data gathering. We hope that the availability of a huge,
+clean, and high quality ontology can give new impulses to
+the Semantic Web vision.
+
+APPENDIX
+A. PROOF OF THEOREM 1
+Let F be a (ﬁnite) set of fact triples, as deﬁned in Chapter
+2.2. Let → be the rewrite system deﬁned there (see [2] for a
+reference on term rewriting). All rules of the rewrite system
+are of the form F → F ∪ {f}, where F ⊆ F and f ∈ F .
+Hence → is monotone. Furthermore, F is ﬁnite. Hence →
+is ﬁnitely terminating. It is easy to see that if F → F ∪{f1}
+and F → F ∪ {f2} for some F ⊆ F and f1, f2 ∈ F, then
+
+F → F ∪ {f1} → F ∪ {f1, f2}
+F → F ∪ {f2} → F ∪ {f1, f2}
+
+Hence → is locally conﬂuent. Since → is ﬁnitely termi-
+nating, → is globally conﬂuent and convergent. Thus, given
+any set of facts F ⊆ F , the largest set DF with F →∗ DF
+is unique and ﬁnite.
+
+B. PROOF OF THEOREM 2
+A canonical base of a YAGO ontology y is any base b of
+y, such that there exists no other base b0 of y with |b0| < |b|.
+This section will prove that, for a consistent YAGO ontol-
+ogy, there exists exactly one such base. In the following, →
+denotes the rewrite system and F denotes the set of facts
+deﬁned in Chapter 2.2.
+
+Lemma 1: [No circular rules]
+Let y be a consistent YAGO ontology, and {f1, ..., fn} a set
+of facts. Then there are no sets of facts F1, ..., Fn, such that
+that F1, ..., Fn ⊆ D(y) and
+
+F1 ,→ f1
+F2 ,→ f2
+...
+Fn ,→ fn
+
+with
+with
+
+with
+
+f2 ∈ F1
+f3 ∈ F2
+f1 ∈ Fn
+
+Proof: By analyzing all possible pairs of rule schemes
+(1)...(5), one ﬁnds that the above rules must fall into one of
+the following categories:
+
+• All
+
+rules are instances of
+
+In this case,
+(c, subClassOf, c) ∈ D(y) for some common entity
+c and hence y cannot be consistent.
+
+(5).
+
+• All
+
+rules are instances of
+
+In this case,
+(c, subRelationOf, c) ∈ D(y) for some common en-
+tity c and hence y cannot be consistent.
+
+(1).
+
+• All
+
+rules are instances of
+
+In this case,
+(c, r, c) ∈ D(y) for some common entity c and relation
+r and (r,type,acyclicTransitiveRelation)∈ D(y)
+and hence y cannot be consistent.
+
+(2).
+
+• n = 2, one rule is an instance of (1), and the other an
+instance of (2). In this case, (c, r, c) ∈ D(y) for some
+common entity c and relation r and (r,type,acyclic-
+TransitiveRelation)∈ D(y) and hence y cannot be
+consistent.
+
+WWW 2007 / Track: Semantic WebSession: Ontologies705Lemma 2: [No derivable facts in canonical base]
+Let y be a consistent YAGO ontology and b a canonical base
+of y and let B = range(b). Let f ∈ D(y) be a fact such that
+D(y)\{f} → D(y). Then f 6∈ B.
+
+Proof: Since b is a base, there is a sequence of sets of facts
+B0, ..., Bn such that
+
+B = B0 → B1 → B2 → . . . → Bn−1 → Bn = D(y)
+
+This sequence is a sequence of rule applications, where each
+rule has the form S ,→ s, where S ⊆ F and s ∈ F. We
+call S the premise of the rule and s its conclusion. We say
+that a fact t contributes to a set of facts T in the sequence
+B0, ...Bn, if there is a sequence of rule applications r1, ...rm,
+so that t is in the premise of r1, the conclusion of r1 is in
+the premise of r2 etc. and the conclusion of rm is in T .
+Now assume f ∈ B. Since D(y)\{f} → D(y), there must
+be a rule G ,→ f with G ⊆ D(y)\{f}. Let i ∈ [0, n] be
+the smallest index such that Bi ⊇ G. f cannot contribute
+to G, because then there would exist circular rules in the
+sense of the preceding lemma. Hence f does not contribute
+to G. Then B\{f} is also a base, because the above rule
+applications can be re-ordered so that f is derived from Bi.
+Hence b cannot be a canonical base.
+
+Now we are ready to prove Theorem 2:
+
+Theorem 2: [Uniqueness of the Canonical Base]
+The canonical base of a consistent YAGO ontology is unique.
+
+Proof: Let b be a canonical base of a consistent YAGO
+ontology y. Let B = range(b). We deﬁne the set
+C := D(y) \ {f | D(y)\{f} → D(y)}
+
+Intuitively speaking, C contains only those facts that cannot
+be derived from other facts in D(y). By the previous lemma,
+B ⊆ C. Assume B ⊂ C, i.e. there exists a fact f ∈ C,
+f 6∈ B. Since C ⊆ D(y), f ∈ D(y). Since b is a base, there
+exists a rule S ,→ f for some S ⊆ D(y). Hence f 6∈ C, which
+is a contradiction. Hence B = C and every canonical base
+equals b.
+
+This theorem entails that the canonical base of a YAGO
+ontology can be computed by removing all facts that can be
+derived from other facts in the set of derivable facts.
+
+C. REFERENCES
+[1] E. Agichtein and L. Gravano. Snowball: extracting
+relations from large plain-text collections. In ICDL,
+2000.
+
+[2] F. Baader and T. Nipkow. Term rewriting and all
+that. Cambridge University Press, New York, NY,
+USA, 1998.
+
+[3] R. C. Bunescu and M. Pasca. Using encyclopedic
+
+knowledge for named entity disambiguation. In EACL,
+2006.
+
+[4] M. J. Cafarella, D. Downey, S. Soderland, and
+
+O. Etzioni. KnowItNow: Fast, scalable information
+extraction from the web. In EMNLP, 2005.
+
+[5] N. Chatterjee, S. Goyal, and A. Naithani. Resolving
+
+pattern ambiguity for english to hindi machine
+translation using WordNet. In Workshop on Modern
+Approaches in Translation Technologies, 2005.
+
+[6] S. Chaudhuri, V. Ganti, and R. Motwani. Robust
+identiﬁcation of fuzzy duplicates. In ICDE, 2005.
+
+[7] W. W. Cohen and S. Sarawagi. Exploiting dictionaries
+
+in named entity extraction: combining semi-markov
+
+extraction processes and data integration methods. In
+KDD, 2004.
+
+[8] H. Cunningham, D. Maynard, K. Bontcheva, and
+
+V. Tablan. GATE: A framework and graphical
+development environment for robust NLP tools and
+applications. In ACL, 2002.
+
+[9] O. Etzioni, M. J. Cafarella, D. Downey, S. Kok, A.-M.
+
+Popescu, T. Shaked, S. Soderland, D. S. Weld, and
+A. Yates. Web-scale information extraction in
+KnowItAll. In WWW, 2004.
+
+[10] C. Fellbaum, editor. WordNet: An Electronic Lexical
+
+Database. MIT Press, 1998.
+
+[11] J. Graupmann, R. Schenkel, and G. Weikum. The
+spheresearch engine for uniﬁed ranked retrieval of
+heterogeneous XML and web documents. In VLDB,
+2005.
+
+[12] I. Horrocks, O. Kutz, and U. Sattler. The even more
+
+irresistible SROIQ. In KR, 2006.
+
+[13] W. Hunt, L. Lita, and E. Nyberg. Gazetteers,
+
+wordnet, encyclopedias, and the web: Analyzing
+question answering resources. Technical Report
+CMU-LTI-04-188, Language Technologies Institute,
+Carnegie Mellon, 2004.
+
+[14] G. Ifrim and G. Weikum. Transductive learning for
+
+text classiﬁcation using explicit knowledge models. In
+PKDD, 2006.
+
+[15] D. Kinzler. WikiSense - Mining the Wiki. In
+
+Wikimania, 2005.
+
+[16] S. Liu, F. Liu, C. Yu, and W. Meng. An eﬀective
+
+approach to document retrieval via utilizing wordnet
+and recognizing phrases. In SIGIR, 2004.
+
+[17] C. Matuszek, J. Cabral, M. Witbrock, and
+
+J. DeOliveira. An introduction to the syntax and
+content of Cyc. In AAAI Spring Symposium, 2006.
+
+[18] I. Niles and A. Pease. Towards a standard upper
+
+ontology. In FOIS, 2001.
+
+[19] N. F. Noy, A. Doan, and A. Y. Halevy. Semantic
+
+integration. AI Magazine, 26(1):7–10, 2005.
+
+[20] P. Pantel and M. Pennacchiotti. Espresso: Leveraging
+generic patterns for automatically harvesting semantic
+relations. In ACL, 2006.
+
+[21] M. Ruiz-Casado, E. Alfonseca, and P. Castells.
+
+Automatic extraction of semantic relationships for
+WordNet by means of pattern learning from
+Wikipedia. In NLDB, pages 67–79, 2006.
+
+[22] S. Russell and P. Norvig. Artiﬁcial Intelligence: a
+
+Modern Approach. Prentice Hall, 2002.
+
+[23] R. Snow, D. Jurafsky, and A. Y. Ng. Semantic
+
+taxonomy induction from heterogenous evidence. In
+ACL, 2006.
+
+[24] S. Staab and R. Studer. Handbook on Ontologies.
+
+Springer, 2004.
+
+[25] F. M. Suchanek, G. Ifrim, and G. Weikum. Combining
+
+linguistic and statistical analysis to extract relations
+from web documents. In KDD, 2006.
+
+[26] F. M. Suchanek, G. Ifrim, and G. Weikum. LEILA:
+
+Learning to Extract Information by Linguistic
+Analysis. In Workshop on Ontology Population at
+ACL/COLING, 2006.
+
+[27] M. Theobald, R. Schenkel, and G. Weikum. TopX and
+
+XXL at INEX 2005. In INEX, 2005.
+
+[28] W3C. Sparql, 2005. retrieved from
+
+http://www.w3.org/TR/rdf-sparql-query/.
+
+WWW 2007 / Track: Semantic WebSession: Ontologies706

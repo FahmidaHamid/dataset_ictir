@@ -1,0 +1,437 @@
+The development of similarity search algorithms between web pages is motivated by the  related pages  queries of web  Research was supported by grants OTKA T 42481, T 42559, T 42706 and T 44733 of the Hungarian National Science Fund, and NKFP-2/0017/2002 project Data Riddle.
+Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+Distribution of these papers is limited to classroom use, and personal use by others.
+search engines and web document classi cation.
+Both applications require e cient evaluation of an underlying similarity function, which extracts similarities from either the textual content of pages or the hyperlink structure.
+This paper focuses on computing similarities solely from the hyperlink structure modeled by the web graph, with vertices corresponding to web pages and directed arcs to the hyperlinks between pages.
+In contrast to textual content, link structure is a more homogeneous and language independent source of information that is in general more resistant against spamming.
+The authors believe that complex link-based similarity functions with scalable implementations can play such an important role in similarity search as PageRank [27] does for query result ranking.
+Several link-based similarity functions have been suggested over the web graph.
+To exploit the information in multi-step neighborhoods, SimRank [20] and the Companion [11] algorithms were introduced by adapting link-based ranking schemes [27, 21].
+Further methods arise from graph theory such as similarity search based on network  ows [23].
+We refer to [22], which contains an exhaustive list of link-based similarity search methods.
+Unfortunately, no scalable algorithm has so far been published that allows the computation of the above similarity scores in case of a graph with billions of vertices.
+First, all the above algorithms require random access to the web graph, which does not  t into main memory with standard graph representations.
+In addition, SimRank iterations update and store a quadratic number of variables: [20] reports experiments on graphs with less than 300K vertices.
+Finally, related page queries require o line precomputation, since a document cannot be compared to all the others one-by-one at query time.
+It is not clear what we could precompute for an algorithm like the one in [23] with no information about the queried page.
+In this paper we give scalable algorithms that can be used to evaluate multi-step link-based similarity functions over billions of pages on a distributed architecture.
+With a single machine, we conducted experiments on a test graph of 80M pages.
+Our primary focus is SimRank, which recursively re nes the cocitation measure analogously to how PageRank re nes in-degree ranking [27].
+We give an improved Sim-Rank variant; in addition, we also handle a similarity function that naturally extends the Jaccard coe cient from one-step to multi-step neighborhoods.
+Notice that scalability here is nontrivial, since the Jaccard coe cient may involve extremely large sets: the multi-step neighborhood of a vertex usually contains a large portion of the pages [4].
+All our methods are Monte Carlo: we precompute independent sets of  ngerprints for the vertices, such that the similarities can be approximated from the  ngerprints at query time.
+We only approximate the exact values; fortunately, the precision of approximation can be easily increased on a distributed architecture by precomputing independent sets of  ngerprints and querying them in parallel.
+We started to investigate the scalability of SimRank in [12], and we gave a Monte Carlo algorithm with the naive representation as outlined in the beginning of Section 2.
+The main contributions of this paper are summarized as follows:   In Section 2.1 we present a scalable algorithm to compute approximate SimRank scores by using a database of  n-gerprint trees, a compact and e cient representation of precomputed random walks.
+  In Section 2.2 we introduce and analyze PSimRank, a novel variant of SimRank with better theoretical properties and a scalable algorithm.
+  In Section 2.3 Jaccard coe cient is naturally extended to multi-step neighborhoods with a scalable algorithm.
+  In Section 3 we show that all the proposed Monte Carlo similarity search algorithms are especially suitable for distributed computing.
+  In Section 4 we prove that our Monte Carlo similarity search algorithms approximate the similarity scores with a precision that tends to one exponentially with the number of  ngerprints.
+  In Section 5 we report experiments about the quality and performance of the proposed methods evaluated on the Stanford WebBase graph of 80M vertices [19].
+Due to space constraints, most of the proofs are only presented in the full version [13] of this paper.
+In the remainder of the introduction we discuss related results, de ne  scalability,  and recall some basic facts about SimRank.
+Unfortunately the algorithmic details of  related pages  queries in commercial web search engines are not publicly available.
+We believe that an accurate similarity search algorithm should exploit both the hyperlink structure and the textual content.
+For example, the pure link-based algorithms like SimRank can be integrated with classical text-based information retrieval tools [1] by simply combining the similarity scores.
+Alternatively, the similarities can be extracted from the anchor texts referring to pages as proposed by [8, 16].
+Recent years have witnessed a growing interest in the scal-ability issue of link-analysis algorithms.
+Palmer et al. [28] formulated essentially the same scalability requirements that we will present in Section 1.2; they give a scalable algorithm to estimate the neighborhood functions of vertices.
+Analogous goals were achieved by the development of PageRank: Brin and Page [27] introduced PageRank algorithm using main memory of size proportional to the number of vertices.
+Then external memory extensions were published in [9, 15].
+A large amount of research was done to attain scalability for personalized PageRank [17, 14].
+The scalability of Sim-Rank was also addressed by pruning [20], but this technique could only scale up to a graph with 300K vertices in the experiments of [20].
+In addition, no theoretical argument was published about the error of approximating SimRank scores by pruning.
+In contrast, the algorithms of Section 2 were used to compute SimRank scores on a test graph of 80M vertices, and the theorems of Section 4 give bounds on the error of the approximation.
+The key idea of achieving scalability by Monte Carlo algorithms was inspired by the seminal papers of Broder et al. [5, 7] and Cohen [10] estimating the resemblance of text documents and size of transitive closure of graphs, respectively.
+Both papers utilize min-hashing, the  ngerprinting technique for the Jaccard coe cient that was also applied in [16] to scale similarity search based on anchor text.
+The main contribution of Section 2.3 is that we are able to generate  ngerprints for multi-step neighborhoods with external memory algorithms.
+Monte Carlo algorithms with simulated random walks also play an important role in a di erent aspect of web algorithms, when a crawler attempts to download a uniform sample of web pages and compute various statistics [18, 29, 2] or page decay [3].
+We refer to the book of Motwani and Raghavan [25] for more theoretical results about Monte Carlo algorithms solving combinatorial problems.
+In our framework similarity search algorithms serve two types of queries: the output of a sim(u, v) similarity query is the similarity score of the given pages u and v; the output of a related (u) related query is the set of pages for which the similarity score with the queried page u is larger than the threshold  .
+To serve queries e ciently we allow o line precomputation, so the scalability requirements are formulated in the indexing-query model : we precompute an index database for a given web graph o line, and later respond to queries online by accessing the database.
+We say that a similarity search algorithm is scalable if the following properties hold:   Time: The index database is precomputed within the time of a sorting operation, up to a constant factor.
+To serve a query the index database can only be accessed a constant number of times.
+  Memory: The algorithms run in external memory [24]: the available main memory is constant, so it can be arbitrarily smaller than the size of the web graph.
+  Parallelization: Both precomputation and queries can be implemented to utilize the computing power and storage capacity of tens to thousands of servers interconnected with a fast local network.
+Observe that the time constraint implies that the index database cannot be too large.
+In fact our databases will be linear in the number V of vertices (pages).
+The memory requirements do not allow random access to the web graph.
+We will  rst sort the edges by their ending vertices using external memory sorting.
+Later we will read the entire set of edges sequentially as a stream, and repeat this process a constant number of times.
+SimRank was introduced by Jeh and Widom [20] to formalize the intuition that  two pages are similar if they are referenced by similar pages.  The recursive SimRank iteration propagates similarity scores with a constant decay factor c   (0, 1) for vertices u 6= v: sim`+1(u, v) = c |I(u)| |I(v)| Xu0 I(u) Xv0 I(v) sim`(u0, v0) , where I(x) denotes the set of vertices linking to x; if I(u) or I(v) is empty, then sim`+1(u, v) = 0 by de nition.
+For a vertex pair with u = v we simply let sim`+1(u, v) = 1.
+The SimRank iteration starts with sim0(u, v) = 1 for u = v and sim0(u, v) = 0 otherwise.
+The SimRank score is de ned as the limit lim`  sim`(u, v); see [20] for the proof of convergence.
+Throughout this paper we refer to sim`(u, v) as a SimRank score, and regard ` as a parameter of SimRank.
+The SimRank algorithm of [20] calculates the scores by iterating over all pairs of web pages, thus each iteration requires  (V 2) time and memory, where V denotes the number of pages.
+Thus the algorithm does not meet the scalabil-ity requirements by its quadratic running time and random access to the web graph.
+We recall two generalizations of SimRank from [20], as we will exploit these results frequently.
+SimRank framework refers to the natural generalization that replaces the average function in SimRank iteration by an arbitrary function of the similarity scores of pairs of in-neighbors.
+Obviously, the convergence does not hold for all the algorithms in the framework, but still sim` is a well-de ned similarity ranking.
+Several variants are introduced in [20] for di erent purposes.
+For the second generalization of SimRank, suppose that a random walk starts from each vertex and follows the links backwards.
+Let  u,v denote the random variable equal to the  rst meeting time of the walks starting from u and v;  u,v =  , if they never meet; and  u,v = 0, if u = v.
+In addition, let f be an arbitrary function that maps the meeting times 0, 1, .
+.
+.
+,   to similarity scores.
+De nition 1.
+The expected f meeting distance for vertices u and v is de ned as   (f ( u,v)).
+The above de nition is adapted from [20] apart from the generalization that we do not assume uniform, independent walks of in nite length.
+In our case the walks may be pairwise independent, correlated,  nite or in nite.
+For example, we will introduce PSimRank as an expected f meeting distance of pairwise coupled random walks in Section 2.2.
+The following theorem justi es the expected f meeting distance as a generalization of SimRank.
+It claims that Sim-Rank is equal to the expected f meeting distance with uniform independent walks and f (t) = ct, where c denotes the decay factor of SimRank with 0 < c < 1.
+Theorem 1.
+For uniform, pairwise independent set of reversed random walks of length `, the equality   (c u,v ) = sim`(u, v) holds, whether ` is  nite or not.
+Algorithm 1 Indexing (naive method) and similarity query N =number of  ngerprints, `=path length, c=decay factor.
+Indexing: Uses random access to the graph.
+for every vertex j of the web graph do Fingerprint[i][j][]:=random reversed path of length ` starting from j.
+Query sim(u,v): 1: sim:=0
+
+ Let k be the smallest o set with Fingerprint[i][u][k]=Fingerprint[i][v][k] if such k exists then
+
+
+ sim:=sim+ck
+
+
+ In this section we give the  rst scalable algorithm to approximate SimRank scores.
+In addition, we introduce new similarity functions accompanied by scalable algorithms: PSim-Rank and the extended Jaccard coe cient.
+All the algorithms  t into the framework of Monte Carlo similarity search algorithms that will be introduced through the example of SimRank.
+Recall that Theorem 1 expressed SimRank as the expected value sim`(u, v) =   (c u,v ) for vertices u, v. Our algorithms generate reversed random walks, calculate the  rst meeting time  u,v and estimate sim`(u, v) by c u,v .
+To improve the precision of approximation, the sampling process is repeated N times and the independent samples are averaged.
+The computation is shared between indexing and querying as shown in Algorithm 1, a naive implementation.
+During the precomputation phase we generate and store N independent reversed random walks of length ` for each vertex, and the  rst meeting time  u,v is calculated at query time by reading the random walks from the precomputed index database.
+The main concept of Monte Carlo similarity search already arises in this example.
+In general  ngerprint refers to a random object (a random walk in the example of Sim-Rank) associated with a node in such a way, that the expected similarity of a pair of  ngerprints is the similarity of their nodes.
+The Monte Carlo method precomputes and stores  ngerprints in an index database and estimates similarity scores at query time by averaging.
+The main di cul-ties of this framework are as follows:   During indexing (generating the  ngerprints) we have to meet the scalability requirements of Section 1.2.
+For example, generating the random walks with the naive indexing algorithm requires random access to the web graph, thus we need to store all the links in main memory.
+To avoid this, we will  rst introduce algorithms utilizing  (V ) main memory and then algorithms using memory of constant size, where V denotes the number of vertices.
+These computational requirements are referred to as semi-external memory and external memory models [24], respectively.
+The parallelization techniques will be discussed in Section 3.
+The proof is published in [20] for the in nite case, and it can be easily extended to the  nite case.
+  To achieve a reasonably sized index database, we need a compact representation of the  ngerprints.
+In the case of the previous example, the index database (including an inverted index for related queries) is of size 2   V   N   `.
+In practical examples we have V   109 vertices and N = 100  ngerprints of length ` = 10, thus the database is in total
+ that allows us to encode the  ngerprints in 2   V   N cells, resulting in an index database with a size of 800 GB.
+  We need e cient algorithms for evaluating queries.
+For queries the main idea is that the similarity matrix is sparse, for a page u there are relatively few other pages that have non-negligible similarity to u.
+We will give algorithms that enumerate these pages in time proportional to their number.
+The main idea of this section is that we do not generate totally independent sets of reversed random walks as in Algorithm 1.
+Instead, we generate a set of coalescing walks: each pair of walks will follow the same path after their  rst meeting time.
+(This coupling is commonly used in the theory of random walks.)
+More precisely, we start a reversed walk from each vertex.
+In each time step, the walks at different vertices step independently to an in-neighbor chosen uniformly.
+If two walks are at the same vertex, they follow the same edge.
+Notice that we can still estimate sim`(u, v) =   (c u,v ) from the  rst meeting time  u,v of coalescing walks, since any pair of walks are independent until they  rst meet.
+We will show that the meeting times of coalescing walks can be represented in a surprisingly compact way by storing only one integer for each vertex instead of storing walks of length `.
+In addition, coalescing walks can be generated more e ciently by the algorithm discussed in Section 2.1.3 than totally independent walks.
+A set of coalescing reversed random walks can be represented in a compact and e cient way.
+The main idea is that we do not need to reconstruct the actual paths as long as we can reconstruct the  rst meeting times for each pair of them.
+To encode this, we de ne the  ngerprint graph (FPG) for a given set of coalescing random walks as follows.
+The vertices of FPG correspond to the vertices of the web graph indexed by 1, 2, .
+.
+.
+, V .
+For each vertex u, we add a directed edge (u, v) to the FPG for at most one vertex v with (1) v < u and the  ngerprints of u and v  rst meet at time  u,v <  ; (2) among vertices satisfying (1) vertex v has earliest meeting time  u,v; (3) and given (1-2), the index of v is minimal.
+Furthermore we label the edge (u, v) with  u,v.
+An example for a  ngerprint graph is shown as Fig. 1.
+The most important property of the compact FPG representation that it still allows us to reconstruct  u,v values with the following algorithm.
+For a pair of nodes u and v consider the unique paths in the FPG starting from u and v. If these paths have no vertex in common, then  u,v =  .
+Otherwise take the paths until the  rst common node w; let t1 and t2 denote the labels of the edges on the paths pointing to w; and let t1 = 0 (or t2 = 0), if u = w (or v = w).
+u1 u2 u3 u4 u5 u2 u5
+ u4
+ u3
+
+ u1 Figure 1: Representing the  rst meeting times of coalescing reversed walks of u1, u2, u3, u4 and u5 (above) with a  ngerprint graph (below).
+For example, the  ngerprints of u2 and u5  rst meet at time  u2,u5 = max{3, 4} = 4.
+Then  u,v = max{t1, t2}.
+(See the example of Fig.
+1.)
+The correctness of this algorithm with further properties of the FPG is summarized by the following lemma.
+Lemma 2.
+Consider the  ngerprint graph for a set of coalescing random walks.
+This graph is a directed acyclic graph, each node has out-degree at most 1, thus it is a forest of rooted trees with edges directed towards the roots.
+Consider the unique path in the  ngerprint graph starting from vertex u.
+The indices of nodes it visits are strictly decreasing, and the labels on the edges are strictly increasing.
+Any  rst meeting time  u,v can be determined by  u,v = max{t1, t2} as detailed above.
+By the lemma, the  ngerprint graph is a collection of rooted trees referred to as  ngerprint trees.
+The main observation for storage and query is that the partition of nodes into trees preserves the locality of the similarity function.
+The  rst advantage of the  ngerprint graph (FPG) is that it represents all  rst meeting times for a set of coalescing walks of length ` in compact manner.
+It is compact, since every vertex has at most one out-edge in an FPG, so the size of one graph is V , and N   V bounds the total size.1 This is a signi cant improvement over the naive representation of the walks with a size of N   V   `.
+The second important property of the  ngerprint graph is that two vertices have nonzero estimated similarity i  they fall into the same component (the same  ngerprint tree).
+Thus, when serving a related(u) query it is enough to read and traverse from each of the N  ngerprint graphs the unique tree containing u.
+Therefore in a  ngerprint database, we store the  ngerprint graphs ordered as a collection of  ngerprint trees, and for each vertex u we also store the identi ers of the N trees containing u.
+By adding the iden-ti ers the total size of the database is no more than 2   N   V .
+A related(u) query requires N + 1 accesses to the  nger-print database: one for the tree identi ers and then N more for the  ngerprint trees of u.
+A sim(u, v) query accesses the  ngerprint database at most N + 2 times, by loading two lists of identi ers and then the trees containing both u
+ To be more precise we need V (dlog(V )e + dlog(`)e) bits for an FPG to store the labelled edges.
+Notice that the weights require no more than dlog(`)e = 4 bits for each vertex for typical value of ` = 10.
+Algorithm 2 Indexing (using 2   V main memory) N =number of  ngerprints, `=length of paths.
+Uses subroutine GenRndInEdges that generates a random in-edge for each vertex in the graph and stores its source in an array.
+NextIn[] := GenRndInEdges(); for every vertex j with PathEnd[j]6= stopped  do for k:=1 to ` do for every vertex j of the web graph do PathEnd[j] := j /*start a path from j*/ PathEnd[j]:=NextIn[PathEnd[j]] /*extend the path*/
+
+ SaveNewFPGEdges(PathEnd) Collect edges into trees and save as FPGi.
+and v. For both type of queries the trees can be traversed in time linear in the size of the tree.
+Notice that the query algorithms do not meet all the scal-ability requirements: although the number of database accesses is constant (at most N +2), the memory requirement for storing and traversing one  ngerprint tree may be as large as the number of pages V .
+Thus, theoretically the algorithm may use as much as V memory.
+Fortunately, in case of web data the algorithm performs as an external memory algorithm.
+As veri ed by our numerical experiments on 80M pages (see in Section 5.3) the average sizes of  ngerprint trees are approximately 100 200 for reasonable path lengths.
+Even the largest trees in our database had at most 10K 20K vertices, thus 50Kbytes of data needs to be read for each database access in worst case.
+It remains to present a scalable algorithm to generate coalescing sets of walks and compute the  ngerprint graphs.
+As opposed to the naive algorithm generating the  n-gerprints one-by-one, we generate all  ngerprints together.
+With one iteration we extend all partially generated  nger-prints by one edge.
+To achieve this, we generate one uniform in-edge ej for each vertex j independently.
+Then extend with edge ej each of those  ngerprints that have the same last node j.
+This method generates a coalescing set of walks, since a pair of walks will be extended with the same edge after they  rst meet.
+Furthermore, they are independent until the  rst meeting time.
+The pseudo-code is displayed as Algorithm 2, where Next-In[j] stores the starting vertex of the randomly chosen edge ej , and PathEnd[j] is the ending vertex of the partial  nger-print that started from j.
+To be more precise, if a group of walks already met, then PathEnd[j]= stopped  for every member j of the group except for the smallest j.
+The Save-NewFPGEdges subroutine detects if a group of walks meets in the current iteration, saves the  ngerprint tree edges corresponding to the meetings and sets PathEnd[j]= stopped  for all non-minimal members j of the group.
+SaveNewFPG-Edges detects new meetings by a linear time counting sort of the non-stopped elements of PathEnd array.
+The subroutine GenRndInEdges may generate a set of random in-edges with a simple external memory algorithm if the edges are sorted by the ending vertices.
+Notice that a signi cant improvement can be achieved by generating and u v       Figure 2: When SimRank fails: pages u and v have k witnesses for similarity, yet their SimRank score is smaller than 1 k .
+saving all the required random edge-sets together during a single scan over the edges of the web graph.
+Thus, all the N   ` edge-scans can be replaced by one edge-scan saving many sets of in-edges.
+Then GenRndInEdges sequentially reads the N   ` arrays of size V from disk.
+The algorithm outlined above  ts into the semi-external memory model, since it utilizes 2   V main memory to store the PathEnd and NextIn arrays.
+(The counter sort operation of SaveNewFPGEdges may reuse NextIn array, so it does not require additional storage capacity.)
+The algorithm can be easily converted into the external memory model by keeping PathEnd and NextIn arrays on the disk and by replacing Lines 6-8 of Algorithm 2 with external sorting and merging processes.
+Furthermore, at the end of the indexing the individual  ngerprint trees can be collected with ` sorting and merging operations, as the longest possible path in each  ngerprint tree is ` (due to Lemma 2 the labels are strictly increasing but cannot grow over `).
+In this section we give a new SimRank variant with properties extending those of Minimax SimRank [20], a non-scalable algorithm that cannot be formulated in our framework.
+The new similarity function will be expressed as an expected f meeting distance by modifying the distribution of the set of random walks and by keeping f (t) = ct.
+A de ciency of SimRank can be best viewed by an example.
+Consider two very popular web portals.
+Many users link to both pages on their personal websites, but these pages are not reported to be similar by SimRank.
+An extreme case is depicted on Fig. 2 with portals u and v having the same in-neighborhood of size k. Though the k pages are totally dissimilar in the link-based sense, we would still intuitively regard u and v as similar.
+Unfortunately SimRank is counter-intuitive in this case, as sim`(u, v) = c   1 k converges to zero with the number k of common in-neighbors.
+We de ne PSimRank as the expected f meeting distance of a set of random walks, which are not independent, as in case of SimRank, but are coupled so that a pair of them can  nd each other more easily.
+We solve the de ciency of SimRank by allowing the random walks to meet with higher probability when they are close to each other: a pair of random walks at vertices u0, v0 will advance to the same vertex (i.e., meet in one step) with probability of the Jaccard coe cient |I(u0) I(v0)| |I(u0) I(v0)| of their in-neighborhoods I(u0) and I(v0).
+De nition 2.
+PSimRank is the expected f meeting distance with f (t) = ct (for some 0 < c < 1) of the following set of random walks.
+For each vertex u, the random walk Xu makes ` uniform independent steps on the transposed web graph starting from point u.
+For each pair of vertices u, v and time t, assume that the random walks are at position Xu(t) = u0 and Xv(t) = v0.
+Then   with probability |I(u0) I(v0)| uniformly chosen vertex of I(u0)   I(v0); |I(u0) I(v0)| they both step to the same   with probability |I(u0)\I(v0)| |I(u0) I(v0)| the walk Xu steps to a uniform vertex in I(u0) \ I(v0) and the walk Xv steps to an independently chosen uniform vertex in I(v0);   with probability |I(v0)\I(u0)| |I(u0) I(v0)| the walk Xv steps to a uniform vertex in I(v0) \ I(u0) and the walk Xu steps to an independently chosen uniform vertex in I(u0).
+We give a set of random walks satisfying the coupling of the de nition.
+For each time t   0 we choose an independent random permutation  t on the vertices of the web graph.
+At time t if the random walk from vertex u is at Xu(t) = u0, it will step to the in-neighbor with smallest index given by the permutation  t, i.e., Xu(t + 1) = argmin u00 I(u0)  t(u00) It is easy to see that the random walk Xu takes uniform independent steps, since we have a new permutation for each step.
+The above coupling is also satis ed, since for any pair u0, v0 the vertex argminw I(u0) I(v0)  t(w) falls into the sets I(u0)   I(v0), I(u0) \ I(v0), I(v0) \ I(u0) with respective probabilities |I(u0)   I(v0)| |I(u0)   I(v0)| , |I(u0) \ I(v0)| |I(u0)   I(v0)| and |I(v0) \ I(u0)| |I(u0)   I(v0)| .
+Now we prove that PSimRank is in the SimRank framework, i.e., the scores can be formulated by iterations that propagate similarities over the pairs of in-neighbors analogously to SimRank.
+The PSimRank-iterations provide an exact quadratic algorithm to compute PSimRank scores.
+Furthermore, the iterative formulation indicates that PSim-Rank scores are determined by De nition 2 and the values do not depend on the actual choice of the coupling.
+Let  u,v denote the  rst meeting time of the walks of Xu, Xv starting from vertices u, v; and  u,v =   if the walks never meet.
+Then PSimRank scores for path length ` can be expressed by de nition as psim`(u, v) =   (c u,v ).
+It is trivial that psim0(u, v) = 1, if u = v; and otherwise psim0(u, v) = 0.
+By applying the law of total expectation on the  rst step of the walks Xu and Xv, and time shift we get the following PSimRank iterations: psim`+1(u, v) = 1, if u = v; psim`+1(u, v) = 0, if I(u) =   or I(v) =  ; psim`+1(u, v) = c   |I(u) I(v)| |I(u) I(v)|   1+
+ + |I(u)\I(v)| |I(u) I(v)|   + |I(v)\I(u)| |I(u) I(v)|   |I(u)\I(v)||I(v)| Pu0 I(u)\I(v) |I(v)\I(u)||I(u)| Pv0 I(v)\I(u) v0 I(v)
+ u0 I(u) psim`(u0, v0)+ psim`(u0, v0) .
+To achieve a scalable algorithm for PSimRank we modify the SimRank indexing and query algorithms introduced in Section 2.1.
+The following result allows us to use the compact representation of  ngerprint graphs.
+Lemma 3.
+Any set of random walks satisfying the PSim-Rank requirements are coalescing, i.e., any pair follows the same path after their  rst meeting time.
+To apply the indexing algorithm of SimRank, we only need to ensure the pairwise coupling.
+This can be accomplished by simply replacing the GenRndInEdges procedure.
+Recall, that for SimRank this procedure generated one independent, uniform in-edge for each vertex v in the graph.
+In case of PSimRank, GenRndInEdges chooses a permutation   at random; and then for each vertex v the in-neighbor with smallest index under the permutation   is selected, i.e., vertex argminv0 I(v)  (v0) is chosen.
+As in the case of the GenRndInEdges for SimRank, all the required sets of random in-edges can be generated within a single scan over the edges of the web graph, if the edges are sorted by the ending vertices.
+The random permutations can be stored in small space by random linear transformations as in [6].
+With this method the external memory implementation of SimRank can be extended to PSimRank.
+In this section we formally de ne the extended Jaccard coe cient, and give e cient (Monte Carlo) approximation algorithms in the indexing-query model by applying min-hashing [5, 7], the well-known  ngerprinting technique for estimating Jaccard coe cient between arbitrary sets.
+The main contribution of this section is that we give semi-external memory, external memory and distributed algorithms similar to PageRank iterations [27, 9] that compute the min-hash  ngerprints for the multi-step neighborhoods of vertices.
+The proposed methods can be further parallelized using the methods described in Section 3.
+The extended Jaccard coe cient is de ned as the exponentially weighted sum of the Jaccard coe cients of larger neighborhoods.
+De nition 3.
+Let Ik(v) be the k-in-neighborhood of v, i.e., the set of vertices from where vertex v can be reached using at most k directed edges.
+The extended Jaccard coe cient, XJaccard for length ` of vertices u and v is de ned as xjac`(u, v) = `Xk=1 |Ik(u)   Ik(v)| |Ik(u)   Ik(v)|   ck(1   c) We will use the following min-hash  ngerprinting technique for Jaccard coe cients [5, 7]: take a random permutation   of the vertices and represent each set Ik(v) with the minimum value of this permutation over the set Ik(v) as a  ngerprint.
+Then for each distance k and vertices u, v the probability of these  ngerprints to match equals the Jaccard coe cient |Ik (u) Ik(v)| |Ik (u) Ik(v)| .
+We can use this for each k = 1, .
+.
+.
+, ` to get an ` sized  ngerprint of each vertex, from which the extended Jaccard coe cients can be approximated for any pair of vertices.
+More precisely, we calculate the following  ngerprint for each vertex v and each k = 1, .
+.
+.
+, `: fpk(v) = min v0 Ik (v)  (v0) generate a random permutation  .
+for every vertex j of the web graph do Algorithm 3 Precomputing extended Jaccard coe cients N =number of  ngerprints, `=length of  ngerprints.
+for every edge (u, v) of the web graph do NFP[v]:=min(NFP[v],FP[u]) save array NFP[] as FPk[] NFP[j]:= (j) /*start the  ngerprint*/ for k:=1 to ` do Then by taking these as random variables we get a probabilistic formulation (note that we use the same random permutation   for each step): xjac`(u, v) =    `Xk=1 ck(1   c)   {fpk(u) = fpk(v)}    Using this equivalence we can take N independent sample to generate N sets of  ngerprints.
+Upon a query xjac`(u, v) we load all the  ngerprints for u and v, and average the results of them to get an unbiased estimate of xjac`(u, v).
+For serving related queries we load the  ngerprints of the queried page and use standard inverted indexing techniques to  nd all the pages that have matching parts in their  ngerprints.
+Serving XJaccard queries requires a database of size 2   V   N   `, a similarity query uses two database accesses, and a related query uses up to 1 + N   ` database accesses.
+As we will show in Section 5, the preferred length of  ngerprints is approximately ` = 4 on the web graph, thus these  g-ures are still reasonable.
+Furthermore, the factor N can be eliminated by using N way parallelization, as discussed in Section 3.
+We give a semi-external memory algorithm  rst.
+The key observation is that we use the same permutation for generating all steps of the  ngerprint, which allows the following recursion: fpk(u) = min u0 I(u) {u} fpk 1(u0) Using this formula we can extend the  ngerprints by one step using one edge-scan and the  ngerprints of the previous step (see Algorithm 3).
+Algorithm 3 for semi-external memory indexing of extended Jaccard coe cients is very similar to the classic Page-Rank computing method using power-iteration: each iteration scans the entire edge-set and updates a vector (indexed by the vertices) using the vector computed by the previous iteration.
+This allows us to adapt the external memory PageRank algorithms [9, 15] and the distributed indexing technique [14] designed for personalized PageRank.
+In total with N = 100 and ` = 4 the precomputation costs for extended Jaccard coe cients are thus similar to the precomputation cost for 400 PageRank iterations, with one remarkable di erence: while PageRank can only be computed sequentially, the precomputation of extended Jaccard coe cients can be parallelized up to N way.
+In this section we discuss the parallelization possibilities of our methods.
+We show that all of them exhibit features (such as fault tolerance, load balancing and dynamic adaptation to workload) which makes them extremely applicable in large-scale web search engines.
+All similarity methods we have given in this paper are organized around the same concepts:   we compute a similarity measure by averaging N independent samples from a certain random variable;   the independent samples are stored in N instances of an index database, each capable of producing a sample of the random variable for any pair of vertices.
+The above framework allows a straightforward paralleliza-tion of both the indexing and the query: the computation of independent index databases can be performed on up to N di erent machines.
+Then the databases are transferred to the backend computers that serve the query requests.
+When a request arrives to the frontend server, it asks all (up to N ) backend servers, averages their answers and returns the results to the user.
+The Monte Carlo parallelization scheme has many advantages that make it perfectly suitable to large-scale web search engines: Fault tolerance.
+If one or more backend servers cannot respond to the query in time, then the frontend can aggregate the results of the remaining ones and calculate the estimate from the available answers.
+This will not in uence service availability, and results in a slight loss of precision.
+Load balancing.
+In case of very high query loads, more than N backend servers (database servers) can be employed.
+A simple solution is to replicate the individual index databases.
+Better results are achieved if one calculates an independent index database for all the backend servers.
+In this case it su ces to ask any N backend servers for a proper precision answer.
+This allows seamless load balancing, i.e., you can add more backend servers one-by-one as the demand increases.
+Furthermore, this parallelization allows dynamic adaptation to workload.
+During times of excessive load the number of backend servers asked for each query (N ) can be automatically reduced to maintain fast response times and thus service integrity.
+Meanwhile, during idle periods, this value can be increased to get higher precision for free (along with better utilization of resources).
+We believe that this feature is extremely important in the applicability of our results.
+As we have seen in earlier sections, a crucial parameter of our methods is the number N of  ngerprints.
+The index database size, indexing time, query time and database accesses are all linear in N .
+In this section we formally analyze the number of  ngerprints needed for a given precision approximation.
+Our theorems show that even a modest number of  ngerprints (e.g., N = 100) su ces for the purposes of a web search engine.
+To state our results we need a suitably general model that can accommodate our methods for SimRank, PSimRank and XJaccard.
+Suppose that a Monte Carlo algorithm assigns N independent sets of  ngerprints for the vertices and for any pair u, v the similarity function sim(u, v) equals the expected value of the similarities of the  ngerprints.
+The similarities of the  ngerprints are calculated by a function that maps any pair of  ngerprints to a similarity score in range [0,1].
+The similarity function estimated by averaging the similarities of N sets of  ngerprints will be referred to as a Monte approximate scores of our algorithms for SimRank, PSim-Carlo similarity function and it will be denoted by ds m( ,  ).
+Naturally,   (ds m(u, v)) = sim(u, v) holds.
+Notice that the Rank and XJaccard can all be regarded as ds m( ,  ) Monte Carlo similarity functions.
+A more general model is de ned in the full version [13] of this paper.
+Theorem 4.
+For any Monte Carlo similarity function ds m the absolute error converges to zero exponentially in the number of  ngerprints N and uniformly over the pair of vertices u, v. More precisely, for any vertices u, v and any   > 0 we have N  2 Pr{|ds m(u, v)   sim(u, v)| >  } < 2e  6
+ Notice that the bound uniformly applies to all graphs and all similarity functions, such as SimRank, PSimRank and XJaccard.
+However, this bound concerns the convergence of the similarity score for one pair of vertices only.
+In the web search scenario, we typically use related queries, thus are interested in the relative order of pages according to their similarity to a given query page u.
+Theorem 5.
+For any Monte Carlo similarity function ds m and any  xed item u, the probability of interchanging two items in the similarity ranking of page u converges to zero exponentially in the number of  ngerprints N .
+More precisely, for each page v and w, such that sim(u, v) > sim(u, w) we have Pr{ds m(u, v) <ds m(u, w)} < e 0.3N  2 where   = sim(u, v)   sim(u, w).
+This theorem implies that the Monte Carlo approximation can e ciently capture the big di erences among the similarity scores.
+But when it comes to small di erences, then the error of approximation obscures the actual similarity ranking, and an almost arbitrary reordering is possible.
+We believe, that for a web search inspired similarity ranking it is su cient to distinguish between very similar, modestly similar, and dissimilar pages.
+We can formulate this requirement in terms of a slightly weakened version of classical information retrieval measures precision and recall [1].
+Consider a related query for page u with similarity threshold  , i.e., the problem is to return the set of pages S = {v : sim(u, v) >  }.
+Our methods approximate this set with bS = {v : ds m(u, v) >  }.
+We weaken the notion of precision and recall to exclude a small,   sized interval of similarity scores around the threshold  : let S+  = {v : sim(u, v) >   +  }, S  = {v : sim(u, v) >      }.
+Then the expected  recall of a Monte Carlo similarity function is  (| bS S+ |) |S+ | while the expected  precision is complement set of S .
+ (| bS S |)  (| bS|) .
+We denote by Sc   the Theorem 6.
+For any Monte Carlo similarity function ds m, any page u, similarity threshold   and   > 0 the expected  recall is at least 1   e  6
+ N  2 and the expected  precision is at least
+ |Sc  | |S+ |
+
+
+ e N  2   1 .
+This theorem shows, that the expected  recall converges to 1 exponentially and uniformly over all possible similarity functions, graphs and queried vertices of the graphs, while the expected  precision converges to 1 exponentially for any  xed similarity function, graph and queried node.
+This section presents our experiments on the repository of 80M pages crawled by the Stanford WebBase project in
+ ments:   How do the parameters `, N and c e ect the quality of the similarity search algorithms?
+The dependence on path length ` show that multi-step neighborhoods of pages contain more valuable similarity information than single-step neighborhoods for up to `   5.
+  How do the qualities of SimRank, PSimRank and XJac-card relate to each other?
+We conclude that PSimRank outperforms all the other methods.
+  What are the average and maximal sizes of  ngerprint trees for SimRank and PSimRank?
+Recall that the running time and memory requirement of query algorithms are proportional to these sizes.
+We measured sizes as small as 100   200 on average implying fast running time with low memory requirement.
+We brie y recall the method of Haveliwala et al. [16] to measure the quality of similarity search algorithms.
+The similarity search algorithms will be compared to a ground truth similarity ordering extracted from the Open Directory Project (ODP, [26]) data, a hierarchical collection of webpages.
+The ODP category tree implicitly encodes the similarity information, which can be decoded as follows.
+The ODP tree is collapsed into a  xed depth, such that the leaves contain the classes of documents (urls).
+Given a page u the rest of the documents fall into the same class as u, a sibling class, a cousin class, etc.
+This induces a partial ordering of the documents, which will be referred to as the familial ordering with respect to u.
+The key assumption is that the true similarity to a page u decreases monotonically with the familial ordering.
+Intuitively we want to express the expected quality of a similarity ordering to a query page u in comparison with the familial ordering of u, where u is chosen uniformly at random.
+The two orderings are compared by the Kruskal-Goodman   measure that gives score +1 to a pair v, w if the two orderings agree on the similarity ordering of the pair, and it gives  1 if they order the pair reversely.
+As both orderings are partial, the   value is de ned as the average of scores over all pairs that are comparable by both orderings.
+To obtain a more precise measure focusing on the top region of the familial ordering, sibling   measure [16] restricts the averaging to vertices that either fall into the same or a sibling class of u.
+We refer to [13] for subtle di erences between our measurements and the sibling   de ned in [16].
+with Various Parameter Settings All the experiments were performed on a web graph of
+ Base project in 2001.
+In our copy of the ODP tree 218,720 urls were found falling into 544 classes after collapsing the tree.
+The indexing process took 4 hours for SimRank, 14 hours for PSimRank and 27 hours for extended Jaccard co-e cient with path length ` = 10 and N = 100  ngerprints.
+We ran a semi-external memory implementation on a single machine with 2.8GHz Intel Pentium 4 processor, 2Gbytes main memory and Linux OS.
+The total size of the computed database was 68Gbytes for (P)SimRank and 640Gbytes for XJaccard.
+Since sibling   is based on similarity scores between vertices of the ODP pages, we only saved the  n-gerprints of the 218,720 ODP pages.
+A nice property of our methods is that this truncation (resulting in sizes of
+ returned scores for the ODP pages.
+The results of the experiments are depicted on Fig. 3.
+Recall that sibling   expresses the average quality of similarity search algorithms with   values falling into the range [ 1, 1].
+The extreme   = 1 result would show that similarity scores completely agree with the ground truth similarities, while   =  1 would show the opposite.
+Our   = 0.3   0.4 values imply that our algorithms agree with the ODP familial ordering in 65   70% of the pairs.
+The radically increasing   values for path length ` = 1, 2, 3, 4 on the top diagram supports our basic assumption that the multi-step neighborhoods of pages contain valuable similarity information.
+The quality slightly increases for larger values of ` in case of PSimRank and SimRank, while sibling   has maximum value for ` = 4 in case of XJaccard.
+Notice the di erence between the scale of the top diagram and the scales of the other two diagrams.
+The middle diagram shows the tendency that the quality of similarity search can be increased by smaller decay factor.
+This phenomenon suggests that we should give higher priority to the similarity information collected in smaller distances and rely on long-distance similarities only if necessary.
+The bottom diagram depicts the changes of   as a function of the number N of  ngerprints.
+The diagram shows slight quality increase as the estimated similarity scores become more precise with larger values of N .
+Finally, we conclude from all the three diagrams that PSimRank scores introduced in Section 2.2 outperform all the other similarity search algorithms.
+of  ngerprint tree queries Recall from Section 2.1.2 that for SimRank and PSim-Rank queries N  ngerprint trees are loaded and traversed.
+N can be easily increased with Monte Carlo parallelization, but the sizes of  ngerprint trees may be as large as the number V of vertices.
+This would require both memory and running time in the order of V , and thus violate the requirements of Section 1.2.
+The experiments verify that this problem does not occur in case of real web data.
+Fig. 4 shows the growing sizes of  ngerprint trees as a function of path length ` in databases containing  ngerprints for all vertices of the Stanford WebBase graph.
+Recall that the trees are growing when random walks meet and the corresponding trees join into one tree.
+It is not surprising that
+ g n i l i b
+
+ g n i l i b
+
+ g n i l i b
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ PSimRank SimRank XJaccard
+
+
+
+
+
+
+
+
+
+ Path length ` PSimRank SimRank XJaccard
+ Decay factor c PSimRank SimRank XJaccard
+ Number of  ngerprints N Figure 3: Varying algorithm parameters independently with default settings ` = 10 for SimRank and PSimRank ` = 4 for XJaccard, c = 0.1, and N = 100.
+the tree sizes of PSimRank exceed that of SimRank, since the correlated random walks meet each other with higher probabilities than the independent walks of SimRank.
+We conclude from the lower curves of Fig. 4 that the average tree sizes read for a query vertex is approximately 100  200, thus the algorithm performs like an external-memory algorithm on average in case of our web graph.
+Even the largest  ngerprint trees have no more than 10 20K vertices, which is still very small compared to the 80M pages.
+s e e r t t n i r p r e g n   f o e z i
+
+
+
+
+
+ PSimRank max SimRank max PSimRank avg SimRank avg
+
+
+
+
+
+
+
+
+
+ Path length ` Figure 4: Fingerprint tree sizes for 80M pages with N = 100 samples.
+We introduced the framework of link-based Monte Carlo similarity search to achieve scalable algorithms for similarity functions evaluated from the multi-step neighborhoods of web pages.
+Within this framework, we presented the  rst algorithm to approximate SimRank scores with a near linear external memory method and parallelization techniques suf- cient for large scale computation.
+In addition, we de ned new similarity functions PSimRank and the extended Jac-card coe cient with scalable algorithms.
+Our experiments conducted on the Stanford WebBase graph of 80M pages demonstrate scalability and suggest that PSimRank outperforms SimRank and extended Jaccard coe cient in terms of quality.
+We would like to thank Andr as Bencz ur, Katalin Friedl, D aniel Marx, Tam as Sarl os and Andrew Twigg for valuable discussions on this research and for improving this manuscript by several comments and suggestions.
+Furthermore, we wish to acknowledge the Stanford WebBase project for providing us with the web graph for the experiments.

@@ -1,0 +1,2155 @@
+Making the Most of your Triple Store:
+
+Query Answering in OWL 2 Using an RL Reasoner
+
+Yujiao Zhou
+
+Bernardo Cuenca Grau
+
+Ian Horrocks
+
+Computer Science Dept.
+
+University of Oxford
+
+yzhou@cs.ox.ac.uk
+
+Computer Science Dept.
+
+University of Oxford
+berg@cs.ox.ac.uk
+
+Computer Science Dept.
+
+University of Oxford
+
+ian.horrocks@cs.ox.ac.uk
+
+Zhe Wu
+
+Jay Banerjee
+
+Oracle Corporation
+
+Oracle Corporation
+
+alan.wu@oracle.com
+
+jayanta.banerjee@oracle.com
+
+ABSTRACT
+Triple stores implementing the RL proﬁle of OWL 2 are
+becoming increasingly popular. In contrast to unrestricted
+OWL 2, the RL proﬁle is known to enjoy favourable compu-
+tational properties for query answering, and state-of-the-art
+RL reasoners such as OWLim and Oracle’s native inference
+engine of Oracle Spatial and Graph have proved extremely
+successful in industry-scale applications. The expressive re-
+strictions imposed by OWL 2 RL may, however, be problem-
+atical for some applications. In this paper, we propose novel
+techniques that allow us (in many cases) to compute exact
+query answers using an oﬀ-the-shelf RL reasoner, even when
+the ontology is outside the RL proﬁle. Furthermore, in the
+cases where exact query answers cannot be computed, we
+can still compute both lower and upper bounds on the exact
+answers. These bounds allow us to estimate the degree of
+incompleteness of the RL reasoner on the given query, and
+to optimise the computation of exact answers using a fully-
+ﬂedged OWL 2 reasoner. A preliminary evaluation using the
+RDF Semantic Graph feature in Oracle Database has shown
+very promising results with respect to both scalability and
+tightness of the bounds.
+
+Categories and Subject Descriptors
+I.2.4 [Knowledge Representation Formalism and Meth-
+ods]: Representations (procedural and rule-based); H.4.m
+[Information Systems Applications]: Miscellaneous
+
+Keywords
+Semantic Web; Triple Store; Ontologies
+
+1.
+
+INTRODUCTION
+
+The success of RDF as a language for representing semi-
+structured data on the (semantic) Web has led to the pro-
+liferation of applications based on large repositories of data
+stored in RDF format. In these applications, access to data
+relies on queries formulated in the standard query language
+SPARQL [28]; additionally, background knowledge required
+to unambiguously specify the meaning of the data in the
+
+Copyright is held by the International World Wide Web Conference
+Committee (IW3C2). IW3C2 reserves the right to provide a hyperlink
+to the author’s site if the Material is used in electronic media.
+WWW 2013, May 13–17, 2013, Rio de Janeiro, Brazil.
+ACM 978-1-4503-2035-1/13/05.
+
+context of the application may be captured using the stan-
+dard ontology language OWL 2 [23].
+
+Eﬃcient management and querying of such large data
+repositories is a core problem in the development of RDF-
+based applications. Signiﬁcant progress has been made in
+recent years in the design and development of eﬃcient RDF
+data management systems, and state-of-the-art systems such
+as Hexastore [33] and RDF-3X [26] have combined highly op-
+timised data structures and query answering algorithms in
+order to achieve impressive performance. There have also
+been signiﬁcant advances in clustering and data partition-
+ing techniques [29, 12, 15], which allow RDF query engines
+to exploit various forms of parallel architecture. As a re-
+sult, state-of-the-art RDF management systems are capable
+of dealing with very large data sets.
+
+When an ontology is used to augment the semantics of
+the RDF data, query answers need to consider additional
+triples whose existence is entailed by the combination of the
+ontology and the data. Materialisation-based approaches
+are widely used to extend RDF data management systems to
+deal with this situation; they work by using forward chaining
+rules to materialise the entailed triples, and then evaluating
+queries over the resulting extended data set.
+
+The success in practice of materialisation-based systems
+led to the development of the RL proﬁle of OWL 2 [22], a
+large subset of OWL 2 for which query answering is known
+to be both theoretically tractable (in polynomial time w.r.t.
+the size of the data), and practically realisable via materi-
+alisation. This combination of features has made OWL 2
+RL increasingly popular, and state-of-the-art RL reasoners
+such as OWLim [1] and Oracle’s native inference engine of
+Oracle Spatial and Graph [34, 20] provide robust and scal-
+able support for SPARQL query answering over OWL 2 RL
+ontologies and RDF data sets.
+
+Although OWL 2 RL captures a substantial fragment of
+OWL 2, it necessarily restricts expressiveness. OWL 2 RL
+cannot, for example, capture disjunctive knowledge such as
+that expressed in the following axiom, which states that ev-
+ery student is either an undergraduate or a graduate student:
+
+SubClassOf (Student ObjectUnionOf (Grad UnderGrad));
+
+nor can it capture existentially quantiﬁed knowledge such as
+that expressed in the following axiom, which states that each
+
+1569(a) Lower & trivial bound (b) Lower & upper bound
+
+Figure 1: Combination of lower and upper bounds
+
+research assistant works for some research group:
+
+SubClassOf (RA SomeValuesFrom(works Group)).
+
+These restrictions limit the applicability of OWL 2 RL in
+practice since disjunctive and existentially quantiﬁed state-
+ments abound in OWL ontologies. For example, the NCI
+Thesaurus contains many disjunctive statements, while on-
+tologies such as SNOMED, FMA, and Fly Anatomy1 contain
+thousands of existentially quantiﬁed statements.
+
+Although the capabilities of RL reasoners are intrinsically
+limited, they are ﬂexible enough to process ontologies out-
+side OWL 2 RL on a ‘best eﬀorts’ basis, as the materialisa-
+tion rules eﬀectively ignore those (parts of) axioms that are
+outside the RL proﬁle. In such cases, answers to SPARQL
+queries are still guaranteed to be sound (the computed an-
+swer set includes only valid answer tuples), but may not be
+complete (the computed answer set may not include all valid
+answer tuples); thus, the answer set returned by the system
+can be thought of as a lower bound on the exact answers.
+
+To ensure the completeness of query answers in such cases,
+one could abandon RL reasoners altogether in favour of fully
+ﬂedged OWL 2 reasoners, such as HermiT [25], Pellet [31]
+and Racer [10]. However, despite intensive eﬀorts at optimi-
+sation, the scalability of such systems falls far short of that
+exhibited by RL reasoners [19, 11].
+
+In this paper, we propose novel techniques that allow us
+(in many cases) to compute sound and complete answers
+using oﬀ-the-shelf RL reasoners, even when the ontology is
+outside OWL 2 RL. Furthermore, in the cases where ex-
+act answers cannot be computed, our techniques allow us to
+compute an upper bound on the exact answers. This upper
+bound is useful in practice for (at least) two reasons. First,
+as illustrated in Figure 1(b), it allows us to bound the incom-
+pleteness of the RL reasoner by partitioning tuples into three
+sets: those that are deﬁnitely in the answer (marked with
+‘X’), those that may be in the answer (marked with ‘?’), and
+those that are deﬁnitely not in the answer (marked with ‘-’);
+without the upper bound no tuples can be ruled out, and
+the status of a potentially huge number of tuples is thus
+left undetermined (as illustrated in Figure 1(a)). Second, it
+allows us to optimise the computation of exact answers by
+checking—e.g., using a fully-ﬂedged OWL 2 reasoner—only
+the (typically small number of) tuples remaining in the gap
+between the lower and upper bounds.
+
+Our work is closely related to existing techniques for the-
+ory approximation [7, 30], where lower and upper bounds to
+query answers are obtained by transforming the knowledge
+base (and possibly also the query) into a less expressive lan-
+
+1http://obofoundry.org/cgi-bin/detail.cgi?
+id=fly_anatomy_xp
+
+guage. Systems such as those described in [32, 27, 18], all of
+which we discuss in detail in Section 6, are able to compute
+upper bounds to query answers under certain conditions. To
+the best of our knowledge, however, our approach is the only
+one that enjoys all of the following desirable properties:
+
+• In contrast to [32] and [27], computation of the upper
+bound requires only the ontology to be transformed,
+and is independent of both data and query.
+
+• In contrast to [32], [27], and [18], our transformation
+increases the size of the ontology only linearly with
+bounded minimum cardinality constraint values, and
+can be computed in linear time.
+
+• In contrast to [27] and [18], which approximate the
+ontology into DL-Lite (i.e., OWL 2 QL), our approach
+uses OWL 2 RL, which will typically lead to tighter
+bounds, and allows us to directly exploit an industrial-
+strength OWL 2 RL reasoner as a “black box”.
+
+• In contrast to [32] and [18], our approach is indepen-
+dent of the query language, and hence can be applied
+not only to SPARQL queries, but also to more general
+languages such as (unions of) conjunctive queries.
+
+An evaluation of our approach has been performed us-
+ing the RDF Semantic Graph feature of Oracle Spatial and
+Graph, a range of test data including both benchmark and
+realistic ontologies, and a variety of synthetic and realis-
+tic queries. The evaluation suggests that the gap between
+the lower and upper bounds is typically small, indeed often
+empty, and that the upper bound is usually tight (i.e., it
+coincides with the exact answers). Moreover, although com-
+puting the upper bound increased the cost of materialising
+the data set, it is still feasible for large scale data sets, and
+much more eﬃcient than the computation of exact answers
+using an OWL 2 reasoner; indeed we believe that this is the
+ﬁrst time that exact answers have been computed over data
+sets of this size and w.r.t. an ontology outside any of the
+OWL 2 proﬁles.
+
+This paper comes with an online technical report contain-
+
+ing all the missing proofs.2
+
+2. PRELIMINARIES
+
+We adopt standard notions from ﬁrst-order logic (FOL)
+with equality, such as variables, constants, terms, atoms,
+formulas, sentences, substitutions, satisﬁability, unsatisﬁa-
+bility, and entailment (written |=). We use the standard no-
+tation t ≈ t′ (an equality atom) to denote equality between
+terms and the standard abbreviation t 6≈ t′ for ¬t ≈ t′ (an
+inequality atom). The falsum atom, which is evaluated to
+false in all interpretations, is denoted here as ⊥, whereas the
+dual truth atom is represented as ⊤.
+
+2.1 Ontologies and Data Sets
+
+We assume basic familiarity with the OWL 2 and OWL
+2 RL ontology languages [23, 22], as well as with the syn-
+tax and semantics of SROIQ—the description logic (DL)
+underpinning OWL 2 (see [13] for details).3
+
+2
+
+http://www.cs.ox.ac.uk/isg/tools/UOBMGenerator/
+
+TR_paper.pdf
+3In this paper, we disregard datatypes for simplicity.
+
+1570In this paper, we exploit the normal form for SROIQ
+given in Deﬁnition 1. Each SROIQ TBox can be trans-
+formed into this normal form by introducing fresh predi-
+cates as needed (see [25] for details on the normalisation
+algorithm).
+
+Definition 1. A SROIQ-TBox is normalised if it con-
+tains only the following kinds of axioms, where R(i) are ei-
+ther an atomic role or the inverse of an atomic role:
+
+• Concept inclusion axioms ⊤ ⊑ Fn
+
+i=1 Ci, where each
+Ci is of the form B, {c}, ∀R.B, ∃R.Self, ¬∃R.Self,
+≥ n R.B, or ≤ n R.B, with B either an atomic concept
+or the negation of an atomic concept, c an individual,
+and n a nonnegative integer;
+
+• Role axioms R1 ⊑ R2, R1 ◦ R2 ⊑ R3, or R1 ⊓ R2 ⊑ ⊥.
+
+We deviate slightly from the treatment of ontologies given
+in the W3C speciﬁcation of OWL 2, where there is no ex-
+plicit distinction between schema (i.e., TBox) and data (i.e.,
+ABox). It is often convenient, however, to think of the ontol-
+ogy as a TBox (i.e., as containing only schema axioms), and
+to treat the (RDF) data assertions separately; this makes no
+diﬀerence from a semantic point of view. We will, therefore,
+treat an OWL 2 ontology O as a SROIQ-TBox, and assume
+that all assertions are in a separate data set D. W.l.o.g. we
+restrict ourselves in this paper to data sets consisting only
+of atoms, including inequalities but excluding ⊥ and ⊤.
+
+2.2 Queries
+
+A conjunctive query (CQ), or simply a query, is a ﬁrst-
+order formula of the form Q(~x) = ∃~y.ϕ(~x, ~y), where Q is a
+distinguished query predicate and ϕ(~x, ~y) is a conjunction of
+atoms diﬀerent from ⊥ and from an inequality. A tuple of
+constants ~a is an answer to Q(~x) w.r.t. a set F of ﬁrst-order
+sentences and a set of ground atoms D if F ∪ D |= Q(~a).
+The answer set of Q(~x) w.r.t. F and D, which we often call
+the exact answers to the query, is denoted as cert(Q, F , D),
+where the free variables of Q(~x) are omitted. SPARQL
+queries are semantically equivalent to a restricted class of
+CQs with no existential quantiﬁers.
+
+2.3 Datalog Languages
+
+The design of OWL 2 RL was inspired by Description
+Logic Programs [8] — a KR formalism that can be captured
+using either datalog [6] or DLs. Therefore, there exists a
+tight connection between datalog rules and OWL 2 RL ax-
+ioms.
+
+The main diﬀerence between OWL 2 and its RL proﬁle is
+the ability to represent disjunctive and existentially quan-
+tiﬁed knowledge. Hence, there is a tight connection be-
+tween OWL 2 and an extension of datalog, which we call
+datalog±,∨, where both existential quantiﬁers and disjunc-
+tions are allowed in the head of rules. The connection be-
+tween OWL 2 and datalog±,∨ is relevant to us, since our
+approach uses datalog±,∨ rules as an intermediate represen-
+tation of ontology axioms. We next deﬁne datalog±,∨ and
+postpone the description of its relationship with OWL 2 un-
+til Section 3.1.
+
+A datalog±,∨ rule r is a ﬁrst-order sentence of form (1)
+
+ 
+
+O   ΣO
+...
+...
+OWL 2 Datalog±,∨ Datalog
+
+Ξ(ΣO)   O′ ∪ D′
+O
+
+...
+
+...
+
+OWL 2 RL
+
+Figure 2: Transformation steps
+
+where each Bj is an atom that is neither ⊥ nor an inequality
+atom and whose free variables are contained in ~x, and either
+
+• m = 1 and ϕ1(~x, ~y1) = ⊥ (we call such r a ⊥-rule), or
+
+• m ≥ 1 and, for each 1 ≤ i ≤ m, the formula ϕi(~x, ~yi)
+with free variables in ~x ∪ ~yi is a conjunction of atoms
+diﬀerent from ⊥.
+
+The quantiﬁer ∀~x is left implicit. The body of r is the set
+of atoms body(r) = {B1, . . . , Bn}, and the head of r is the
+i=1 ∃~yi.ϕ(~x, ~yi). A datalog±,∨ rule r is
+a datalog± rule if m = 1 [2], and it is a datalog rule if it is
+a datalog± rule and the head does not contain existentially
+quantiﬁed variables.4
+
+formula head(r) = Wm
+
+For Σ a set of datalog rules and D a set of ground atoms,
+the saturation of Σ w.r.t. D is the set D′ of all ground atoms
+entailed by Σ ∪ D, which can be computed by means of
+a forward-chaining (aka materialisation-based ) algorithm.
+The answer set cert(Q, Σ, D) for an arbitrary conjunctive
+query Q then coincides with cert(Q, ∅, D′).
+
+3. CORE TECHNICAL APPROACH
+
+Given an OWL 2 ontology O, our goal is to transform O
+into an OWL 2 RL ontology O′ and (possibly) a data set
+D′
+
+O such that, for any data set D and any query Q:
+
+1. cert(Q, O, D) ⊆ cert(Q, O′, D ∪ D′
+
+O); and
+
+2. cert(Q, O′, D ∪ D′
+
+O) \ cert(Q, O, D) is “small”.
+
+As we show below, the data set D′
+contains certain kinds of constructs.
+
+O is only required if O
+
+There is a tradeoﬀ between the tightness of the upper
+bound (the size of cert(Q, O′, D ∪ D′
+O) \ cert(Q, O, D)) and
+the eﬃciency with which cert(Q, O′, D ∪ D′
+O) can be com-
+puted. In our approach, O′ and D′
+O are easy to compute
+(via a linear-time transformation), and cert(Q, O′, D ∪ D′
+O)
+can be eﬃciently computed using an OWL 2 RL reasoner.
+O, we proceed
+
+To transform the ontology O into O′ and D′
+
+as follows (see Figure 2 for a schematic representation):
+
+1. Transform O into a set ΣO of datalog±,∨ rules such
+that cert(Q, O, D) = cert(Q, ΣO, D) for any query Q
+(in the vocabulary of O) and any data set D.
+
+2. Transform ΣO into a set Ξ(ΣO) of datalog rules by
+eliminating disjunctions and existential quantiﬁers, and
+such that for every query Q and data set D, we have
+cert(Q, ΣO, D) ⊆ cert(Q, Ξ(ΣO), D).
+
+3. Transform Ξ(ΣO) into an OWL 2 RL ontology O′ and
+O such that, for every query Q and data set
+O).
+
+a data set D′
+D, we have cert(Q, Ξ(ΣO), D) ⊆ cert(Q, O′, D ∪ D′
+
+∀~x.[B1 ∧ ... ∧ Bn] →
+
+m
+
+_i=1
+
+∃~yi.ϕi(~x, ~yi)
+
+(1)
+
+4Our deﬁnition of datalog allows conjunctions in the head,
+which is not allowed in the standard, but the rules can be
+equivalently split into multiple rules with atomic heads.
+
+1571Step 1 is an answer-preserving transformation from OWL
+2 to datalog±,∨ rules, which can then be conveniently over-
+approximated in a weaker logic in the crucial second step.
+Step 3 is a transformation from datalog to OWL 2 RL which
+is answer-preserving in most (but not all) cases.
+
+Given that O′ is an OWL 2 RL ontology, we can use any
+reasoner that is sound for OWL 2 and complete for OWL
+2 RL to compute a lower bound answer (using O) and an
+upper bound answer (using O′ ∪ D′
+O) for any given query Q
+and data set D. More precisely, if rl(Q, O, D) is the query
+answer computed by such a reasoner, then we have:
+rl(Q, O, D) ⊆ cert(Q, O, D) ⊆ rl(Q, O′, D∪D′
+
+O) for all Q, D
+
+We next describe the transformations in steps 1–3, and illus-
+trate them with the example ontology Oex in Figure 4.
+
+3.1 From OWL 2 to Datalog±,∨
+
+The ﬁrst step is to transform the OWL 2 ontology O into
+a set ΣO of datalog±,∨ rules. For this, we ﬁrst transform O
+into the normal form given in Deﬁnition 1. Let ar(R, x, y)
+be deﬁned as follows for each role R occurring in O:
+
+ar(R, x, y) = (cid:26) S(y, x)
+Then, ΣO contains the following datalog±,∨ rules for each
+axiom in the normalisation of O:
+
+if R inverse of the atomic role S.
+if R atomic
+
+R(x, y)
+
+• lhs(C) → rhs(C) for ⊤ ⊑ C, where lhs(C) and rhs(C)
+
+are as given in Figure 3;
+
+• ar(R, x, y) → ar(S, x, y) for R ⊑ S;
+
+• ar(R, x, y) ∧ ar(S, y, z) → ar(T, x, z) for R ◦ S ⊑ T ; and
+
+• ar(R, x, y) ∧ ar(S, x, y) → ⊥ for R ⊓ T ⊑ ⊥.
+
+The obtained set ΣO of datalog±,∨ rules is equivalent to
+the normalisation of O, and hence it is a conservative ex-
+tension of O; that is, the models of ΣO are obtained by
+extending those of O with the interpretation of any new
+predicates introduced during normalisation. Thus, ΣO pre-
+serves the answers to all queries using the vocabulary of O
+[3]. The transformation of our example ontology Oex into
+datalog±,∨ rules ΣOex is also shown in Figure 4. Note that
+ΣOex is extended with a new unary predicate Aux.
+
+3.2 From Datalog±,∨ to Datalog
+
+Next, we transform the datalog±,∨ rules ΣO into a set of
+datalog rules Ξ(ΣO) such that Ξ(ΣO) |= ΣO, and thus for
+each query Q and data set D, cert(Q, ΣO, D) ⊆ cert(Q, Ξ(ΣO), D).
+This transformation is performed in two steps:
+
+1) Rewrite each datalog±,∨ rule r into a set of datalog± rules
+by transforming disjunctions in the head of r into con-
+junctions, and splitting the resulting conjunctions into
+multiple datalog± rules. This is a standard “naive” tech-
+nique for approximating disjunction, and was used, e.g.,
+in the Screech reasoner [32]. More sophisticated strate-
+gies will be discussed below.
+
+2) Transform the resulting datalog± rules into datalog rules
+by using fresh individuals to Skolemise existentially quan-
+tiﬁed variables. Our transformation is based on the trans-
+formation from datalog± into datalog used in recent work
+for a rather diﬀerent purpose, namely to check chase ter-
+mination when applied to datalog± rules [4].
+
+We next formally deﬁne the transformation Ξ(·) for an
+arbitrary set of datalog±,∨ rules; Figure 5 illustrates the
+application of this transformation to our running example.5
+
+Definition 2. For each datalog±,∨ rule r of the form (1)
+
+and each 1 ≤ i ≤ m, let ri be the datalog± rule
+
+ri = B1 ∧ ... ∧ Bn → ∃~yiϕi(~x, ~yi)
+
+and let ϕ∧
+inequality atoms in ϕi(~x, ~yi).6
+
+i (~x, ~yi) be deﬁned as the conjunction of all non-
+
+ij be a fresh individual unique for yij, and let θr
+
+Finally, for each 1 ≤ i ≤ m and each variable yij ∈ ~yi,
+i be the
+ij. Then,
+
+let cr
+substitution mapping each variable yij ∈ ~yi to cr
+Ξ(ri) is the following set of datalog rules:
+
+Ξ(ri) = {B1 ∧ ... ∧ Bn → ϕ∧
+
+i (~x, θr
+
+i (~yi))}
+
+[{c1 ≈ c2 → ⊥ | c1 6≈ c2 occurs in ϕi(~x, θr
+
+i (~yi)) (2)
+
+We ﬁnally deﬁne Ξ(r) = Sm
+
+for Σ a set of datalog±,∨ rules.
+
+i=1 Ξ(ri) and Ξ(Σ) = ∪r∈ΣΞ(r)
+
+Note that Ξ(Σ) does not contain inequality atoms in rule
+heads; although such rules are allowed according to our def-
+inition of datalog, they cannot (easily) be transformed into
+equivalent OWL 2 RL axioms, which is our ultimate goal.
+For instance, the datalog±,∨ rule
+
+r = B(x) → R(x, c1) ∧ A(c1) ∧ R(x, c2) ∧ A(c2) ∧ c1 6≈ c2
+
+is transformed as follows, where c1 ≈ c2 → ⊥ is equivalent
+to an OWL 2 (RL) DiﬀerentFrom assertion.
+
+Ξ(r) = {B(x) → R(x, c1) ∧ A(c1) ∧ R(x, c2) ∧ A(c2),
+
+c1 ≈ c2 → ⊥}
+
+As stated in the following proposition, the proof of which
+is given in our online technical report, the transformation
+over-approximates the datalog±,∨ rules.
+
+Proposition 1. Ξ(Σ) |= Σ, for Σ an arbitrary set of
+
+datalog±,∨ rules.
+
+Proposition 1 immediately implies
+
+cert(Q, ΣO, D) ⊆ cert(Q, Ξ(ΣO), D)
+
+for an arbitrary query Q and data set D, and hence query
+answers w.r.t. Ξ(ΣO) are an upper bound to those w.r.t. ΣO.
+Note that when Ξ(ΣO) ∪ D is unsatisﬁable, the obtained
+upper bound is the trivial one for all queries, i.e., all tuples
+of individuals with the appropriate arty. For instance, if we
+extend Oex in Figure 4 with the axiom Grad⊓UnderGrad ⊑ ⊥
+which states graduate students and undergraduate students
+are disjoint, we obtain the ⊥-rule Grad(x) ∧ UnderGrad(x) →
+⊥ in both ΣOex and Ξ(ΣOex ). For Dex = {RA(a)} we have
+that Oex∪Dex is satisﬁable, but Ξ(ΣOex )∪Dex is unsatisﬁable.
+In Section 4.1 we discuss how this issue can be dealt with in
+detail.
+
+5Note that the size of the transformation is polynomial in
+minimum cardinality constraint values, but otherwise linear.
+6Inequality atoms only occur in conjunction with other
+atoms in ϕi(~x, ~yi), and hence ϕ∧
+
+i (~x, ~yi) is well-deﬁned.
+
+1572lhs(C)
+
+A(x)
+
+rhs(C)
+A(x)
+
+x ≈ a
+
+∃y1, . . . , ynV1≤i≤n[ar(R, x, yi
+∃y1, . . . , ynV1≤i≤n[ar(R, x, yi
+
+C ) ∧ A(yi
+C ) ∧ C¬A(yi
+
+ar(R, x, x)
+
+C ) ∧Vi<j≤n yi
+C ) ∧Vi<j≤n yi
+
+C 6≈ yj
+C ]
+C 6≈ yj
+C ]
+
+ar(R, x, x)
+ar(R, x, yC )
+
+ar(R, x, yC ) ∧ A(yC )
+
+A(yC )
+
+W1≤i≤n+1[A(yi
+
+C ≈ yj
+C ]
+⊥ if rhs(Ci) empty for all 1 ≤ i ≤ n
+
+C ) ∨W1≤i<j≤n+1 yi
+
+C ≈ yj
+
+C
+
+W1≤i<j≤n+1 yi
+Wn
+
+i=1 rhs(Ci) otherwise
+
+C
+A
+¬A
+{a}
+
+≥ n R.A
+≥ n R.¬A
+
+∃R.Self
+¬∃R.Self
+
+∀R.A
+∀R.¬A
+≤ n R.A
+≤ n R.¬A
+
+C1 ⊔ . . . ⊔ Cn
+
+⊤ if lhs(Ci) empty for all 1 ≤ i ≤ n
+
+C ) ∧ A(yi
+
+C )]
+
+V1≤i≤n+1[ar(R, x, yi
+
+C )
+
+V1≤i≤n+1 ar(R, x, yi
+Vn
+
+i=1 lhs(Ci) otherwise
+
+Note: C¬A is a fresh predicate; A(x) ∧ C¬A(x) → ⊥ is added to the datalog±,∨ rules in the translation of ≥ n R.¬A
+
+Figure 3: Translation of Normalised Axioms
+
+Axioms in Oex
+Student ⊑ Person
+RA ⊑ Student
+RA ⊑ ∃works.Group
+Group ⊑ Org
+
+Emp ≡ Person ⊓ ∃works.Org
+
+works ⊑ memberOf
+Student ⊑ Grad ⊔ UnderGrad
+func(works)
+
+Fellow ⊑ ∃works.∃funded.Council
+
+Datalog±,∨
+Student(x) → Person(x)
+RA(x) → Student(x)
+RA(x) → ∃y[works(x, y) ∧ Group(y)]
+Group(x) → Org(x)
+Emp(x) → Person(x)
+Emp(x) → ∃y[works(x, y) ∧ Org(y)]
+
+Normalised Axioms
+⊤ ⊑ ¬Student ⊔ Person
+⊤ ⊑ ¬RA ⊔ Student
+⊤ ⊑ ¬RA ⊔ ∃works.Group
+⊤ ⊑ ¬Group ⊔ Org
+⊤ ⊑ ¬Emp ⊔ Person
+⊤ ⊑ ¬Emp ⊔ ∃works.Org
+⊤ ⊑ Emp ⊔ ¬Person ⊔ ∀works.¬Org Person(x) ∧ works(x, y) ∧ Org(y) → Emp(x)
+works ⊑ memberOf
+⊤ ⊑ ¬Student ⊔ Grad ⊔ UnderGrad
+⊤ ⊑≤ 1 works.⊤
+⊤ ⊑ ¬Fellow ⊔ ∃works.Aux
+⊤ ⊑ ¬Aux ⊔ ∃funded.Council
+
+works(x, y) → memberOf(x, y)
+Student(x) → Grad(x) ∨ UnderGrad(x)
+works(x, y1) ∧ works(x, y2) → y1 ≈ y2
+Fellow(x) → ∃y.[works(x, y) ∧ Aux(y)]
+Aux(x) → ∃y[funded(x, y) ∧ Council(y)]
+
+UnderGrad ⊑≥ 3 takes.Course
+
+⊤ ⊑ ¬UnderGrad⊔ ≥ 3 takes.Course
+
+UnderGrad(x) → ∃y1, y2, y3Vi(takes(x, yi)
+
+∧Course(yi) ∧Vi<j≤3 yi 6≈ yj)
+
+Figure 4: Transforming Oex into datalog±,∨ rules ΣOex
+
+3.3 From Datalog to OWL 2 RL
+
+The last step is to transform Ξ(ΣO) into an OWL 2 RL
+
+ontology O′ and (possibly) a data set D′
+
+O.
+
+Rules in Ξ(ΣO) can be of the following types (see Section
+
+3.1, Figure 3 and Deﬁnition 2):
+
+R1 Rules originating from (and equivalent to) normalised
+
+role axioms R ⊑ S, R ◦ S ⊑ T , or R ⊓ T ⊑ ⊥.
+
+R2 Rules c1 ≈ c2 → ⊥, with c1 and c2 constants.
+
+R3 Rules originating from the transformations applied to
+
+normalised axioms of the form ⊤ ⊑ C.
+
+Rules of type R1 correspond directly to OWL 2 RL axioms,
+which will be included in O′. Rules of type R2 correspond
+to ground atoms of the form c1 6≈ c2 (i.e., DiﬀerentFrom
+assertions in OWL 2), which will be included in D′
+
+O.
+
+Finally, rules of type R3 are of a very speciﬁc shape. The
+variables in the body are arranged in a tree-shape way, with
+a single root variable x, and branch variables y connected to
+x by atoms R(x, y) or R(y, x), such that each y occurs in ex-
+actly one such atom. Moreover, branch variables only occur
+in the rule head in atoms of the form A(y) or y ≈ y′. Rules
+of this form can be transformed back into OWL 2 axioms by
+
+means of the well-known rolling-up technique [14]; for exam-
+ple, the rule Person(x) ∧ works(x, y) ∧ Org(y) → Emp(x) can
+be rolled up into the axiom Person ⊓ ∃works.Org ⊑ Emp. We
+formally specify this transformation in the following section.
+
+3.3.1 Rolling up rules into OWL 2 axioms
+
+Given a rule r of type R3, the variables occurring in r are
+divided into the root variable x, and a set of branch variables
+y, such that r satisﬁes the following properties, where A is
+a unary predicate, R is a binary predicate, c is a constant,
+and y, y′ are branch variables:
+
+• the body is either ⊤, or a conjunction of atoms of the
+
+form A(x), R(x, x), R(x, y), R(y, x), or A(y);
+
+• the head is either ⊥, or a conjunction of atoms of the
+form A(x), R(x, x), x ≈ c, A(y), A(c), R(x, c), R(c, x),
+and y ≈ y′;
+
+• each branch variable y occurs in exactly one body atom
+R(x, y) or R(y, x); also, each constant c occurs in at
+most one atom R(x, c) or R(c, x); and
+
+• if y ≈ y′ occurs in the head, then y and y′ occur in
+body atoms R(x, y) or R(y, x) and R(x, y′) or R(y′, x).
+
+1573RA(x) → ∃y.[works(x, y) ∧ Group(y)]   RA(x) → works(x, c1) ∧ Group(c1)
+Emp(x) → ∃y.[works(x, y) ∧ Org(y)]   Emp(x) → works(x, c2) ∧ Org(c2)
+
+Student(x) → Grad(x) ∨ UnderGrad(x)   Student(x) → UnderGrad(x) ∧ Grad(x)
+
+UnderGrad(x) → ∃y1, y2, y3Vi(takes(x, yi)  
+
+∧Vi<j≤3 yi 6≈ yj)
+
+UnderGrad(x) → V5
+
+ci ≈ cj → ⊥ for diﬀerent i and j
+
+i=3(takes(x, ci) ∧ Course(ci))
+
+Note: c1, . . . , c5 are fresh individuals
+
+Figure 5: Transforming ΣOex into Ξ(ΣOex ). Only the rules that are changed by the transformation are shown.
+
+A rule of this form can be transformed into OWL 2 by ex-
+ploiting the rolling up technique. There is, however, a tech-
+nical issue related to the fresh Skolem constants in Ξ(ΣO).
+In particular, the rule RA(x) → works(x, c1) ∧ Group(c1) in
+our running example does not directly correspond to an
+OWL 2 axiom. This issue can be addressed by introduc-
+ing fresh roles; the above rule can be transformed into the
+following three OWL 2 axioms, where SGroup
+is a fresh role:
+works
+
+RA ⊑ ∃SGroup
+
+works .{c1} ∃(SGroup
+
+works )−.⊤ ⊑ Group SGroup
+
+works ⊑ works
+
+We are now ready to deﬁne the transformation. Note
+that, for simplicity, this transformation has been presented
+in such a way that the axiom might contain redundancies; in
+practice such redundancies would, of course, be eliminated.
+Each atom α ∈ body(r) is transformed into a concept C α
+as follows, with x the root variable of r, and y a branch
+variable:
+
+if α = ⊤;
+⊤
+if α = A(x);
+A
+∃R.Self
+if α = R(x, x);
+∃R.⊤
+if α = R(x, y);
+∃R−.⊤ if α = R(y, x);
+∃R.A
+if α = A(y) and R(x, y) ∈ body(r);
+∃R−.A if α = A(y) and R(y, x) ∈ body(r);
+
+C α =
+
+
+
+
+Each atom β ∈ head(r) is transformed into a concept C β
+as follows, with x the root variable of r, y and y′ branch
+variables, c a constant, and SA
+
+R− fresh roles:
+
+R , SA
+
+C β =
+
+
+
+
+⊥
+A
+∃R.Self
+{c}
+∀R.A
+∀R−.A
+∃SA
+R .{c}
+
+if β = ⊥;
+if β = A(x);
+if β = R(x, x);
+if β = x ≈ c;
+if β = A(y) and R(x, y) ∈ body(r);
+if β = A(y) and R(y, x) ∈ body(r);
+if β = A(c) and R(x, c) ∈ head(r); or
+if β = R(x, c) and A(c) ∈ head(r);
+
+∃(SA
+
+R− ).{c} if β = R(c, x) and A(c) ∈ head(r); or
+
+if β = A(c) and R(c, x) ∈ head(r);
+if β = y ≈ y′ and R(x, y), A(y) ∈ body(r)
+≤ 1 R.A
+≤ 1 R−.A if β = y ≈ y′ and R(y, x), A(y) ∈ body(r)
+
+We can transform r into an OWL 2 axiom C(r) as follows:
+
+C(r) = l
+
+C α ⊑ l
+
+C β
+
+α∈head(r)
+
+β∈body(r)
+
+We thus obtain an ontology O′ with the following axioms.
+
+• Axioms of the form R ⊑ S, R ◦ S ⊑ T , or R ⊓ T ⊑ ⊥
+
+obtained from the rules of type R1 in Ξ(O).
+
+• An axiom C(r) for each rule r of type R3 in Ξ(O),
+R )−.⊤ ⊑ A for each fresh
+
+R ⊑ R and ∃(SA
+
+and axioms SA
+
+R introduced in C(r), with R either atomic or
+
+role SA
+an inverse role.
+
+Finally, we obtain a data set D′
+equality atom for each rule of type R2 in Ξ(O).
+
+O containing a ground in-
+
+Clearly, O′ ∪D′
+
+O is a conservative extension of Ξ(ΣO), and
+hence query answers are preserved for arbitrary queries and
+data sets in the vocabulary of Ξ(ΣO).
+
+3.3.2 Eliminating non-RL axioms
+
+Unfortunately, O′ might not be an OWL 2 RL ontology
+as it might contain the following kinds of non-RL axioms:
+(i) axioms containing the Self construct; (ii) axioms of the
+form C ⊑ {a} for {a} a nominal concept; and (iii) axioms
+having ⊤ as the left-hand-side concept.
+
+These kinds of axiom were excluded from OWL 2 RL due
+to speciﬁc design choices, rather than inherent limitations
+of materialisation-based reasoning techniques; in fact, the
+OWL 2 RL/RDF rules could be trivially extended to deal
+with such non-RL axioms. Furthermore, axioms of the kind
+above are rare in realistic ontologies, and none of the ontolo-
+gies we used in our evaluation contained any such axiom.
+
+If necessary, however, non-RL axioms can be eliminated
+O the following sequence of trans-
+
+by applying to O′ and D′
+formations:
+
+1. Replace each occurrence of a concept ∃R.Self on the
+l.h.s. of an axiom with ∃R.⊤; and replace each axiom
+of the form C ⊑ ∃R.Self with axioms C ⊑ ∃S.{a} and
+S ◦ S− ⊑ R, where a is a fresh individual and S is a
+fresh role.
+
+2. For each axiom of the form C ⊑ {a}, deﬁne a fresh role
+Pa as inverse functional; replace the axiom with C ⊑
+∃Pa.{a}; and extend D′
+O with the assertion Pa(a, a).
+
+3. Replace each axiom of the form ⊤ ⊑ C with TOP ⊑ C,
+where TOP is a fresh atomic concept; add axioms A ⊑
+TOP, {a} ⊑ TOP, ∃R.⊤ ⊑ TOP and ∃R−.⊤ ⊑ TOP
+for each atomic concept A, nominal {a} and role R in
+the ontology; and if no nominal occurs in the ontology,
+add the axiom {c} ⊑ TOP, with c a fresh individual.
+
+These transformations could lead to additional answers to
+certain queries and data sets. For example, if we apply them
+to O′ = {∃R.Self ⊑ A} to obtain O′′ = {∃R.⊤ ⊑ A} and
+consider D = {A(a), R(a, b)} and Q(x) = A(x), we have
+cert(Q, O′, D) = ∅, whereas cert(Q, O′′, D) = {a}.
+
+4. ADDITIONAL CONSIDERATIONS
+
+We next discuss some issues related to the second step in
+
+our approach, namely the transformation Ξ(·) from datalog±,∨
+rules into datalog rules.
+
+15744.1 Dealing with Unsatisﬁability
+
+As mentioned in Section 3.2, the union of a data set D
+with the rules in Ξ(ΣO) can be unsatisﬁable, even when ΣO∪
+D is satisﬁable. This issue can be addressed by removing all
+⊥-rules from Ξ(ΣO), which ensures satisﬁability for any D.
+This is not possible without losing completeness if ΣO ∪ D
+is unsatisﬁable. If ΣO ∪ D is satisﬁable, however, ⊥-rules in-
+tuitively do not matter because Ξ(·) strengthens disjunctions
+in ΣO into conjunctions; hence, all ground atoms entailed by
+ΣO ∪ D are also entailed by Ξ(ΣO) ∪ D even after dispensing
+with the ⊥-rules. These intuitions are formalised as follows.
+
+Theorem 1. Let Σ be a set of datalog±,∨ rules, and let
+Ξ⊥(Σ) be all the ⊥-rules in Ξ(Σ). Then, the following con-
+dition holds for each data set D and each query Q: if Σ ∪ D
+is satisﬁable, then cert(Q, Σ, D) ⊆ cert(Q, Ξ(Σ) \ Ξ⊥(Σ), D).
+
+The proof of the theorem is rather technical, and is de-
+ferred to our online appendix. The idea behind the proof is,
+however, quite simple, and can be explained with an exam-
+ple.
+
+A(x) → C(x), we can discard either of the resulting data-
+log rules in Ξ(ΣO). Each choice might result in a diﬀerent
+upper bound. In practice we could use multiple versions of
+O′ resulting from diﬀerent choices to try to obtain a tighter
+bound, or we could make a heuristic choice of rules to retain;
+e.g., it makes sense to choose the rule with a head predicate
+that appears least frequently in the bodies of other rules.
+
+Choosing disjuncts instead of taking the conjunction of
+all of them is, however, incompatible with removing ⊥-rules,
+and hence with Theorem 1. Consider Σ and D in Example
+if A(x) → B(x) ∨ C(x) is approx-
+1 and Q(x) = C(x);
+imated to A(x) → B(x), we have a ∈ cert(Q, Σ, D) but
+a 6∈ cert(Q, Ξ(Σ) \ Ξ⊥(Σ), D) and query answers are lost.
+
+5. EXPERIMENTS
+
+We have implemented our approach in Java and used Ora-
+cle’s native OWL 2 RL reasoner in Oracle Database Release
+11.2.0.3 as an OWL 2 RL reasoner. The testing machine has
+a dual quad core (Intel Xeon E5620) CPU, 5 SATA disks,
+and 40GB RAM with the operating system Linux 2.6.18.
+
+Example 1. Let Σ and D be as follows:
+
+5.1 Test Data
+
+Σ = {A(x) → B(x) ∨ C(x), A(x) → D(x) ∨ E(x),
+
+B(x) → ⊥, C(x) ∧ D(x) → ⊥}
+
+D = {A(a), C(b)}
+
+Theorem 1 applies because Σ ∪ D is satisﬁable. Given
+
+Ξ(Σ) \ Ξ⊥(Σ) = {A(x) → B(x) ∧ C(x),
+A(x) → D(x) ∧ E(x)}
+
+we need to show that cert(Q, Σ, D) ⊆ cert(Q, Ξ(Σ)\Ξ⊥(Σ), D)
+for an arbitrary query Q. Because Σ ∪ D is satisﬁable, there
+exists a (Herbrand) model J satisfying it, say
+
+J ={A(a), C(a), E(a), C(b), E(b)}
+
+Pick an arbitrary Q (say, Q(x) = E(x)) and an individual
+(say b) such that b 6∈ cert(Q, Ξ(Σ) \ Ξ⊥(Σ), D). Then, there
+must exist a (Herbrand) interpretation I such that
+
+I |= Ξ(Σ) \ Ξ⊥(Σ) ∪ D and I 6|= Q(b)
+
+In our case, such an interpretation I could be
+
+I ={A(a), B(a), C(a), D(a), E(a), C(b)}
+
+Then, we can show that the (Herbrand) interpretation I ∩ J
+satisﬁes Σ ∪ D, but it does not satisfy Q(b), which implies
+b 6∈ cert(Q, Ξ(Σ) \ Ξ⊥(Σ), D), as required by the theorem.
+
+In practice, checking the satisﬁability of O ∪ D, which is
+equisatisﬁable with ΣO ∪ D, is easier than query answering,
+and even if it is impractical to check the satisﬁability of
+O ∪ D using an OWL 2 reasoner, e.g., if D is very large, we
+can still compute an upper bound “modulo satisﬁability”.
+
+4.2 Transformation of Disjunctions
+
+If Ξ(ΣO)∪ D is satisﬁable for a data set D, we can weaken
+Ξ(ΣO) from Deﬁnition 2 such that ΣO is still entailed. In
+particular, when transforming a rule in ΣO into datalog by
+replacing disjunction with conjunction, it suﬃces to keep
+only one of the conjuncts. For example, given the trans-
+formation of A(x) → B(x) ∨ C(x) into A(x) → B(x) and
+
+In our experiments, we have used the ontologies and data
+sets described next. More detailed statistics are given in
+Table 1.
+
+Lehigh University Benchmark. The Leigh University
+Benchmark (LUBM) ontology [9] describes the organisation
+of universities and academic departments. Although the
+LUBM ontology is quite simple, it is not within the OWL 2
+RL proﬁle, as it captures existentially quantiﬁed knowledge.
+LUBM comes with a predeﬁned data set generator, which
+can be used to test the ability of systems to handle data
+sets of varying size. We denote with LUBM(n) the LUBM
+dataset generated for n universities.
+
+University Ontology Benchmark. The University On-
+tology Benchmark (UOBM) is an extension of LUBM [21]
+with a more complex ontology, which also contains disjunc-
+tive axioms and negation. UOBM provides three diﬀerent
+data sets (for one, ﬁve and ten universities); in contrast to
+LUBM, no generator of data sets of varying size is provided
+for UOBM. To provide a more comprehensive evaluation, we
+have implemented a data generator for UOBM7 that repli-
+cates the design of LUBM’s generator. Data produced by
+our generator diﬀers in several ways from the default UOBM
+data. This is because the data in UOBM’s default data sets
+is skewed in what we believe are rather strange ways; for
+example, students in the UOBM data sets are much more
+likely to be connected via the isFriendOf relation to faculty
+members than to other students. Our generator does not
+replicate this skewing, and thus produces what we believe is
+more “realistic” data. We denote with GEN-UOBM(n) the
+generated UOBM data set for n universities.
+
+Fly Anatomy (FLY).This realistic and complex ontol-
+ogy describing the anatomy of ﬂies includes a data set with
+more than 1, 000 manually created individuals. This ontol-
+ogy is rich in existentially quantiﬁed knowledge and hence
+contains a relatively small number of OWL 2 RL axioms.
+We have used two kinds of queries in our experiments.
+Standard Queries. LUBM and UOBM come with 14
+and 15 standard queries, respectively. Since UOBM extends
+LUBM, we also adapted the 14 LUBM queries to UOBM.
+
+7http://www.cs.ox.ac.uk/isg/tools/UOBMGenerator/
+
+1575Table 1: Statistics for data sets
+
+Data
+
+LUBM(n)
+
+GEN-UOBM(n)
+
+FLY
+
+DL
+SHI
+SHIN
+SRI
+
+Horn
+Yes
+No
+Yes
+
+Existential Classes Properties Axioms
+93
+188
+144,407
+
+8
+24
+8,396
+
+43
+113
+7,533
+
+32
+44
+24
+
+Individuals Data Set
+105n
+1.7 × 104n
+2 × 105n
+2.5 × 104n
+1,606
+6,308
+
+Table 2:
+Synthetic LUBM queries with non-
+matching bounds. Upper bound is tight in all cases.
+
+Table 4: Modiﬁed LUBM queries for UOBM with
+non-matching bounds. Lower bound is tight.
+
+Query
+
+Lower Bound
+Upper Bound
+
+Q3
+540
+1087
+
+Q51
+0
+547
+
+Q67
+540
+1087
+
+Q69
+0
+547
+
+Query
+
+Lower Bound
+Upper Bound
+
+Q1
+0
+1
+
+Q4 Q5 Q9 Q12
+41
+779
+
+648
+687
+
+317
+630
+
+5
+5,456
+
+Q13
+991
+1,008
+
+For FLY, we have used 5 realistic queries provided by the
+biologists who are developing the ontology.
+
+Synthetic Queries. We have used the system SyGENiA
+[5, 17] to generate synthetic queries for LUBM and UOBM
+and obtained 78 queries for LUBM, and 198 for UOBM (the
+larger number reﬂecting its more complex structure).
+
+5.2 Tightness of the Upper Bound
+
+Results for LUBM(1). Lower and upper bounds co-
+incide for each of the 14 LUBM standard queries and the
+LUBM(1) data set. This implies that Oracle’s reasoner is
+complete for each of these queries (and the given data set),
+even if the ontology contains axioms outside OWL 2 RL. As
+to the synthetic queries, lower and upper bounds coincided
+in all but 4 cases (see Table 2). For these 4 queries, we used
+the OWL 2 reasoner HermiT to compute the exact answers,
+and found the upper bound to be tight in all cases.
+
+Results for GEN-UOBM(1). Lower and upper bounds
+for the 15 UOBM standard queries and GEN-UOBM(1) are
+given in Table 3. We found matching bounds for 4 queries.
+For the remaining ones, the upper bound was signiﬁcantly
+smaller than the trivial upper bound; also, by using Her-
+miT, we determined that the lower bound was tight for 9
+queries, and in the remaining 2 cases neither of the bounds
+was tight.
+
+Regarding the 14 LUBM modiﬁed queries (see Table 4),
+we obtained matching bounds for 8 of them. For 5 of the
+remaining 6 queries, the lower bound was tight and the gap
+between bounds was typically small. For query Q4, however,
+the lower bound is still tight but the gap is much larger.
+However, the query has a large number of answer variables,
+and hence a huge trivial upper bound, so the upper bound
+can still be considered a good approximation.
+
+Finally, concerning the synthetic queries, we obtained match-
+
+ing bounds for 101(51%) of them. Figure 6 illustrates the
+typical size of the gap between the lower bound (LB) and
+upper bound (UB) answer sets, relative to the size of LB;
+it shows the quotient of the number of answer tuples in the
+gap between bounds over the number of answer tuples in the
+lower bound, i.e., |UB\LB|
+.8 Quotient values are presented in
+intervals on the X axis, and the Y axis represents the num-
+ber of queries that fell within each interval; for example, we
+can see that for 46 queries, UB\LB contained only 10%–20%
+of the number of answer tuples in LB. This suggests the po-
+tential of our technique as an optimisation that eﬃciently
+
+|LB|
+
+8Excluding three cases where the lower bound is empty and
+the upper bound non-empty.
+
+ 50
+
+ 45
+
+ 40
+
+ 35
+
+ 30
+
+ 25
+
+ 20
+
+ 15
+
+ 10
+
+ 5
+
+ 0
+
+Number of Queries
+
+[
+0
+.
+1
+,
+0
+.
+2
+
+)
+
+[
+0
+.
+2
+,
+0
+.
+3
+
+)
+
+[
+0
+.
+3
+,
+0
+.
+4
+
+)
+
+[
+0
+.
+4
+,
+0
+.
+5
+
+)
+
+[
+0
+.
+9
+,
+1
+.
+0
+
+)
+
+[
+1
+.
+0
+,
+2
+.
+0
+
+)
+
+[
+2
+.
+0
+,
+3
+.
+0
+
+)
+
+[
+3
+.
+0
+,
+4
+.
+0
+
+)
+
+[
+4
+.
+0
+,
+5
+.
+0
+
+)
+
+[
+5
+.
+0
+,
+6
+.
+0
+
+)
+
+[
+1
+
+0
+,
+1
+
+4
+
+)
+
+(
+
+0
+,
+0
+.
+1
+
+)
+
+Figure 6: Synthetic UOBM queries. X axis is |UB\LB|
+;
+Y axis is the number of queries falling in each inter-
+val on the X axis.
+
+|LB|
+
+identiﬁes a small number of candidate answer tuples, which
+can be checked using an OWL 2 reasoner; even in the worst
+case, where the upper bound is almost 13 times larger than
+the lower bound, we have ruled out more than 99.9% of the
+possible answer tuples compared to the trivial upper bound.
+Results for FLY. The lower and upper bounds for each
+of the ﬁve realistic queries are presented in Table 5. As can
+be seen, the lower and upper bounds coincide in Q3, and
+the lower bound answers were empty for the remaining four
+cases. This is because the ontology includes many axioms
+that are outside the OWL 2 RL proﬁle, and in particular
+many existential restrictions. We were able to conﬁrm using
+HermiT that the upper bounds are tight for all these queries.
+
+5.3 Scalability Tests
+
+To test the scalability of upper bound computation us-
+ing Oracle’s reasoner, we have conducted experiments using
+LUBM and UOBM data sets of increasing size (1, 5, 10, 100
+universities for LUBM and UOBM, and 1,000 universities
+for LUBM). We also report computation times for FLY.
+
+Test for LUBM. Results for all the standard queries
+and generated queries are summarised in Figure 7(a); in the
+ﬁgure, materialisation time refers to the total time for com-
+puting the saturation for each data set and querying time
+refers to the average query answering time for each query.
+We can observe that query answering times and scalability
+behaviour is very similar for lower and upper bound com-
+putation. Fully-ﬂedged OWL 2 reasoners are much slower,
+even for the smallest data sets; for LUBM(1), HermiT re-
+quired 7,684 seconds to compute the exact answers to one
+of the queries with matching lower and upper bounds.
+
+1576Query
+Lower Bound
+Upper Bound
+Gap
+Exact Answers
+
+Q1
+21
+21
+0
+21
+
+materialisation_lower
+materialisation_upper
+standard_lower
+standard_upper
+generated_lower
+generated_upper
+
+)
+s
+m
+
+(
+ 
+e
+m
+
+i
+t
+ 
+
+i
+
+g
+n
+y
+r
+e
+u
+Q
+
+ 10000
+
+ 1000
+
+ 100
+
+Q2 Q3 Q4 Q5
+235
+235
+0
+235
+
+292
+603
+311
+292
+
+581
+581
+0
+581
+
+2,465
+2,465
+0
+2,465
+
+Table 3: Standard queries for UOBM
+Q9 Q10
+8
+191
+183
+8
+
+Q6 Q7 Q8
+376
+991
+455
+1,008
+79
+17
+991
+376
+
+1,298
+2,528
+1,230
+1,298
+
+0
+50
+50
+0
+
+Q11
+2,416
+8,852
+6,436
+2,416
+
+Q12 Q13
+0
+455
+455
+416
+
+50
+1,027
+977
+50
+
+Q14 Q15
+0
+455
+455
+0
+
+6,271
+12,782
+6,511
+6,535
+
+ 10000
+
+ 1000
+
+ 100
+
+)
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+
+n
+o
+
+i
+t
+
+a
+s
+
+i
+l
+
+a
+i
+r
+e
+a
+M
+
+t
+
+materialisation_lower
+materialisation_upper
+standard_lower
+standard_upper
+generated_lower
+generated_upper
+
+)
+s
+m
+
+(
+ 
+e
+m
+
+i
+t
+ 
+
+i
+
+g
+n
+y
+r
+e
+u
+Q
+
+ 10000
+
+ 1000
+
+ 100
+
+ 100000
+
+ 10000
+
+ 1000
+
+ 100
+
+)
+s
+(
+ 
+e
+m
+
+i
+t
+ 
+
+n
+o
+
+i
+t
+
+a
+s
+
+i
+l
+
+a
+i
+r
+e
+a
+M
+
+t
+
+ 1
+
+ 10
+
+ 100
+
+ 1000
+
+The number of universities
+
+ 1
+
+ 10
+
+ 100
+
+The number of universities
+
+(a) Time for LUBM
+
+(b) Time for UOBM
+
+Figure 7: Scalability tests
+
+Table 5: Realistic queries for FLY. Upper bound is
+tight in all cases.
+
+Query
+
+Lower Bound
+Upper Bound
+
+Q1
+0
+803
+
+Q2
+0
+342
+
+Q3
+28
+28
+
+Q4
+0
+25
+
+Q5
+0
+518
+
+Test for GEN-UOBM. Results for both standard and
+generated queries are given in Figure 7(b).
+In this case,
+the materialisation time is higher for the upper bound than
+that for the lower bound because of the increased number
+of materialised triples. The time to answer queries also in-
+creases signiﬁcantly, but is in line with the increased size
+of the answer. For example, the lower bound for generated
+Query 195 on UOBM(10) contains 132,411 answer tuples,
+whereas the upper bound contains 1,961,095 answer tuples.
+Although less eﬃcient than lower bound computation, upper
+bound computation signiﬁcantly outperforms HermiT, and
+the lower and upper bounds coincide for 9 out of 14 queries.
+Upper bound computation required less than 2 seconds for
+all standard queries w.r.t. UOBM(1); HermiT, in compar-
+ison, failed to compute the answer to one of the standard
+queries (Query 6)9, even when given a 24h timeout. We also
+used HermiT to check tuples in the gap between the lower
+bound and upper bound for this query, which took only 1
+hour. This illustrates the potential of upper and lower bound
+answers in optimising the computation of exact answers.
+
+Test for FLY. Oracle’s reasoner required 164s and 493s
+respectively to compute the lower and upper bound mate-
+rialisation, and to answer all queries. The query answering
+time was negligible compared to materialisation time.
+
+9Q(x) ← hasAlumnus(Univ0, x) ∧ Person(x)
+
+6. RELATED WORK
+
+Our work is related to theory approximation, which was
+ﬁrst described in the seminal paper by Kautz and Selman
+[30]. The idea in theory approximation is to approximate a
+logical theory T by two theories Tlb (the model lower bound )
+and Tub (the model upper bound ) such that Tlb |= T |= Tub,
+both Tlb and Tub are in a “more tractable” language than T ,
+and Tlb and Tub are “as close as possible” to T . Kautz and
+Selman studied this problem for T in propositional logic
+and the bounds expressed in its Horn fragment. Del Val
+[7] studied the problem for ﬁrst-order logic. This line of
+research has focused mostly on the computation of the “best”
+model upper bounds; however, we focus on query answers
+rather than models and hence our upper bounds correspond
+to model lower bounds, which have received little attention.
+The idea of transforming the ontology, data, and/or query
+to obtain upper bounds to query answers has been already
+explored in previous work. Table 6 summarises the main
+diﬀerences between our approach and the systems presented
+in [32, 27, 18], which we next explain in more detail.
+
+The Screech system [32] uses KAON2 [16] to transform
+an ontology into a disjunctive datalog program such that
+answers to SPARQL queries are preserved, and then ap-
+proximates the resulting disjunctive program into a data-
+log program by transforming disjunctions into conjunctions.
+The transformation of the ontology (which is delegated to
+KAON2) requires exponential time (and may also be of ex-
+ponential size) in the size of the input ontology. This ex-
+ponential blow-up means that, in practice, KAON2 may be
+unable to process large or complex ontologies; for example,
+KAON2 was reported to fail on the DOLCE ontology [24].
+Finally, due to the dependency on KAON2, Screech can
+only deal with the subset of OWL 2 corresponding to the
+
+1577Table 6: Comparison between diﬀerent systems
+
+System
+
+Source
+
+Screech [32]
+
+SHIQ
+
+Quill [27]
+
+OWL DL
+
+[18]
+Ours
+
+SHI
+
+OWL 2
+
+Target
+
+Independence
+Data Query
+YES
+NO
+NO
+NO
+YES
+YES
+OWL 2 RL YES
+YES
+
+Datalog
+DL-Lite
+DL-Lite
+
+Time
+
+Query
+
+exponential
+exponential
+exponential
+polynomial
+
+SPARQL
+
+CQ
+
+SPARQL
+
+CQ
+
+SHIQ DL, and is guaranteed to compute an upper bound
+only for SPARQL queries; in contrast our approach applies
+to all of OWL 2 as well as to more general query languages.
+The Quill system transforms both the ontology O and
+query Q to compute an upper bound [27]. In this case, the
+target language for approximation is DL-Lite (a.k.a. OWL
+2 QL), instead of OWL 2 RL. Quill ﬁrst transforms Q and
+adds axioms OQ to O based on this transformation. Then,
+Quill computes as an approximation OWL 2 QL axioms
+entailed by O ∪ OQ ∪ D, with D the input data set. Each
+entailment test requires the use of a fully-ﬂedged OWL rea-
+soner, which can be expensive; also, the required entailments
+need to be recomputed for each query and each data set.
+
+Kaplunova et al. [18] approximate an ontology O into an
+OWL 2 QL ontology O′ to provide an upper bound to queries
+in SPARQL. Each axiom C ⊑ D in O is transformed into
+an OWL 2 QL axiom C ′ ⊑ D′, where C is subsumed by C ′
+and D′ is subsumed by D (w.r.t. O). The transformation
+algorithm, however, is non-deterministic and there can be
+exponentially many C ′ and D′ satisfying the required prop-
+erties. Furthermore, as reported in [18], it is often the case
+that for a given D such that O∪D is satisﬁable, O′ ∪D is un-
+satisﬁable, regardless of the choices made when computing
+O′. The large degree of non-determinism means that com-
+puting O′ can be expensive, even for small ontologies—it is
+reported in [18] that “it is very demanding to approximate
+a TBox with 499 axioms”, and that they were unable to
+compute a coherent approximation “in reasonable time”.
+
+7. DISCUSSION
+
+We have proposed novel techniques that allow us to ex-
+ploit industrial-strength triple stores to answer queries over
+ontologies that are outside OWL 2 RL, thus “making the
+most” of state-of-the-art triple store technologies. Our tech-
+niques allow us to compute exact answers to queries in many
+cases. Otherwise, we can still eﬃciently compute an upper
+bound to the exact answers, which allows us to estimate the
+incompleteness of the triple store as well as to optimise OWL
+2 reasoners by ruling out many candidate answer tuples.
+
+The results obtained so far open many possibilities for
+future work. For example, we plan to develop techniques for
+identifying, during upper bound computation, a (hopefully
+small) fragment of the ontology and data set that is suﬃcient
+for checking whether the answers in the gap between bounds
+are indeed answers; this fragment can then be used instead
+of the original ontology when checking answers in the gap
+using an OWL 2 reasoner.
+
+Acknowledgements. Work supported by the Royal Soci-
+ety, the EU FP7 project OPTIQUE and the EPSRC projects
+ExODA, and SCORE!.
+
+8. REFERENCES
+[1] B. Bishop, A. Kiryakov, D. Ognyanoﬀ, I. Peikov,
+
+Z. Tashev, and R. Velkov. OWLim: A family of
+scalable semantic repositories. Semantic Web J.,
+2(1):33–42, 2011.
+
+[2] A. Cali, G. Gottlob, T. Lukasiewicz, B. Marnette, and
+
+A. Pieris. Datalog+/-: A family of logical knowledge
+representation and query languages for new
+applications. In LICS, 2010.
+
+[3] B. Cuenca Grau, I. Horrocks, Y. Kazakov, and
+
+U. Sattler. Modular reuse of ontologies: Theory and
+practice. JAIR, 31:273–318, 2008.
+
+[4] B. Cuenca Grau, I. Horrocks, M. Kr¨otzsch, C. Kupke,
+
+D. Magka, B. Motik, and Z. Wang. Acyclicity
+conditions and their application to query answering in
+description logics. In KR, 2012.
+
+[5] B. Cuenca Grau and G. Stoilos. What to ask to an
+incomplete semantic web reasoner? In IJCAI, pages
+419–476, 2011.
+
+[6] E. Dantsin, T. Eiter, G. Gottlob, and A. Voronkov.
+
+Complexity and expressive power of logic
+programming. ACM Comput. Surv., 33(3):374–425,
+2001.
+
+[7] A. Del Val. First order LUB approximations:
+
+characterization and algorithms. Artiﬁcial Intelligence,
+162(1-2):7–48, 2005.
+
+[8] B. N. Grosof, I. Horrocks, R. Volz, and S. Decker.
+
+Description logic programs: combining logic programs
+with description logic. In WWW, 2003.
+
+[9] Y. Guo, Z. Pan, and J. Heﬂin. LUBM: A benchmark
+for OWL knowledge base systems. J. Web Semantics
+(JWS), 3(2-3):158–182, 2005.
+
+[10] V. Haarslev and R. M¨oller. RACER system
+
+description. J. of Automated Reasoning (JAR), pages
+701–705, 2001.
+
+[11] V. Haarslev, R. M¨oller, and M. Wessel. Querying the
+
+semantic web with RACER+NRQL. In ADL, 2004.
+
+[12] A. Harth, J. Umbrich, A. Hogan, and S. Decker.
+Yars2: A federated repository for querying graph
+structured data from the web. The Semantic Web,
+pages 211–224, 2007.
+
+[13] I. Horrocks, O. Kutz, and U. Sattler. The even more
+
+irresistible SROIQ. In KR, 2006.
+
+[14] I. Horrocks and S. Tessaris. A conjunctive query
+
+language for description logic aboxes. In AAAI, 2000.
+
+[15] J. Huang, D. J. Abadi, and K. Ren. Scalable SPARQL
+
+querying of large RDF graphs. PVLDB,
+4(11):1123–1134, 2011.
+
+[16] U. Hustadt, B. Motik, and U. Sattler. Reasoning in
+
+description logics by a reduction to disjunctive
+datalog. Journal of Automated Reasoning,
+39(3):351–384, 2007.
+
+1578[17] M. Imprialou, G. Stoilos, and B. Grau. Benchmarking
+
+[26] T. Neumann and G. Weikum. The RDF-3X engine for
+
+ontology-based query rewriting systems. In
+Proceedings of the Twenty-Sixth AAAI Conference on
+Artiﬁcial Intelligence, AAAI, 2012.
+
+[18] A. Kaplunova, R. M¨oller, S. Wandelt, and M. Wessel.
+
+Towards scalable instance retrieval over ontologies.
+Knowledge Science, Engineering and Management,
+pages 436–448, 2010.
+
+[19] I. Kollia, B. Glimm, and I. Horrocks. Query answering
+
+over SROIQ knowledge bases with SPARQL. In DL,
+2011.
+
+[20] V. Kolovski, Z. Wu, and G. Eadon. Optimizing
+
+enterprise-scale owl 2 rl reasoning in a relational
+database system. The Semantic Web–ISWC 2010,
+pages 436–452, 2010.
+
+[21] L. Ma, Y. Yang, Z. Qiu, G. Xie, Y. Pan, and S. Liu.
+
+Towards a complete OWL ontology benchmark. In
+ESWC, pages 125–139, 2006.
+
+[22] B. Motik, B. Cuenca Grau, I. Horrocks, Z. Wu,
+A. Fokoue, and C. Lutz. OWL 2 Web Ontology
+Language Proﬁles. W3C Recommendation, 2009.
+[23] B. Motik, P. Patel-Schneider, B. Parsia, C. Bock,
+
+A. Fokoue, P. Haase, R. Hoekstra, I. Horrocks,
+A. Ruttenberg, U. Sattler, et al. OWL 2 Web
+Ontology Language: Structural Speciﬁcation and
+Functional-style Syntax. W3C recommendation, 27:17,
+2009.
+
+[24] B. Motik and U. Sattler. A comparison of reasoning
+
+techniques for querying large description logic aboxes.
+In Logic for Programming, Artiﬁcial Intelligence, and
+Reasoning, pages 227–241. Springer, 2006.
+
+[25] B. Motik, R. Shearer, and I. Horrocks. Hypertableau
+
+reasoning for description logics. J. of Artiﬁcial
+Intelligence Research (JAIR), 36(1):165–228, 2009.
+
+scalable management of RDF data. VLDB J.,
+19(1):91–113, 2010.
+
+[27] J. Pan, E. Thomas, and Y. Zhao. Completeness
+guaranteed approximations for OWL-DL query
+answering. Proc. of DL, 477, 2009.
+
+[28] J. P´erez, M. Arenas, and C. Gutierrez. Semantics and
+
+complexity of SPARQL. ACM Transactions on
+Database Systems (TODS), 34(3):16, 2009.
+
+[29] K. Rohloﬀ and R. Schantz. High-performance,
+
+massively scalable distributed systems using the
+mapreduce software framework: The shard
+triple-store. In Programming Support Innovations for
+Emerging Distributed Applications, 2010.
+
+[30] B. Selman and H. Kautz. Knowledge compilation and
+
+theory approximation. J. of the ACM (JACM),
+43(2):193–224, 1996.
+
+[31] E. Sirin, B. Parsia, B. Cuenca Grau, A. Kalyanpur,
+
+and Y. Katz. Pellet: A practical OWL-DL reasoner. J.
+Web Semantics (JWS), 5(2):51–53, 2007.
+
+[32] T. Tserendorj, S. Rudolph, M. Kr¨otzsch, and
+
+P. Hitzler. Approximate OWL-reasoning with screech.
+In RR, number 5341 in LNCS, pages 165–180, 2008.
+
+[33] C. Weiss, P. Karras, and A. Bernstein. Hexastore:
+
+sextuple indexing for semantic web data management.
+Proceedings of the VLDB Endowment, 1(1):1008–1019,
+2008.
+
+[34] Z. Wu, G. Eadon, S. Das, E. I. Chong, V. Kolovski,
+M. Annamalai, and J. Srinivasan. Implementing an
+inference engine for RDFS/OWL constructs and
+user-deﬁned rules in Oracle. In ICDE, pages
+1239–1248, 2008.
+
+1579

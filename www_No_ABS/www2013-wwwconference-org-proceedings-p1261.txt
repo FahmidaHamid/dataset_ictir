@@ -1,0 +1,530 @@
+Acronyms are abbreviations formed from the initial components of words or phrases.
+These components may be individual letters (e.g.,  CMU from  Carnegie Mellon University )  Part of the work was done during employment at Microsoft Research Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+IW3C2 reserves the right to provide a hyperlink to the author s site if the Material is used in electronic media.
+or parts of words (e.g.,  HTTP  from  Hypertext Transfer Protocol ).
+Acronyms are used very commonly in web searches as well as in all forms of electronic communication like email, text messages, tweets, blogs and posts.
+With the emergence of mobile devices, the usage of acronyms is becoming even more common because typing is di cult in such devices and acronyms provide a succinct way to express information.
+One key characteristic of acronyms is that they are typically ambiguious, i.e., the same acronym has many di er-ent meanings.
+For example,  CMU  can refer to  Central Michigan University ,  Carnegie Mellon University ,  Central Methodist University , and many other meanings.
+Consider a web search scenario: given an acronym as a query, it is immensely useful for the search engine to know all its popular meanings, ranked by their popularity.
+For example, for  CMU ,  Central Michigan University  is the most popular meaning followed by  Carnegie Mellon University  and others.
+The search engine can either modify the original query with these expansions and retrieve more relevant results [7] or simply show them to users so that they can disambiguate it themselves1.
+A second characteristic of acronyms is that they are typically disambiguated by context, i.e., the intended meaning is clear when the user provides a few context words.
+For example, a user searching for  cmu football  is most likely referring to  Central Michigan University  while the one searching for  cmu computer science  is most likely referring to  Carnegie Mellon University .
+Given an acronym and one or more context words, it is useful for the web search engine to know the most likely intended meaning (or a few most likely intended meanings, ranked by the likelihood).
+The search engine can then use query alteration techniques to retrieve more relevant results [7].
+To enable the above online scenarios, we study the o ine mining of acronyms and their meanings in this paper.
+For each acronym, we discover its various meanings; for each meaning, we output:   Expansion: The complete expanded string of the acronym for the meaning.
+  Popularity score: A score re ecting how often people intend this meaning when they use the acronym (e.g., how often web searchers intend it when they use only the acronym as the query).
+a query on the right hand side of search result page for limited queries.
+The algorithm used by Google has not been published and is hence not publicly known.
+1261cmu central michigan university cmu football central mich univ carnegie mellon university   cs carnegie mellon Figure 1: Example illustrating insights.
+  Context words: A set of words when used in context of the acronym indicates this meaning.
+Each word has a score re ecting how strongly it indicates this meaning.
+For example, for  CMU , we aim to discover the various meanings  Central Michigan University ,  Carnegie Mellon University ,  Central Methodist University  and so on.
+The popularity scores should re ect that  Central Michigan University  is more popular compared with the other meanings.
+Finally, we aim to  nd context words like  pittsburgh ,  computer science ,  research ,  computing , etc.
+for the meaning  Carnegie Mellon University .
+The 1:1 mapping between the output and the meanings is critical to enable the above online scenarios.
+There are several e orts in mining expansions of acronyms.
+We brie y discuss them here; a more detailed discussion can be found in Section 6.
+  Wikipedia: Wikipedia covers acronyms through its manually edited  disambiguation pages .
+It has low recall with many meanings not covered.
+We  nd from our experiments that roughly two thirds of the meanings of acronyms are not covered in Wikipedia.
+Furthermore, it does not provide popularity scores.
+  Acronym nder.com: Websites such as acronymfinder.com list the possible acronym expansions; this is also manually edited.
+As in Wikipedia, it does not provide popularity scores.
+Furthermore, it does not provide any context words for most of the expansions.
+  Automatic Mining: There has been recent work towards automatic mining of acronym expansions using the Web [6].
+The main focus of this work is in  nding legitimate expansions of a given acronym.
+However, there is no 1:1 mapping between the outputted expansions and meanings, no popularity scores and no context words.
+Due to the above limitations, it is di cult for web search engines to leverage the above approaches to support the online scenarios discussed above.
+Our main insight is that acronyms and their various expansions are captured in a search engine query click log.
+While some people use acronyms as queries and click on relevant documents, others use their expanded forms as queries and click on the same documents.
+Thus, we can  nd expansions by observing queries that  co-click  on the same documents as the acronym.
+As shown in Figure 1, by observing other queries co-clicked with query  cmu , we can  nd acronym expansions such as  central michigan university ,  central mich univ  and  carnegie mellon university .
+There are several technical challenges in  nding the distinct meanings from the co-clicked queries.
+First, not all co-clicked queries are expansions (e.g.,  cmu football  is not an expansion of  cmu  in Figure 1).
+How do we identify the ones that are expansions?
+Second, the co-clicked queries that are expansions do not correspond to the distinct meanings.
+There are several variants that correspond to the same meaning (e.g.,  central michigan university  and  central mich univ  in Figure 1).
+How do we group them such that there is a 1:1 mapping between groups and meanings?
+Third, how do we identify context words for each meaning?
+Fourth, co-clicked queries tend to cover the popular meanings of the acronym (e.g.,  Massachusetts Institute of Technology  for  MIT ) but not the  tail meanings  (e.g.,  Mazandaran Institute of Technology ,  Maharashtra Institute of Technology ,  Mahakal Institute of Technology , etc.).
+This is because the  rst few pages of results returned by a search engine for the query  MIT  do not represent the tail meanings.
+How do we  nd such tail meanings?
+Our main contributions can be summarized as follows:   We formulate the o ine acronym mining problem.
+The novelty of our problem formulation is to  nd the distinct meanings, not just the expansions.
+This is critical to enable the above online scenarios (Section 2).
+  We present a novel, end-to-end solution that leverages the query click log to identify expansions, group them into distinct meanings, compute popularity scores and discover context words (Section 3).
+We leverage two key insights.
+First, expansions of the same meaning click on the same set of documents, whereas expansions of di erent meanings click on di erent documents.
+We design similarity functions to leverage this insight and perform clustering to group the expansions.
+Second, co-clicked queries shed light on the context words of respective meanings.
+For instance, the fact that  cmu football  and  central michigan university  click on the same document hints the relevance of  football  to  central michigan university .
+We leverage this insight to discover context words.
+  We present a novel enhancement to discover tail meanings in addition to the more popular meanings (Section 3).
+  We describe how web search engines can leverage the mined information for prediction of intended meaning for queries containing acronyms (Section 4).
+  We perform extensive experiments using a large-scale query click log.
+Our experiments show that our approach (i) discovers acronym meanings with high precision and recall, (ii) signi cantly complements existing meanings in Wikipedia and (iii) accurately predicts intended meaning for online queries with over 90% precision (Section 5).
+To the best of our knowledge, this is the  rst work on automatic mining of distinct meanings of acronyms.
+In this section, we formally de ne the o ine acronym meaning discovery problem and then present our solution overview.
+We study the following o ine acronym meaning discovery problem.
+De nition 1.
+(Acronym Meaning Discovery Problem) Given an input acronym,  nd the set {M1, .
+.
+.
+, Mn} of distinct meanings associated to it.
+For each meaning Mi = (e, p, C),  nd the canonical expansion Mi.e, the popularity score Mi.p and the set Mi.C of context words along with scores.
+panded string in the query log.
+For example, for the meaning  Carnegie Mellon University  of the acronym  CMU , the variants include  Carnegie Mellon University ,  Carnegie Mellon Univ  as well as several misspellings.
+Mi.e is the most representative variant; we refer to it as the canonical expansion.
+The popularity score Mi.p measures how often web searchers intend this meaning when they use the acronym in a query.
+To easily leverage these scores for online meaning prediction, we compute these scores as probabilities.
+Finally, the set Mi.C of the context words are the words which when used in context of the acronym in web searches indicate this meaning.
+For example, for the meaning  Carnegie Mellon University , Mi.C = { pittsburgh ,  research ,  cs ,  science , etc.}.
+We associate a score with each context word in Mi.C which measures how strongly the word indicates this meaning.
+Again, to easily leverage these scores for online meaning prediction, we compute these scores as probabilities.
+Notice that our problem formulation assumes that the acronym is given.
+We assume a separate module that iden-ti es the acronyms commonly used in web searches; this can be used as input to the acronym meaning discovery problem.
+For example, this module can extract all acronyms listed in Wikipedia.
+Another approach is to treat all words that are not common English words as acronyms.
+Our framework will be able to  nd out the meanings of true acronyms, whereas words which are not actual acronyms will not likely produce any meanings.
+To discover the di erent meanings of an acronym, we leverage the query click log of a web search engine.
+Our solution is based on the following insight: while some searchers use acronyms as queries and click on the relevant documents, others use their expanded forms as queries and click on the same documents.
+We compute the canonical expansions, popularity scores as well as context words for the di erent meanings of an acronym by observing the set of queries that click on the same documents as the acronym query.
+We refer to them as  co-clicked  queries.
+Query Click Log: The query click log collects the click behavior of millions of web searchers over a long period of time (say, two years).
+We assume the query log Q to contain records of the form (q, d, f ) where q is a query string, d is a web document, represented by its unique URI, and f is the number of times d has been clicked by web searchers after posing the query q to the search engine.
+It is technically challenging to  nd the distinct meanings from the co-clicked queries.
+To address this challenge, we develop a novel, end-to-end solution that consists of the following steps:   Candidate Expansion Identi cation: We  rst collect the co-clicked queries for the given acronym.
+Not all co-clicked queries are valid expansions of the acronym.
+We identify the valid expansions from the co-clicked queries; we refer to them as candidate expansions.
+For this purpose, we use an acronym-expansion checking function, which checks if a query can be considered as the complete expanded string of the acronym.
+  Acronym Expansion Clustering: The candidate expansions do not correspond to the distinct meanings; there are several variants that correspond to the same meaning.
+We group the candidate expansions such that each group has unique meaning, and no two groups have the same meaning.
+  Enhancement for Tail Meanings: We observe that co-clicked queries do not cover the tail meanings.
+To address this problem, we present a novel extension that considers su-persequence queries.
+This approach  nds signi cantly more meanings, especially the tail ones.
+We refer to this algorithm as Enhanced Acronym Expansion Clustering.
+  Canonical Expansion, Popularity Score and Context Words Computation: We select the canonical expansion for each discovered meaning.
+We compute the popularity score for each meaning, such that more popular meanings receive higher scores.
+Finally, we assign a set of context words to each meaning.
+We also assign a score to each context word.
+We describe the above steps in details in Section 3.
+In Section 4, we describe how we can leverage the discovered meanings to predict the intended meanings of online queries.
+We explain the four steps in details.
+The output of each step is the input to the subsequent step.
+We present the input and output of each step followed by the algorithm.
+Input: The acronym a and the query click log Q.
+Output: The set E(a) of candidate expansions of a.
+Our main insight is that the expansions corresponding to the di erent meanings of a are included in the set of co-clicked queries for a.
+We  rst compute the co-clicked queries for a.
+Let D(q) denote the set of documents which users clicked when they searched with the query string q as recorded in the query click log.
+Furthermore, let Q(d) denote the set of queries for which users clicked on web document d as recorded in the query click log.
+We  rst compute from the query click log the set of documents D(a) clicked for acronym a.
+Then, for each document d   D(a), we collect the set of queries Q(d) for which d was clicked.
+We thus obtain the set  d D(a)Q(d) of co-clicked queries for a.
+Not all co-clicked queries are valid expansions for a.
+To identify the valid expansions in  d D(a)Q(d), we propose an acronym-expansion checking function.
+Acronym-Expansion Checking Function: We present a function that checks whether a given string can be considered as the expanded string of a given acronym.
+De nition 2.
+(Acronym-Expansion Checking Function) Given a string q and an acronym a, the checking function IsExp : q   a   {true, f alse} returns true if q is a valid expansion of a and f alse otherwise.
+For example, IsExp( carnegie mellon university ,  cmu ) should be true while IsExp( cmu football ,  cmu ) should be false.
+It is di cult to develop a set of exact rules for matching acronym letters in a query.
+For example, a common rule is that acronym letters should be the initial letters of the words in the expansion.
+However, this rule does not always hold:  Hypertext Transfer Protocol  is expansion for  HTTP .
+On the other hand, stop words are often skipped when constructing acronyms (e.g.
+ Master of Business Administration  is expansion for  MBA ).
+However, this does not always hold (e.g.,  League of Legends  is expansion of  LOL ).
+dynamic programming.
+We assign weights to the words and letters of the query string, and modify the longest common subsequence algorithm to  nd the subsequence with highest score [17].
+Pseudo-code is shown in Algorithm 1 in the Appendix, along with explanations of the checking function.
+Expansion Identi cation from Co-clicked Queries: A co-clicked query q    d D(a)Q(d) is a valid expansion of acronym a, i  IsExp(q, a) = true; we refer to it as a candidate expansion of a.
+We compute the set E(a) = {q|q    d D(a)Q(d), IsExp(q, a) = true} of candidate expansions of a by checking each co-clicked query using the acronym-expansion checking function.
+Input: The set E(a) of candidate expansions of a and the query click log Q.
+Output: Grouping G(a) = {G1, .
+.
+.
+, Gn} of candidate expansions E(a).
+The set E(a) of candidate expansions output by the previous step does not correspond to the distinct meanings.
+It contains several variants that correspond to the same meaning.
+For example, for the meaning  Carnegie Mellon University , the variants include  Carnegie Mellon University ,  Carnegie Mellon Univ  as well as misspellings like  Carnegie Melon University .
+They all pass the acronym-expansion checking function.
+Given the set E(a) of candidate expansions of a, this step clusters them into a set G(a) = {G1, .
+.
+.
+, Gn} of groups such that each group has a unique meaning, and no two groups have the same meaning.
+These groups correspond the desired set {M1, .
+.
+.
+, Mn} of distinct meanings.
+We  rst discuss the distance metrics between the candidate expansions and then the clustering algorithm.
+Candidate expansions that correspond to the same meaning are typically minor spelling variations of each other (e.g.,  Carnegie Mellon University  and  Carnegie Melon University ) while those that correspond to di erent meanings are often far in terms of string distance (e.g.,  Carnegie Mellon University  and  Central Michigan University ).
+One obvious approach is to cluster the candidate expansions based on their string distance, say edit distance.
+However, there are many cases where expansions corresponding to the same meaning have large string distances.
+For example, expansions like  Mass Inst Tech  and  Massachusetts Institute of Technology  correspond to the same meaning, but their edit distance is high enough to prevent them from being grouped together.
+On the other hand, expansions like  Manukau Institute of Technology  and  Manipal Institute of Technology  refer to two di erent meanings but may incorrectly be grouped together due to their low edit distance.
+Our key insight is that each document clicked by any of the expansions in E(a) typically corresponds to a single meaning; hence, the expansions that correspond to the same meaning will click on the same set of documents, whereas expansions corresponding to di erent meanings will click on di erent sets of documents.
+We design distance metrics to leverage this insight and perform clustering to group the expansions.
+Set Distance (Jaccard Distance): One way to measure the distance between two expansions ei and ej in E(a) is by the distance between the corresponding sets D(ei) and D(ej) of clicked documents.
+A common way to measure set distance is Jaccard distance: dist(ei, ej) = 1   |D(ei) D(ej )| |D(ei) D(ej )| .
+However, Jaccard distance has a serious limitation.
+Click logs are known to be noisy and contain many clicks that users performed by mistake (referred to as  mis-clicks ).
+For example, documents associated with  Massachusetts Institute of Technology  get signi cant number of mis-clicks for the query  Michigan Institute of Technology .
+Jaccard distance is not robust to such mis-clicks.
+Distributional Distance (Jensen-Shannon Divergence) Our main insight is to leverage the frequency of clicks.
+The frequency of mis-clicks is typically much lower compared with frequency of clicks on documents that are consistent with the meaning of the expansion.
+We consider the distribution of documents clicked for a given query instead of the set of documents.
+We use a distributional distance metric, square root of Jensen-Shannon divergence, to evaluate distance between expansions.
+This metric is much more robust to mis-clicks.
+Denote by F (q, d) the frequency with which d is clicked by q.
+The click distribution  (q) of a query q over all possible documents is P r( (q) = d) = F (q,d) Pd D(q) F (q,d) .
+Given click distributions de ned by click frequencies, the Jensen-Shanon divergence between two expansions ei and ej in E(a) is: JSD( (ei)|| (ej)) = 1 where  (e) = 1 Leibler divergence between two distributions:
+
+
+ KL(X||Y ) =Xi P r(X(i)) log P r(X(i)) P r(Y (i)) .
+Then, dist(ei, ej) =pJSD( (ei)|| (ej)).
+We cluster the candidate expansions in E(a) based on the above distance metric.
+We use the bottom-up, average-link hierarchical clustering [14, 5].
+While the set of co-clicked queries for the acronym a covers the popular meanings of a, it does not cover many of the less popular meanings (referred to as  tail meanings ).
+Consider the acronym  MIT .
+ Massachusetts Institute of Technology  is the dominating meaning for  MIT ; the  rst few pages of results returned by the search engine for the query  MIT  are dominated by that meaning.
+Tail meanings for that acronym (e.g.,  Maharashtra Institute of Technology ,  Mahakal Institute of Technology ,  Mazandaran Institute of Technology  and so on) are not represented in the top results.
+As a result, the co-clicked queries for  MIT  will not cover these tail meanings.
+As shown in Figure 2, the co-clicked queries for  MIT  (i.e.,  massachusetts institute of technology ,  mit boston  and  mass institute of tech ) all correspond to the dominating meaning.
+Hence, the above approach misses the tail meanings.
+We leverage the following insight to address this problem.
+Since users searching for tail meanings do not  nd the desired documents when they use only the acronym as a query, they use additional words to disambiguate the query.
+For example, a user searching for the meaning  Maharashtra Institute of Technology  (which is located in Pune, India) will issue the query  mit pune  while the one searching for the 1264mit mit pune mit ujjain massachusetts institute of technology mit boston mass institute of tech maharashtra institute of technology pune mahakal institute of technology ujjain   mahakal institute of technology Figure 2: Example illustrating enhancement for tail meanings.
+meaning  Mahakal Institute of Technology  (which is located in Ujjain, India) will issue the query  mit ujjain .
+Instead of collecting co-clicked queries for the acronym a, we collect co-clicked queries for acronym supersequence queries (ASQ).
+De nition 3.
+(Acronym Supersequence Query) An acronym supersequence query, denoted as a+s, for an acronym a is a query in the query click log that contains the string a and an additional sequence of words s either as pre x or as su x of a.
+For example,  mit pune ,  mit ujjain  and  mit admission  are ASQs for  mit .
+Co-clicked queries of ASQs of a contain many more tail meanings of a.
+As shown in Figure 2, co-clicked of the above ASQs of  mit  cover the tail meanings like  Maharashtra Institute of Technology  and  Mahakal Institute of Technology .
+We enhance the candidate expansion identi cation and expansion clustering steps based on the above insight.
+Candidate Expansion Identi cation: Input: The acronym a and the query click log Q.
+Output: The set E(a) of candidate expansions of a.
+The goal of this step is to identify the candidate expansions among the co-clicked queries of ASQs of a.
+However, there is a challenge: unlike in the case of co-clicked queries of a, the candidate expansions may not themselves appear in co-clicked queries of ASQs of a.
+For example, the co-clicked queries for ASQ  mit pune  does not contain  maharashtra institute of technology .
+But it contains  maharashtra institute of technology pune .
+This is because people tend to use acronyms and their expansions interchangeably; so, ASQ a + s may not have co-clicks with e where e is an expansion of a but will have co-clicks with e + s. We refer to them as  expansion supersequence queries .
+We identify the candidate expansions of a as follows:
+ compute this by scanning the query click log and identifying queries which contain a and a pre x or su x string.
+We consider pre x and su x strings containing zero, one and two words.
+clicked queries  d D(a+s)Q(d).
+e is a candidate expansion for a based on ASQ a + s i  (i) the expansion supersequence query has co-clicks with a+s, i.e., e+s    d D(a+s)Q(d) and (ii) the acronym-expansion checking function returns true, i.e., IsExp(e, a) = true.
+We formally de ne the candidate expansion set Es(a) of a based on ASQ a + s: Es(a) = {e|e + s    d D(a+s)Q(d)   IsExp(e, a) = true}
+ ing the candidate expansion sets based on the ASQs.
+We formally de ne the candidate expansion set E(a) of a by E(a) =S s,a+s ASQ(a) Es(a).
+Note that the pre x/su x can be empty.
+So, ASQ(a) includes a and hence the above candidate expansion set subsumes the previously de ned candidate expansion set.
+The new candidate expansion set contains strictly more expansions and hence improves coverage.
+Acronym Expansion Clustering: Input: The set E(a) of candidate expansions of a and the query click log Q.
+Output: Grouping G(a) = {G1, .
+.
+.
+, Gn} of candidate expansions E(a).
+The goal is to group the set E(a) of candidate expansions into groups such that each group corresponds to a distinct meaning.
+The key insight for expansions also holds for expansion supersequence queries: the expansion super-sequence queries that correspond to the same meaning will click on the same set of documents, whereas expansion su-persequence queries corresponding to di erent meanings will click on di erent sets of documents.
+For example,  mas-sachusetts institute of technology admissions  and  mass inst of tech admissions  will share clicks but  massachusetts institute of technology admissions  and  maharashtra institute of technology admissions  will not.
+Hence, we can leverage the same general clustering approach based on distributional distance to perform the grouping.
+However, the same expansions can have multiple corresponding expansion super-sequence queries; we need to compute the distance between two expansions by aggregating the distances between the corresponding expansion supersequence queries.
+There are multiple ways to perform this aggregation; we present two such options: Distance Aggregation: One option is to compute the distance for each distinct expansion supersequence query (corresponding to a distinct pre x/su x string) and then aggregate the distances.
+Let ASQ(a, ei, ej) = {a + s|a + s   ASQ(a), ei + s   Q, ej + s   Q} be the subset of ASQ queries for which both ei + s and ej + s are valid queries in the query log Q.
+For each a + s   ASQ(a, ei, ej), denote by dists(ei, ej) the distance between two candidate expansions ei and ej measured over the same supersequence a + s, using the distributional distance between queries ei + s and ej + s.
+This can be de ned as dists(ei, ej) = dist(ei + s, ej + s).
+We then aggregate dists(ei, ej) over all possible a + s   ASQ(a, ei, ej) to obtain the overall distance dist(ei, ej) between candidate expansions ei and ej.
+That is dist(ei, ej) =
+ |ASQ(a,ei,ej )| Pa+s ASQ(a,ei,ej ) dists(ei, ej).
+Click Frequency Aggregation: Another option is to aggregate clicks instead of distance scores.
+For each pair of candidate expansions, ei and ej, we compute the click distribution of expansion ei by aggregating over all possible expansion supersequence queries in ASQ(a, ei, ej).
+The aggregated click distribution, denoted by  ij(ei), is: Pa+s ASQ(a,ei ,ej ) F (ei+s,d) P r( ij(ei) = d) = Pa+s ASQ(a,ei ,ej ) Pd D(ei+s) F (ei+s,d) .
+We then compute a distributional distance between ei and ej based on the aggregated click distribution: dist(ei, ej) = pJSD( ij(ei)|| ij(ej)).
+As we will show later in our experiments, we did not observe noticeable di erence between the two aggregation approaches.
+sion Clustering; we refer to the approach discussed in Section 3.2 as Acronym Expansion Clustering.
+Input: Grouping G(a) = {G1, .
+.
+.
+, Gn} of candidate expansions E(a) and the query click log Q.
+Output: Meanings {M1, .
+.
+.
+, Mn} with Mi.e, Mi.p and Mi.C for each meaning Mi.
+The clustering step outputs a set of groups of expansions G(a) = {G1, .
+.
+.
+, Gn}.
+These groups correspond to the desired set {M1, .
+.
+.
+, Mn} of distinct meanings for the acronym a.
+In this step we compute, for each meaning Mi, canonical expansion Mi.e, popularity Mi.p, and context words Mi.C.
+Canonical Expansion: We posit that the canonical expansion of Gi is the most  popular  expansion, because intuitively the canonical acronym expansion should occur more frequently than non-canonical expansions, or expansions with spelling mistakes.
+In our click log data, popularity is measured by the number of clicks.
+If a document d is clicked by acronym a for a total of F (a, d) times, we want to  nd out how many of those clicks are intended for each expansion ek   Gi.
+Since there is no way for us to know users  real intent, we approximately distribute clicks F (a, d) to each expansion ek   Gi   G proportionally by the number of clicks between ek and d, namely, F (ek, d).
+The intuition is that if the document d is clicked by a particular expansion ek a lot, then a signi cant portion of the clicks F (a, d) should be credited to ek.
+Given a click between a and d   D(a), the probability that the click is intended for ek, denoted as P r(ek, d), is computed by the total number of clicks between ek and d, F (ek, d), divided by the total number of clicks between d and all possible expansions in G. The probability that a click on document d   D(a) belongs to expansion ek is thus: P r(ek, d) = F (ek, d) PGl GPej  Gl F (ej, d) If we only look at acronym a itself (without supersequence tokens), then the probability of an expansion ek can be computed by aggregating over all possible acronym-document clicks F (a, d): (1) ek.p = Pd D(a) F (a, d)P r(ek, d) Pd D(a) F (a, d) However, the probability of an expansion should also include cases where the acronym is mentioned in conjunction with supersequence tokens a + s, where the meaning of a is intended for that expansion.
+Conceptually, the meaning probability of a should be counted regardless of whether a is mentioned alone, or with some other tokens.
+(If we do not account for supersequence queries, on the other hand, then for certain tail expansions discovered via ASQ that have no co-clicks with a, these expansions would get zero-probability, which is intuitively incorrect).
+We de ne P rs(ek, d) for each a + s   ASQ(a) by: P rs(ek, d) = Then the probability of an expansion ek, denoted as ek.p, can be computed by aggregating clicks credited to ek, di-F (ek + s, d) F (ej + s, d) PGl GPej  Gl vided by the total number of query clicks containing a: ek.p = Pa+s ASQ(a)Pd D(a+s) F (a + s, d)P rs(ek, d) Pa+s ASQ(a)Pd D(a+s) F (a + s, d) As in our previous notations, a   ASQ(a) because s can be empty.
+Notice, Equation (2) is a generalization of Equation (1).
+If supersequence queries are not considered, then it essentially becomes Equation (1).
+(2) With that, the canonical expansion of Gi is simply the expansion with the highest probability: Mi.e = argmax ek.p ek Gi where ek.p is computed in Equation (2).
+Meaning Group Popularity: The second output is the probability of each meaning group Mi.p.
+Since we have already computed ek.p in Equation (2), we can simply aggregate for all ek   Gi to obtain Mi.p: Mi.p = Xek Gi ek.p Context Words: Let D(Gi) be the set of documents clicked by expansions in group Gi for meaning Mi.
+We assign context words to each meaning Mi: Mi.C = {w | w is a word in q, q    d D(Gi)Q(d)}.
+We assign to each word in Mi.C a probability score, which measures how strongly the word indicates the meaning.
+Let F (w, Gi) be the frequency of a word w in group Gi, given by F (w, Gi) = Pw q,q d D(Gi )Q(d),d D(Gi) F (q, d).
+We compute the probability that a word w is indicative for Mi by: P r(w|Mi) = F (w, Gi) .
+Pw Mi.C F (w , Gi)
+
+ Acronym queries are very common in Web search.
+Often users provide some context, in addition to the acronym, which can be one or more other words.
+In such cases, the user experience can be greatly enhanced if the correct meaning of the acronym can be predicted by the search engine.
+Then the search results for the query will be more relevant and focused.
+We propose a solution to such prediction task: given an acronym and a context, predict the correct meaning of the acronym.
+We assume that we are given a set of meanings {M1, M2, .
+.
+.
+, Mn} for an acronym, found using our o ine approach from Section 3.
+Each meaning Mi is also associated with a set of context words as described in Section 3.4.
+To predict the correct meaning of an acronym, given context words, we leverage (1) the popularity of each meaning, and (2) the relatedness between each meaning and the context words.
+In case there are no context words given, to predict the meaning of an acronym, we use only the popularity scores of its meanings, Mi.p, as computed in Section 3.4.
+For each meaning Mi and context word w, we compute the probability P r(Mi|w).
+Applying Bayes  theorem we obtain: P r(Mi|w) = P r(w|Mi)P r(Mi) P r(w) Here, P r(w|Mi) is computed as in Section 3.4, and P r(Mi) is given by Mi.p.
+P r(w) can be any dictionary-based probability of the word w. Note that since P r(w) is the same for all meanings Mi, it is su cient to consider only the numerator in the above formula.
+To predict which is the correct meaning, we consider the meaning with the highest probability score.
+This prediction task can be further generalized in case we have more than one context word in addition to the acronym: P r(Mi|w1, .
+.
+.
+, wk) = P r(w1, .
+.
+.
+, wk|Mi)P r(Mi) P r(w1, .
+.
+.
+, wk) where P r(w1, .
+.
+.
+, wk|Mi) = Qj P r(wj|Mi) by considering that all words are independent and identically distributed.
+P r(w1, .
+.
+.
+, wk) is computed analogously.
+We present an experimental evaluation of the solution proposed in the paper.
+The goals of the study are:   To study the e ectiveness of our clustering algorithm and our enhanced clustering algorithm in discovering expansions and grouping expansions into meanings;   To compare the above algorithms with clusterings based on edit distance and Jaccard distance in terms of cluster quality;   To compare the meanings available in Wikipedia with those discovered by our clustering algorithm;   To study the e ectiveness of online meaning prediction algorithm for acronym+context queries.
+To evaluate the proposed approach of clustering acronym expansions, we randomly sampled 100 pages from Wikipedia disambiguation pages.
+We  ltered out pages which do not represent acronyms (e.g., the disambiguation page about  Jim Gray ), and pages of unambiguous acronyms with a single meaning.
+This resulted in a set of 64 acronyms, on which we perform our experiments.
+To collect candidate expansions, we use the query log from Bing from 2010 and
+
+ We compare the following methods, all based on standard bottom-up hierarchical clustering with average link and threshold 0.8:   Edit Distance based Clustering (EDC): Clustering, which uses edit distance between candidate expansions.
+  Jaccard Distance based Clustering (JDC): Clustering, which uses Jaccard distance between expansions.
+  Acronym Expansion Clustering (AEC): Our approach from Section 3.2, which uses only acronym queries to collect candidate expansions (no supersequence queries).
+Square root of Jensen-Shannon divergence is used for distance between expansions.
+  Enhanced Acronym Expansion Clustering (EAEC): Our enhanced approach from Section 3.3, which uses su-persequence queries to collect candidate expansions, square root of Jensen-Shannon divergence as distance, and click frequency based aggregation.
+We use two sets of ground truth meanings for acronyms:   Wikipedia Meanings: Meanings listed in the Wikipedia disambiguation pages of the acronyms.
+not share more details about the query log.
+By analyzing the results from our clustering approach on a set of acronyms, we noticed that the meanings discovered from the query log, and the meanings listed in Wikipedia for the same acronyms, are very di erent.
+That is why, in addition to the Wikipedia meanings, we compile a second set of ground truth meanings:   Golden Standard Meanings: We consider for each acronym all queries from the click log, which (1) are legitimate w.r.t the acronym-expansion check (see Section 3.1), and (2) have co-clicks with acronym or acronym superse-quence queries.
+Then, we manually label the di erent mean-ings/expansions of the acronym.
+In the Golden Standard we have one or more di erent expansions for each distinct meaning.
+For example, we can have two expansions:  central michigan university  and  central mich univ  referring to the same meaning.
+Note that some acronym expansions are not meaningful, even though they are legitimate with respect to our acronym-expansion check.
+One such example is the expansion  computer processor upgrade  for  CPU , since we speculate people never mean  computer processor upgrade  when they mention  CPU .
+In our Golden Standard set we do not consider such expansions.
+Since not all legitimate expansions are included in the ground truth, not all groups from our clustering approaches have speci c ground truth meaning.
+We measured the number of the groups which have ground truth meanings, divided by the total number of groups in the clustering, and on average, 82% of the groups have ground truth meanings.
+We use the following measures: Purity, Normalized Mutual Information (NMI), and Recall.
+Our algorithms output a set of groups G(a) = {G1, .
+.
+.
+, Gn} which maps to golden standard meanings M = {M1, .
+.
+.
+, Mk} for a given acronym a.
+We map each group of expansions Gi to one or more meanings from M using the top-5 expansions from Gi, ranked by their probabilities.
+A group can be mapped to one or more meanings, and multiple groups can be mapped to one meaning.
+For example, a group with expansions,  carnegie mellon university  and  central michigan university , is mapped to 2 distinct meanings, while a group with expansions,  central michigan university  and  central mich univ , is mapped only to one meaning.
+By a group-meaning mapping we consider a meaning, to which a group can be mapped.
+  Purity: The Purity measures the accuracy of the group-j=1 |Gi   Mj| be the total number of group-meaning mappings.
+The Purity measure counts the number of groups, which are mapped to some meaning, and divides this number by N : meaning mappings.
+Let N = Pn i=1Pk Purity(G, M) =
+
+ max j |Gi   Mj| n Xi=1 Good clusterings have Purity close to 1, and bad ones   close to 0.
+Since high Purity is easy to achieve, by simply having all expansions in separate groups, in addition to Purity, we use Normalized Mutual Information, described below.
+  Normalized Mutual Information (NMI):
+
+
+ P r(Gi)P r(Mj ) is the Mutual Information of the clusters and the Golden Stan-Here MI(G; M) = PiPj P r(Gi   Mj) log P r(Gi Mj )
+
+
+
+
+
+
+
+
+
+ Table 1: Evaluation for EDC, JDC, and AEC.
+Purity NMI Recall
+
+
+
+
+
+ Table 2: Evaluation for AEC and EAEC.
+dard meanings.
+H(G) =  Pi P r(Gi) log P r(Gi) is the entropy of the clusters, and H(M), computed analogically, is the meanings entropy.
+NMI is a number between 0 and 1, where good clusterings have NMI close to 1, and bad ones   close to 0.
+Since, the cluster entropy H(G) increases with the number of groups, clusterings with many groups have low NMI scores.
+This is why NMI considers the trade-o  between the quality of the clusters and their total number.
+  Recall: We compute Recall only with respect to our ground truth meanings.
+In practice, it is very di cult to  nd all possible meanings for a given acronym.
+The Recall w.r.t our Golden Standard, is the number of meanings, which are found in the clustering, divided by the total number of meanings in the Golden Standard.
+Furthermore, if a group is mapped to multiple meanings, we consider only one of them, assuming only a single meaning per group.
+We  rst compare the e ectiveness of the Edit Distance based (EDC) and Jaccard Distance based (JDC) clusterings with our Acronym Expansion clustering (AEC) using a subset of 20 acronyms.
+The results are presented in Table 1.
+We notice that both methods, EDC and JDC, have lower cluster quality than AEC, especially in terms of NMI.
+EDC often fails to cluster expansions by semantic meaning, since expansions with the same meaning can have very large string distance.
+In such cases, they are incorrectly assigned to different groups.
+For example  central michigan university ,  central mich univ , and  central mi univ  belong to di er-ent groups from the EDC clustering.
+In contrast, the AEC method groups these expansions in a single group, since it does not rely on string distance.
+The JDC method has better quality than EDC, but it is still inferior to the AEC method.
+Since JDC uses set distance between expansions, it is very di cult to  nd a threshold for similarity.
+If the threshold is high, then distinct meanings can be easily grouped together due to mis-clicks; if the threshold is low, then identical meanings are not grouped together because sometimes there are not enough clicks.
+In contrast, the AEC method addresses these problems by using distributional distance metric over click frequencies.
+To discuss the e ectiveness of our clustering approaches, AEC and EAEC, we  rst present some intuitive examples.
+In Table 3 we show the top-5 meanings, their probabilities, and a few context words for  CMU ,  MBA , and  RISC , using our enhanced clustering EAEC.
+Each of the three acronyms has one or two dominant meanings, with very high probabilities, and other meanings with much lower probabilities.
+We also notice that the context words of each meaning
+
+
+
+
+
+
+
+
+
+
+
+ Table 4: Number of meanings in Wikipedia (NW ), in the Golden Standard (NGS), and shared (NW   NGS).
+are very descriptive.
+For example,  concrete masonry unit  has context words  cinder ,  cement ,  construction , etc.
+We systematically compare AEC and EAEC in Table 2, using the Golden Standard meanings and our complete data set.
+We  rst notice that the quality of the two methods is very good, in terms of both, Purity and NMI.
+The methods succeed in grouping together expansions referring to the same semantic meaning, even if they have large string distances.
+Furthermore, due to the choice of distributional distance metric for the clustering, the mis-clicks do not in u-ence the clustering.
+From the results we also notice that the Recall improves signi cantly for the enhanced clustering (EAEC), compared to AEC.
+Using EAEC with supersequence queries, we discover signi cantly more new tail meanings.
+Furthermore, since the enhanced clustering EAEC achieves 0.996 Recall w.r.t the Golden Standard, we succeed to output 99% of the meanings in the Golden Standard to the end users.
+In addition to using click frequency based aggregation, we also tried out distance based aggregation as described in Section 3.
+Distance based aggregation yields a purity of
+ that of click frequency based aggregation.
+An important result from our study is the comparison between the Wikipedia meanings and the Golden Standard meanings.
+First, in Table 5 we present the meanings of  CMU ,  RISC and  MBA  which belong only to Wikipedia, only to the Golden Standard, or are shared by both.
+We notice, that the amount of shared meanings is relatively small, and that both sets, Wikipedia and Golden Standard meanings have meanings not covered by the other.
+In Table 4 we present the average number of meanings in Wikipedia, in the Golden Standard, and their shared meanings.
+In Figure 3 all acronyms in our data set are presented with their meaning counts from the three meaning sets.
+From these results we see that only 35% from the meanings in Wikipedia are found using our clustering aproach.
+This means that a lot of meanings listed in Wikipedia are typically not used in their abbreviated form.
+It can be because they are extremely tail meanings, or because they are mostly encyclopedic or domain-speci c, e.g., medical or mathematical terms.
+In such cases there is not enough evidence in the query log that these acronyms refer to the corresponding meanings.
+For example, for  MBA  our method did not  nd the meaning  main belt asteroid  (see Table
+  leukotriene receptor antagonist .
+On the other hand, our acronym mining approach discovers many meanings, currently not present in Wikipedia: in the Golden Standard set only 34% of the meanings belong to Wikipedia.
+More importantly, we discover acronym meanings which are frequently used by common users.
+Typically, we discover many company names, associations, universities, events, etc.
+which are used together with their abbreviated form.
+By  nding such new, valid and widely used acronym
+ Probability Context Words central michigan university carnegie mellon university
+ concrete masonry unit
+ central methodist university canton municipal utilities reduced instruction set computer rice insurance services company rna induced silencing complex reinventing schools coalition recovery industry services company master of business administration mortgage bankers association
+ montgomery bell academy metropolitan builders association military bene t association
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ michigan, university, athletics, campus, edu, football, chippewas mellon, carnegie, pittsburgh, university, library, computer, engineering block, concrete, cmu, masonry, cinder, cement, construction methodist, university, fayette, central, missouri, baseball canton, court, municipal, docket, case, clerk, records risc, instruction, set, computer, processor, architecture insurance, rice, risceo, services, real, estate complex, rna, silencing, gene, protein schools, coalition, inventing, alaska recovery, certi ed, specialist, matrix, educational mba, business, gmat, administration, harvard, programs, degree mortgage, bank, implode, amerisave, bankers, rates bell, montgomery, academy, nashville, mba, school, edu builders, homes, association, wisconsin, milwaukee military, armed, association, bene ts, insurance, veterans Table 3: Top-5 meanings for CMU, RISC, and MBA, ranked by probability, and some of their context words.
+Only Wikipedia Meanings Only Golden Standard Meanings Shared Meanings
+ caribbean medical university chiang mai university california miramar university colorado mesa university co man memorial union college music update complete music update communication management unit central methodist university canton municipal utilities centrul medical unirea case management unit central mindanao university central missouri university carnegie mellon university central michigan university canadian mennonite university concrete masonry unit couverture maladie universelle rural infrastructure service commons rice insurance services company reduced instruction set computing
+ research institute for symbolic computation reinventing schools coalition rna induced silencing complex maldives basketball association marine biological association metropolitan basketball association media bloggers association milwaukee bar association monterey bay aquarium macbook air main belt asteroid market basket analysis miss black america misty s big adventure recovery industry services company rhode island statewide coalition metropolitan builders association master of business administration military bene t association master builders association mississippi basketball association mortgage bankers association montgomery bell academy mountain bothy association mountain bike action massachusetts bar association mariana bracetti academy missionary baptist association morten beyer agnew mind body awareness memphis business academy Table 5: Meanings from Wikipedia and Golden Standard sets.
+Golden Standard Meanings Shared Meanings Wikipedia Meanings
+
+
+
+
+ i s g n n a e
+ f o r e b m u
+
+
+
+
+
+ a b a l c a c d a f d a p g a u a l i s n a i p a s p a p r a p s a a t a m t a c c b s o b i p m b d a c d c c s c c i g c c s i c a m c u m c s o m c a p c c p c l p c m p c u p c m r c t r c s s c p t c r t c c a d l d d r d d a h d r f c e m c e l c p f a c g j s g c r i a f j a r l a b m g c m t i m a b s m r s m a v m i c o f e p Acronyms m p i i m p c s i r a s r i g s p m s i s s i d t c y t c c u Figure 3: Number of meanings from Wikipedia, from the Golden Standard, and shared between the two sets.
+Label cmu michigan cmu robotics institute cmu pittsburgh cmu fayette missouri central michigan university carnegie mellon university carnegie mellon university central methodist university Table 6: Examples for  acronym+context  queries and their labels.
+expansions, we can signi cantly extend the meaning lists in Wikipedia disambiguation pages.
+Here we consider the online application scenario from Section 4: given acronym+context queries, predict the meaning of the acronym considering the provided context.
+We use a set of 7612 acronym+context queries, randomly sampled from the query click log, which refer to the acronyms in our data set.
+For example, for  CMU  we use queries like  cmu football ,  cmu pittsburgh ,  cmu robotics institute , etc.
+Human users label these queries with the meaning they consider most probable, by looking only at the query.
+For example,  cmu michigan  is labeled by  central michigan university  (see Table 6 for more examples).
+Queries, for which the additional context does not disambiguate the meaning, are not labeled.
+For example,  cmu university  can refer to multiple meanings, and hence it is not labeled.
+We apply the prediction approach from Section 4 to the labeled queries, without considering their labels.
+The output is the most probable meaning of the acronym, given the context words in the query.
+For each acronym, we compute the number of correctly predicted meanings (by comparing to their labels), divided by the total number of labeled queries for this acronym.
+The average precision is 0.941.
+This means that the assigned context words to each acronym meaning are highly indicative and can be used to predict meanings for online acronym+context queries e ectively.
+While there have been many works and systems available on acronyms, we believe our work has the following unique distinctions compared with the state of art.
+First, we solve the general acronym meaning discovery problem in a comprehensive way.
+This is di erent from other works which either look at domain speci c acronyms (e.g., medical domain), or only focus on certain aspects of the problem (e.g., only interested in  nding expansions).
+Second, to the best of our knowledge, this is the  rst work on acronym expansion and meaning discovery leveraging query click log by exploiting the acronym co-click behaviors.
+Third, due to the nature of query click analysis, our method is language agnostic.
+This is di erent from pattern based discovery in text for instance, where people look for NLP patterns (e.g.,  Carnegie Mellon Univeristy, also referred to as CMU, is ... ) and therefore the patterns and methods are very language dependent.
+We now study related works in details.
+Wikipedia covers many acronyms and their di erent meanings through its  disambiguation pages .
+These pages are manually edited by one or a few editors.
+First, our experiments show that many meanings are not covered in Wikipedia disambiguation pages; there are almost twice more meanings used in web search queries but not covered in Wikipedia.
+Second, it does not provide popularity scores.
+Furthermore, the meanings in Wikipedia are not necessarily the most popular meanings; our experiments show that roughly 65% of the meanings of acronyms on Wikipedia are rarely or never expressed in Web search queries (Section 5).
+Finally, our work heavily taps into the wisdom of crowds, to discover acronym expansions, understand their meanings and popularity, and mine their corresponding context.
+Tapping data contributed by millions of end users is a signi cant and necessary step forward.
+Websites such as acronymfinder.com list many possible acronym expansions; this is also manually edited.
+As in Wikipedia, it does not provide popularity scores.
+Furthermore, it does not provide any context words for most of the acronym expansions.
+While it does o er a large number of meanings for a large number of acronyms, our study shows that it su ers signi cantly from the quality problem: (1) many expansions listed are actually near duplicates ( Reduced Instruction Set Computer  and  Reduced Instruction Set Computing  for  RISC ); (2) many expansions are actually meaningless, in the sense people rarely or never use its acronym form to refer to it (e.g.,  More Bad Advice  for
+ Recently, there have been a few works on automatic mining of acronym expansions by leveraging Web data [8, 9,
+ in [6] subsequent queries in query sessions are exploited), our study covers many more aspects, including meaning discovery through clustering analysis, popularity computation and context words mining.
+Our study heavily relies on query click log, and it is not clear how other works can be adapted to support e ective clustering, popularity and context words mining without the help of query click log.
+Another line of related work is on mining synonyms [3,
+ focused on unambiguous synonyms.
+Acronym is a special type of synonym, which is highly ambiguous and context dependent.
+This work can be regarded as a  rst attempt at addressing the ambiguity problem in synonyms, with a focus on acronyms only.
+There have been many works on acronym expansion discovery in vertical domains (mainly in medical), e.g., [12, 10,
+ acronym expansions, and tend to be optimized for their respective domains.
+This is di erent from both the general acronym mining aspect, as well as the query click log analysis angle of this work.
+In this paper, we introduce the problem of  nding distinct meanings of each acronym, along with the canonical expansion, popularity score and context words.
+We present a novel, end-to-end solution to this problem.
+We describe how web search engines can leverage the mined information for online acronym and acronym+context queries.
+Our work can be extended in multiple directions.
+There are other ambiguous queries besides acronyms like people and place name queries.
+For example, the query  Jim Gray  can refer to the computer scientist, the sportscaster in addition to many other less famous Jim Grays.
+Can our techniques be adapted to  nd all the distinct meanings of such queries?
+Furthermore, it will also be interesting to look into data sources other than query click log for the mining task.

@@ -1,0 +1,1338 @@
+GlobeDB: Autonomic Data Replication for Web
+
+Applications
+
+Swaminathan Sivasubramanian1 Gustavo Alonso2 Guillaume Pierre1 Maarten van Steen1
+
+Dept. of Computer Science1
+
+Vrije Universiteit
+
+Amsterdam, The Netherlands
+{swami,gpierre,steen}@cs.vu.nl
+
+Dept. of Computer Science2
+
+Swiss Federal Institute of Technology (ETHZ)
+
+Zurich, Switzerland
+alonso@inf.ethz.ch
+
+ABSTRACT
+We present GlobeDB, a system for hosting Web applications that
+performs autonomic replication of application data. GlobeDB of-
+fers data-intensive Web applications the beneﬁts of low access la-
+tencies and reduced update trafﬁc. The major distinction in our sys-
+tem compared to existing edge computing infrastructures is that the
+process of distribution and replication of application data is handled
+by the system automatically with very little manual administration.
+We show that signiﬁcant performance gains can be obtained this
+way. Performance evaluations with the TPC-W benchmark over an
+emulated wide-area network show that GlobeDB reduces latencies
+by a factor of 4 compared to non-replicated systems and reduces
+update trafﬁc by a factor of 6 compared to fully replicated systems.
+Categories and Subject Descriptors
+C.2 [Computer-Communication Networks]: Distributed Systems;
+C.4 [Performance of Systems]: Design studies; H.3.4 [Information
+Storage and Retrieval]: Systems and Software
+General Terms
+Design, Measurement, Performance
+Keywords
+Data Replication, Edge Services, Autonomic Replication, Perfor-
+mance
+
+1.
+
+INTRODUCTION
+
+Edge service architectures have become the most widespread
+platform for distributing Web content over the Internet. Commer-
+cial Content Delivery Networks (CDNs) like Akamai [4] and Speed-
+era [28] deploy edge servers around the Internet that locally cache
+Web pages and deliver them to the clients. By serving Web con-
+tent from edge servers located close to the clients, the response
+time for serving clients is reduced as each request need not travel
+across a wide-area network. Typically, edge servers store static
+Web pages and a plethora of techniques and commercial systems
+exist for replicating static pages [26].
+
+In practice, however, a large amount of Web content is gener-
+ated dynamically. These pages are generated upon request using
+Web applications that take, e.g., individual user proﬁles and re-
+quest parameters, into account when producing the content. These
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2005, May 10-14, 2005, Chiba, Japan.
+ACM 1-59593-046-9/05/0005.
+
+applications tend to run on top of databases. When a request ar-
+rives, the application examines the requests, issues the necessary
+read or update transactions to the database, retrieves the data, and
+composes the page that is sent back to the client. To speed up the
+access, traditional CDNs use techniques such as fragment caching
+whereby the static fragments (and sometimes also certain dynamic
+parts) of a page are cached at the edge servers [13, 23, 9, 18, 11].
+However, this solution assumes that temporal locality of requests is
+high and database updates are infrequent. Applications that do not
+meet these assumptions require different solutions than fragment
+caching.
+
+In this paper we explore a different approach to delivering dy-
+namic content that offers more ﬂexibility than fragment caching.
+The idea is to replicate not the pages but the data residing in the
+underlying database. This way, the dynamic pages can be gener-
+ated by the edge servers without having to forward the request to
+a centralized server to guarantee consistency. In particular, if the
+temporal locality and update rate are high, an application may ben-
+eﬁt by moving (part of) the underlying database, along with the
+code that accesses the data, to the location where most updates are
+initiated. If the temporal locality and the update rate is low, then
+replication of the database and access code may be a viable solu-
+tion. This allows the edge servers to generate documents locally. In
+both cases, the amount of wide-area trafﬁc can be reduced, leading
+to better client-perceived performance.
+
+We are thus confronted with the problem of sustaining perfor-
+mance through distribution and replication of (parts of) an applica-
+tion, depending on access and usage patterns. In general, we need
+to address the following three issues: (1) determine which parts
+of an application and its data need to be replicated, (2) ﬁnd where
+these parts need to be placed in a wide-area network, and (3) de-
+cide how replicated data should be kept consistent in the presence
+of updates.
+
+These issues are currently handled by human experts who manu-
+ally partition the databases of a Web application, and subsequently
+distribute the data and code among various servers around the In-
+ternet. Not only is this a difﬁcult and time-consuming process, it is
+also not very feasible when usage and access patterns change over
+time [24].
+In addition, consistency in these systems tends to be
+ad-hoc and largely application-dependent.
+
+In this paper we propose GlobeDB, a system for hosting Web
+applications, which handles distribution and partial replication of
+application data automatically and efﬁciently. Our system pro-
+vides Web-based data-intensive applications the same advantages
+that content delivery networks offer to traditional Web sites: low
+latency and reduced network usage. We substantiate these claims
+
+data requires addressing many issues such as identifying the gran-
+ularity and constituents of the data segments, ﬁnding the optimal
+placements for each data unit, and maintaining consistency of repli-
+cated data units. In this section, we discuss these issues in detail.
+
+2.1 Application Transparency
+
+The ﬁrst and foremost issue is to decide the extent to which an
+application should be aware of data replication. Replication can
+yield the best performance if it is completely tuned to the speciﬁc
+application and its access patterns [15]. However, this requires sig-
+niﬁcant effort and expertise from an application developer. As a
+consequence, optimal performance is often not reached in practice.
+Furthermore, changes in access pattern may warrant changes in in
+the replication strategies, thereby making the design of an optimal
+strategy even more complex.
+
+In our system, we chose a transparent replication model. The
+application developer need not worry about replication issues and
+can just stick to the functional aspects of the application. The sys-
+tem will automatically ﬁnd a placement and replication strategy,
+and adapt it to changing access patterns when needed.
+2.2 Granularity of Data
+
+The underlying principle behind our system is to place each data
+unit only where it is accessed. In our previous research on replica-
+tion for static Web pages, we showed that the optimal replication
+performance in terms of both client-perceived latency and update
+bandwidth can be achieved if each Web page is replicated accord-
+ing to its individual access patterns [20]. A naive transposition of
+this result would lead to replicating each database record individu-
+ally. However, such ﬁne-grained replication can result in signiﬁcant
+overhead as the system must maintain replication information for
+each record.
+
+In our system, we employ an approach where the data units are
+initially deﬁned at a very ﬁne grain. Data units having similar ac-
+cess patterns are then automatically clustered by the system. The
+system subsequently handles replication at the cluster level, thereby
+making the problem of managing a cluster feasible without losing
+the beneﬁts of partial replication. However, a caveat of this ap-
+proach is that if the access patterns change, then the system must
+perform re-clustering to sustain good performance. More informa-
+tion on the clustering algorithm used in our system is presented in
+Section 5.
+2.3 Consistency
+
+One important issue in any replicated system is consistency. Con-
+sistency management has two main aspects: update propagation
+and concurrency control. In update propagation, the issue is to de-
+cide which strategy must be used to propagate updates to replicas.
+Many strategies have been proposed to address this issue. They
+can be widely classiﬁed into push-based and pull-based strategies.
+Pull-based strategies are mostly suitable for avoiding unnecessary
+data update transfers when no data access occurs between two sub-
+sequent updates. In our system, we decided to use a push strategy
+where all updates to a data unit are pushed to the replicas immedi-
+ately. Pushing data updates immediately ensures that replicas are
+kept consistent and that the servers hosting replicas can serve read
+requests immediately.
+
+Yet, propagating updates is not sufﬁcient to maintain data con-
+sistency. The system must also handle concurrent updates to a data
+unit emerging from multiple servers. Traditional non-replicated
+DBMSs perform concurrency control using locks or multiversion
+models [16]. For this, a database requires an explicit deﬁnition of
+transaction, which contains a sequence of read/write operations to
+
+Figure 1: Example of beneﬁts of autonomic replication.
+
+through extensive experimentation of a prototype implementation
+running the TPC-W benchmark over an emulated wide-area net-
+work.
+
+Our major contribution is that we demonstrate that conﬁguration
+of Web applications for data and code replication can be largely
+automated, and in such a way that it yields a substantial perfor-
+mance improvement in comparison to simple or non-replicated ap-
+proaches. As such, our work improves upon other research demon-
+strating that application-speciﬁc replication improves performance
+as well (e.g.,
+In particular, we argue that there is often
+no compelling reason to adapt the logical design of an application
+in order to support replication. By automatically partitioning and
+replicating an application’s associated database, we can achieve the
+same results without involving the application designer or requiring
+other human intervention.
+
+[15]).
+
+The rest of the paper is organized as follows. Section 2 presents
+several design issues involved in building the system and motivates
+our design choices. Section 3 presents GlobeDB’s architecture and
+Section 4 describes the design of the data driver, the central compo-
+nent of GlobeDB. Section 5 describes the replication and clustering
+algorithms adopted in our system. Section 6 presents an overview
+of GlobeDB implementation and its internal performance. Sec-
+tion 7 presents the relative performance of GlobeDB and different
+edge service architectures for the TPC-W benchmark. Finally, Sec-
+tion 8 discusses the related work and Section 9 concludes the paper.
+2. DESIGN ISSUES
+
+To illustrate the beneﬁts of autonomic replication, consider the
+scenarios presented in Figure 1 that show edge server(s) hosting a
+Web application. As seen in the ﬁgure, there is a fraction of data
+accessed only by clients of server 1, another fraction by clients
+of server 2 and the rest are accessed by clients of both servers.
+Not replicating at all (centralized system) can result in poor client
+response time. Replicating all data everywhere (full replication)
+can result in signiﬁcant update trafﬁc between servers for data they
+barely access. In such scenarios, GlobeDB can be very useful as it
+places the data in only those servers that access them often. This
+can result in a signiﬁcant reduction in update trafﬁc and improved
+client-perceived response time.
+
+Building a system for autonomic replication of Web application
+
+  										
+
+
+
+
+
+
+
+
+
+ReplicationFullServer 1 DataServer 1Server 2 DataServerAutonomic ReplicationSystemCentralizedUpdatesUpdates DataGlobeDBAutonomic ReplicationServer 2 Data Data Data Data   !!!""""####$$%%&&&''((()))**++,,--./011223333333344444444555566667777777788888888Clients accessingClients accessingClients accessing999999::::::;;;;<<<<==>>?@ABCDDDDDDDDEEEEEEEEFFGGHHHHIIJJJJKKLLLLLLMMMMMMNNOOPPPPQQQQRRRSSa database. For example, PostgreSQL uses a variant of multiver-
+sion model called snapshot isolation to handle concurrent transac-
+tions [3]. When querying a database each transaction sees a snap-
+shot of consistent data (a database version), regardless of the cur-
+rent state of the underlying data. This protects the transaction from
+viewing inconsistent data produced by concurrently running update
+transactions.
+
+However, concurrency control at the database level can serialize
+updates only to a single database and does not handle concurrent
+updates to replicated data units at multiple edge servers. Tradi-
+tional solutions such as two-phase commit are rather expensive as
+they require global locking of all databases, thereby reducing the
+performance gains of replication. To handle this scenario, the sys-
+tem must serialize concurrent updates from multiple locations to a
+single location. GlobeDB does not guarantee full transaction se-
+mantics, but enforces consistency for each query individually. In
+other words, it imposes that each transaction be composed of a
+single query/operation which at most modiﬁes a single data unit.
+The concurrency control adopted in our system is explained in Sec-
+tion 3.
+2.4 Data Placement
+
+Automatic data placement requires the system to ﬁnd a set of
+edge servers to host the replicas of a data cluster according to cer-
+tain performance criteria. One can measure the system perfor-
+mance by metrics such as average read latency, average write la-
+tency, amount of update trafﬁc, etc. But a naive approach based on
+optimizing the system performance for one of these metrics alone
+can easily result in degrading the performance according to other
+metrics. For example, a system can be optimized for minimizing
+read latency by replicating the data to all replica servers. However,
+this can lead to huge update trafﬁc if the number of updates is high.
+In general, there is a clear tradeoff between the performance
+gain due to replication and the performance loss due to consis-
+tency enforcement. However, there is no universal deﬁnition of
+“best” tradeoff. In fact, each system administrator should specify
+a particular tradeoff based on the system needs. For example, the
+administrator of a CDN with (theoretically) unlimited bandwidth
+may choose to optimize on client response time alone. The same
+administrator, when facing a bottleneck at the central server, may
+prefer to minimize update trafﬁc.
+
+In our system, the system administrator speciﬁes relative perfor-
+mance tradeoffs as the weights of a cost function. This function ag-
+gregates multiple performance metrics into a single abstract metric.
+Optimizing the cost function is equivalent to optimizing the global
+system performance. This function therefore acts as a measure of
+the desired system performance and aids the system in making its
+placement decisions. The cost function and placement algorithms
+are presented in Section 5.
+
+3. SYSTEM ARCHITECTURE
+3.1 Application Model
+
+The application model of our system is shown in Figure 2. An
+application is made of code and data. The code is written using
+standard dynamic Web page technology such as PHP and is hosted
+by the Web server (or the Web application server). It is executed
+each time the Web server receives an HTTP request from its clients,
+and issues read/write accesses to the relevant data in the database
+to generate a response.
+
+Access to the data is done through a data driver which acts as
+the interface between code and data.1 The data driver preserves
+1This driver is different from conventional PHP drivers as it not
+
+Figure 2: Application Model
+
+distribution transparency of the data and has the same PHP inter-
+face as regular PHP drivers. It is responsible for ﬁnding the data
+required by the code, either locally or from a remote server, and for
+maintaining data consistency.
+We assume that the database is split into n data units, D1, D2,··· ,
+Dn, where a data unit is the smallest granule of replication. Each
+unit is assumed to have a unique identiﬁer, which is used by the
+data driver to track it. An example of a data unit is a database
+record identiﬁed by its primary key.
+
+GlobeDB enforces consistency among replicated data units us-
+ing a simple master-slave protocol: each data cluster has one mas-
+ter server responsible for serializing concurrent updates emerging
+from different replicas. GlobeDB assumes that each database trans-
+action is composed of a single query which modiﬁes at most a sin-
+gle data unit. When a server receives an update request, it forwards
+the request to the master of the cluster, which processes the up-
+date request and propagates the result to the replicas. Note that this
+model is sometimes called eventual consistency. If stronger con-
+sistency is needed, then models such as session guarantees can be
+envisaged [29].
+3.2 System Architecture
+
+Figure 3: System Architecture - Edge servers serving clients
+close to them and interactions among edge servers goes through
+Wide-area network.
+
+The architecture of GlobeDB is presented in Figure 3. An appli-
+cation is hosted by m edge servers spread across the Internet. Com-
+munication between edge servers is through wide-area networks
+
+just an interface driver but also responsible for functional aspects
+such as location of replicated data.
+
+Requests/ResponsesClientDatabaseServerDataDataDriverAccessRead/WriteCodeApplicationServerWeb    Web ServerDataAccessDataDriverRead/WriteServerDatabaseWeb ServerDataAccessDataDriverRead/WriteServerDatabaseWeb ServerDataAccessDataDriverRead/WriteServerDatabaseConsistency UpdatesConsistency UpdatesConsistency UpdatesInternet...Edge Server 1Edge Server mOrigin ServerWebClients                        												
+
+
+
+
+
+
+
+
+
+incurring wide-area latency. Each client is assumed to be redi-
+rected to its closest edge server using enhanced DNS-based redi-
+rection [12, 14]. Furthermore, for each session, a client is assumed
+to be served by only one Web server.
+
+When a client issues an HTTP request to a Web server, the re-
+quest is forwarded to the application code (e.g., PHP) residing in
+the server. The application code usually issues a number of read or
+write accesses to its data through the data driver. The application
+data are partially replicated, so the local database hosts only a sub-
+set of all data clusters. The data driver is responsible for ﬁnding the
+relevant data either locally or from a remote edge server if the data
+are not present locally. Additionally, when handling write data ac-
+cesses, the driver is also responsible for ensuring consistency with
+other replicas.
+
+To perform autonomic replication, the system must decide on
+the placement of replicas for each data cluster and choose its mas-
+ter according to its access pattern. To this end, each application
+is assigned one origin server, which is responsible for making all
+application-wide decisions such as clustering data units and placing
+clusters on edge servers. The origin server performs replica place-
+ment periodically to handle changes in data access patterns and the
+creation of new data units. For reasons explained below, the origin
+server also has a full replica of the database.
+
+Consistency is enforced using a simple master-slave protocol:
+each data cluster has one master server responsible for serializ-
+ing concurrent updates emerging from different replicas. When a
+server holding a replica of a data cluster receives a read request, it
+is answered locally. When it receives an update request, it is for-
+warded to the master of the data cluster. If the server does not have
+a replica, then requests are forwarded to the origin server. More
+information on locating data units is presented in Section 4.
+
+Note that eventual consistency does not guarantee that all repli-
+cas are identical at all times. The master of a cluster delivers up-
+dates to all replicas in the same order without any global locking.
+This can lead to transient situations where the latest updates have
+been applied only to a fraction of the replicas. We assume that this
+can be tolerated by the application as each client session is handled
+by only one edge server in the network. Note that even existing
+solutions over commercial database systems such as DBCache [6]
+and MTCache [17] face similar issues and guarantee the same level
+of consistency as GlobeDB.
+
+4. DATA DRIVER
+
+The data driver is the central component of GlobeDB. It is in
+charge of locating the data units required by the application code
+and maintaining consistency of the replicated data.
+4.1 Types of Queries
+
+The primary functionality of the data driver is to locate the data
+units required by the application code. Data access queries can
+be classiﬁed into write and read queries based on whether or not
+an update to the underlying database takes place. Another way of
+classifying queries is based on the number of rows matched by the
+query selection criterion. We refer to the queries based on primary
+keys of a table or that result in an exact match for only one record
+as simple queries. An example of a simple query is “Find the cus-
+tomer record whose userid is ‘xyz’.” Queries based on secondary
+keys and queries spanning multiple tables are referred to as com-
+plex queries. An example of a complex query is “Find all customer
+records whose location is ‘Amsterdam’.”
+
+As noted earlier, we assume that each data unit has a unique
+identiﬁer. For ﬁne-grained data units, such as database records, we
+use the primary key as the record’s unique identiﬁer. This allows
+
+the data driver to map simple queries to required data units, which
+makes locating data units relatively straightforward.
+
+For answering a complex query, the driver cannot restrict its
+search to its local database but needs to inspect the entire database.
+Such a query can be answered by forwarding it to a subset of servers
+that jointly have the complete database table. For the sake of sim-
+plicity, we stipulate that the origin server has a replica of all data
+units. For this reason all complex queries are forwarded to the ori-
+gin server which will incur a wide-area latency.
+
+At the outset, being able to answer only simple queries locally
+might appear very limiting. However, typical Web applications is-
+sue a majority of simple queries. To get an idea of the percentage
+of simple queries used on real e-commerce applications, we exam-
+ined the TPC-W benchmark which models a digital bookstore [27].
+We collected the SQL traces generated by execution of the bench-
+mark’s ordering mix workload [1]. We analyzed the accesses to
+the book tables (which contains the records pertaining information
+about individual books) and found that more than 80% of the ac-
+cesses to the table consist of simple queries or can be easily re-
+written as simple queries. Similarly, about 80% of accesses to the
+customer tables use simple queries. Similar ﬁgures are seen for
+other workload mixes of TPC-W. In TPC-W, updates to a database
+are always made using simple query.
+4.2 Locating Data Units
+
+if complex query then
+
+Execute query at the origin server and return result;
+
+else
+
+if read then
+
+Execute query locally;
+if execution returns result then
+
+return result;
+
+else
+
+end
+
+execute on origin server and return result;
+
+else
+
+end
+
+Get cluster id of data unit from (local or origin server);
+Find master for cluster from cluster-property table;
+Execute query on master server and return result;
+
+end
+Algorithm 1: Pseudocode used by data driver for executing
+queries
+
+The data driver of each edge server maintains three tables. The
+cluster-membership table stores the identiﬁers of data units con-
+tained in each cluster. The cluster-property table contains the fol-
+lowing information for each data cluster: the origin server, the mas-
+ter replica, and the list of servers that host a copy of this cluster.
+These two tables are fully replicated at all edge servers. Each driver
+also maintains an access table to keep track of the number of read
+and write accesses to each cluster.
+
+To answer simple queries, the driver locates a data unit by iden-
+tifying the cluster to which the data unit belongs, using the cluster-
+membership table. Once the appropriate cluster is identiﬁed, the
+driver uses the cluster-property table to ﬁnd details about the loca-
+tion of the cluster and its master. Upon each read or write access,
+the driver updates the access table accordingly. The data driver for-
+wards all complex queries to the origin server.
+
+A naive design of the cluster-membership table can be a scala-
+bility bottleneck. In our initial implementation, we used bit arrays
+for numerical primary key IDs and bloom ﬁlters for non-numerical
+IDs [5]. A typical bit-array based cluster membership table will
+have a size of only 125 Kbits for each cluster to represent a database
+
+with a million data units. Such a small size allows the table to reside
+in main memory thereby resulting in faster access. However, these
+ﬁlters have several disadvantages. First, storing non-numerical IDs
+using Bloom ﬁlters can result in potential inaccuracies that result
+in redundant network trafﬁc. Second, the system needs to allocate
+enough memory for ﬁlters to accommodate creation of new data
+units in the future, which poses a scalability problem.
+
+To overcome these shortcomings, in our current implementation
+the cluster-membership table is stored along with the respective
+database records. In this implementation, each database record has
+an extra attribute that indicates which cluster the record belongs to.
+The pseudocode for executing queries by the data driver is shown
+in Algorithm 1. As seen in the ﬁgure, simple queries with read ac-
+cesses are always ﬁrst executed locally. If a record is returned, the
+result is returned immediately.2 Otherwise, the query is forwarded
+to the origin server (which contains a full copy of the database).
+For update queries, the driver ﬁrst runs a query to ﬁnd the cluster
+ID. If the data record is replicated locally, its cluster ID will be
+returned and the information regarding who its master is can be ob-
+tained from the cluster-property table. Then, the update query is
+forwarded to the master. In case of update queries to a data unit not
+present locally, the query to ﬁnd cluster information for the data
+unit will return no result and this query is then run on the origin
+server. Subsequently, the update query will be sent to the appropri-
+ate master server. The cluster-property table is simply implemented
+as a ﬁle.
+
+5. REPLICATION ALGORITHMS
+
+Replicating an application requires that we replicate its code and
+data. For the sake of simplicity, in this paper we assume that the
+code is fully replicated at all replica servers. In this section, we
+present the algorithms we use for clustering data units, placing
+the data cluster, and selecting their master. For the placement of
+data, we use a cost function that allows the system administrator to
+tell GlobeDB his/her idea of optimal performance. As we explain
+in detail in this section, GlobeDB uses this function to assess the
+goodness of its placement decisions.
+
+5.1 Clustering
+
+As we mentioned earlier, in GlobeDB, data units with similar
+access patterns are clustered together. A similar problem was ad-
+dressed in [10] in the context of clustering static Web pages to re-
+duce the overhead in handling replicas for each Web page. The au-
+thors propose several spatial clustering algorithms to group pages
+into clusters and incremental clustering algorithms to handle the
+creation of new pages. They show that these clustering algorithms
+perform well for real-world Web traces. We use similar algorithms
+for clustering data units.
+
+The origin server is responsible for clustering the data units dur-
+ing the initial stages of system. The origin server collects access
+patterns of data units from all edge servers into its access table.
+Each data unit Di’s access pattern is modelled as a 2∗m-dimensional
+vector, Ai =< ri,1,ri,2,··· ,ri,m,wi,1,··· ,wi,m >, where ri,j and
+wi,j are respectively the number of read and write accesses made
+by the edge server Rj to the data unit Di. The origin server runs
+a spatial clustering algorithm that uses correlation-based similar-
+ity on the access vectors of the data units. As a result, two data
+units Di and Dj are grouped into the same cluster if and only if Ai
+
+2This is also done for exact match queries (queries that match a
+single data unit) based on non-primary queries.
+
+and Aj are similar. In correlation-based similarity, the similarity
+between two data units Di and Dj is given by:
+
+(cid:80)2∗m
+(cid:113)(cid:80)2∗m
+k=1 (ai,k − ¯ai)(aj,k − ¯aj)
+k=1 (ai,k − ¯ai)2
+
+(cid:80)2∗m
+k=1 (aj,k − ¯aj)2
+
+Sim(i, j) =
+
+where < ai,1,ai,2,··· ,ai,m > = < ri,1,ri,2,··· ,ri,m > and <
+ai,m+1,ai,m+2,··· ,ai,2∗m > = < wi,1,··· ,wi,m >. Data units Di
+and Dj are clustered together if Sim(i, j) ≥ x, for some threshold
+value x, where 0 ≤ x ≤ 1.
+
+The origin server iterates through data units that are yet to be
+clustered. If a data unit Di is sufﬁciently close to the access vector
+of an existing cluster, it is merged into it. Otherwise, a new cluster
+with Di as the only member is created. Once the data clusters are
+built, the origin server creates the appropriate cluster-membership
+table for each cluster. Obviously, the value of x has an impact on
+the effectiveness of the replication strategy. In all experiments from
+Section 6 we ﬁx the threshold x to 95%. We will study the process
+of determining the optimal threshold value in the near future.
+
+Data clustering works well if data units once clustered do not
+change their access pattern radically. However, if they do, then
+the clusters must be re-evaluated. The process of re-clustering re-
+quires mechanisms for identifying stale data units within a cluster
+and then re-clustering them. For reasons of space, we do not ad-
+dress the re-clustering problem in this paper. It is orthogonal to the
+replication strategy and it mainly involves determining when to re-
+cluster and how to re-cluster efﬁciently. Also note that re-clustering
+can be done by progressively invalidating and validating copies at
+the different edge servers as it is done for data caches.
+
+5.2 Selecting a Replication Strategy
+
+The origin server must periodically select the best replication
+strategy for each cluster. A replication strategy involves three as-
+pects: replica placement, consistency mechanism, and, in our case,
+master selection. As we use push strategy as our consistency mech-
+anism, the selection of a replication strategy for a cluster boils down
+to deciding about replica placement and selecting the master.
+
+As noted earlier, to select the best replication strategy, the sys-
+tem administrator must specify what “best” actually means.
+In
+GlobeDB, we represent overall system performance into a single
+abstract ﬁgure using a cost function. A cost function aggregates
+several evaluation metrics into a single ﬁgure. By deﬁnition, the
+best conﬁguration is the one with the least cost. An example of
+a cost function which measures the performance of a replication
+strategy s during a time period t is:
+
+cost(s, t) = α ∗ r(s, t) + β ∗ w(s, t) + γ ∗ b(s, t)
+
+where r is the average read latency, w is the average write latency,
+and b is the amount of bandwidth used for consistency enforcement.
+The values α, β and γ are weights associated to metrics r, w, and
+b respectively. These weights must be set by the system adminis-
+trator based on system constraints and application requirements. A
+larger weight implies that its associated metric has more inﬂuence
+in selecting the “best” strategy. For example, if the administra-
+tor wants to optimize on client performance and is not concerned
+with the bandwidth consumption, then weights α and β can be in-
+creased. Finding the “best” system conﬁguration now boils down
+to evaluating the value of the cost function for every candidate strat-
+egy and selecting the conﬁguration with the least cost.
+
+In GlobeDB we use the cost function as a decision making tool
+to decide on the best server placements and master server for each
+cluster. Ideally, the system should periodically evaluate all possible
+combinations of replica placement and master server conﬁgurations
+for each cluster with the cluster’s access pattern for the past access
+
+period. The conﬁguration with the least cost should be selected as
+the best strategy for the near future. This relies on the assumption
+that the past access patterns are a good indicator for the near future.
+This assumption has been shown to be true for static Web pages and
+we expect the dynamic content will exhibit similar behavior [20].
+Ideally, the system should treat the master selection and replica
+placement as a single problem and select the combination of master-
+slave and replica placement conﬁguration that yields the minimum
+cost. However, such a solution would require an exhaustive eval-
+uation of 2m ∗ m conﬁgurations for each data cluster, if m is
+the number of replica servers. This makes this solution compu-
+tationally infeasible.
+In GlobeDB, we use heuristics to perform
+replica placement and master selection (discussed in the next sub-
+sections). We propose a number of possible heuristics for place-
+ment and a method for optimal selection of master server. This
+reduces the problem of choosing a replication strategy to evaluat-
+ing which combination of master server and placement heuristics
+performs the best in any given situation. After selecting the best
+replica placement and master for each data cluster, the origin server
+builds the cluster-property table and installs it in all edge servers.
+
+5.3 Replica Placement Heuristics
+
+Proper placement of data clusters is important to obtain good
+client latencies and reduced updated trafﬁc. We deﬁne a family
+of placement heuristics P x where an edge server hosts a replica
+of a data cluster if its server generates at least x% of data access
+requests.
+
+Obviously, the value of x affects the performance of the system.
+A high value of x will lead to creating no replica at all besides the
+origin server. On the other hand, a low value of x may lead to a
+fully replicated conﬁguration.
+
+Expecting the system administrator to determine the appropri-
+ate value for x is not reasonable, as the number of parameters that
+affect system performance is high. Instead, in GlobeDB, adminis-
+trators are just expected to deﬁne their preferred performance trade-
+offs by choosing the weight parameters of the cost function. The
+origin server will then evaluate the cost value for placement con-
+ﬁgurations obtained for different values of x (where x=5,10,15),
+and select the one that yields the least cost as the best placement
+conﬁguration.
+
+5.4 Master Selection
+
+Master selection is essential to optimize the write latency and
+the amount of bandwidth utilized to maintain consistency among
+replicas. For example, if there is only one server that updates a data
+cluster, then that server should be selected as the cluster’s master.
+This will result in low write latency and less update trafﬁc as all
+updates to a cluster are sent to its master and then propagated to the
+replicas.
+
+We use a method for optimal selection of master server that re-
+sults in the least average write-latency. Let wi,j be the number of
+write access requests received by edge server Rj for cluster i and
+ljk be the latency between edge server j and k (we assume that la-
+tency measurements between servers are symmetric, i.e., lkj=ljk).
+The average write latency for data cluster i whose master is k is
+given by: wlki = (
+j=1 wi,j). The origin
+server selects the server with lowest average write latency as the
+master for a data cluster .
+
+(cid:80)m
+j=1 wi,j ∗ ljk)/(
+
+(cid:80)m
+
+6.
+
+IMPLEMENTATION AND ITS
+PERFORMANCE
+
+In this section, we discuss the salient components of our pro-
+
+Figure 4: Salient components of the system
+
+totype system and also present performance measurements on the
+overhead that the data driver introduces to a single edge server.
+
+6.1
+
+Implementation Overview
+
+The salient components of our prototype system are shown in
+Figure 4. We implemented our data driver by modifying the ex-
+isting Apache PHP driver for PostgreSQL, by adding new query
+interfaces to the existing PHP driver. This driver can be added as a
+module to the Apache Web server.
+
+Each edge server runs a logger service, which is responsible for
+collecting information regarding which cluster was accessed by the
+Web clients. The logger is implemented as a stand-alone multi-
+threaded server that collects information from the driver and peri-
+odically updates the access database.
+
+As seen in the ﬁgure, the origin server runs two special services,
+clustering and replica placement services. The clustering service
+performs the clustering of data units during the initial stages of
+system deployment. It periodically collects access patterns from
+the edge servers and stores it in its database. Subsequently, it per-
+forms clustering with the algorithm described in Section 5. The
+origin server only acts a backend database so it does not need to
+have a Web server or logger service.
+
+The replica placement service in the origin server ﬁnds the “best”
+locations for hosting a replica and master for each cluster. It does
+so by evaluating the cost obtained by different replica placement
+strategies and master selection for the cluster’s access pattern in the
+previous period. Note that once data units are clustered, the logger
+service in the edge servers starts collecting access patterns at the
+cluster level. This information is then used by the replica place-
+ment service to place the replicas. Upon deciding which servers
+would host which clusters, the placement service builds the cluster-
+property table for each cluster and copies it to all edge servers.
+
+To perform periodic adaptation, the replica placement service is
+invoked periodically. We note that the period of this adaptation
+must be set to a reasonable value to ensure good performance and
+stability. We intend to study the need and support for continuous
+adaptation and effective mechanisms for them in the future.
+
+The clustering service is also run periodically. The bulk of its
+work is done during the initial stages when it has to cluster large
+numbers of data units. Later, during every period, it performs in-
+cremental clustering of newly created data units. The current pro-
+totype does not perform any kind of re-clustering.
+6.2 Measuring the Overhead of the
+
+Data Driver
+
+The data driver receives SQL queries issued by the application
+code and is responsible for locating the relevant data unit from the
+
+ApacheClusteringServiceAccess tablePlacementServiceStores/reads access tablefor clusteringOrigin ServerRead accesstable forplacementEdge ServerData DriverDatabase  ServerDatabaseLogger  ServerServicelocal server or from a remote server. It does so by checking ap-
+propriate cluster-membership tables for each request. Performance
+gains in terms of latency or update trafﬁc occur when the clusters
+accessed by a given edge server can be found locally. However, it
+is important to ensure that the gain obtained by replication is not
+annulled by the overhead due to checking the cluster-membership
+table for each data access. To analyze this, we study the response
+time of our driver when executing a query on a local replicated data
+in comparison to the response time of the original PHP driver.
+
+In our experimental setup, we ran the Apache Web server on a
+PIII-900MHz Linux machine with 1 GB main memory. The Post-
+greSQL database also runs on an identical machine. We created a
+book table with ﬁelds such as book id, book name, author id, stock
+quantity and 5 other integer ﬁelds. The database was populated
+with 100, 000 random records.
+
+We measured the execution latencies of read and write queries
+using the original PHP driver and the GlobeDB PHP driver for dif-
+ferent throughput values. In both cases, the requested data is avail-
+able locally; the only difference is that the GlobeDB driver needs
+to check its cluster membership and cluster-property tables before
+each data access. Read queries read a random database record us-
+ing a simple query. Write queries increment the stock ﬁeld of a
+randomly chosen book record. To make sure that each access is
+local, the server is assumed to be the master for all clusters. We
+computed the execution latency as the time taken by the server to
+generate the response for a request. We do not include the network
+latency between the client and server as the objective of this exper-
+iment is only to measure the overhead of our driver in processing
+the request.
+
+The results of this experiment are given in Figure 5. As seen
+in the ﬁgure, even for high throughputs, the overhead introduced
+by our implementation is between 0 and 5 milliseconds for read
+accesses, and at most 10 milliseconds for writes access. This is less
+than 4% of the database access latencies incurred by the original
+driver.
+
+We conclude that the overhead introduced by our driver is very
+low and, as we shall see in the next section, negligible compared to
+the wide-area network latency incurred by traditional non-replicated
+systems.
+
+7. PERFORMANCE EVALUATION: TPC-W
+
+BOOKSTORE
+
+The experiments presented in the previous section show that the
+overhead introduced by GlobeDB’s driver in a single edge server
+is low. However, it does not offer any insight into the perfor-
+mance gains of GlobeDB. In this section, we study the performance
+gain that could be obtained using GlobeDB while hosting an e-
+commerce application. We chose the TPC-W benchmark and eval-
+uated the performance of GlobeDB in comparison to other existing
+systems for different throughput values over an emulated wide-area
+network. As the experiment results presented in this section will
+show, GlobeDB can reduce the client access latencies for typical
+e-commerce applications with large mixture of reads and write op-
+erations without requiring manual conﬁgurations or performance
+optimizations.
+7.1 Experiment Setup
+
+We deployed our prototype across 3 identical edge servers with
+Pentium III 900 Mhz CPU, 1-GB of memory and 120GB IDE hard
+disks. The database servers for these edge servers were run on sep-
+arate machines with the same conﬁguration. Each edge server uses
+Apache 2.0.49 Web servers with PHP 4.3.6. We use PostgreSQL
+7.3.4 as our database servers. The origin server uses an identical
+
+conﬁguration as the edge servers except that it acts just as a back-
+end database and does not run a Web server. We emulated a wide-
+area network (WAN) among servers by directing all the trafﬁc to an
+intermediate router which uses the NIST Net network emulator [2].
+This router delays packets sent between the different servers to sim-
+ulate a realistic wide-area network. In the remaining discussion, we
+refer to links via NISTNet with a bandwidth of 10M bps and a la-
+tency of 100ms as WAN links and 100M bps as LAN links. We
+use two client machines to generate requests addressed to the three
+edge servers. A similar setup to emulate a WAN was used in [15].
+We deployed the TPC-W benchmark in the edge servers. TPC-
+W models an on-line bookstore and deﬁnes workloads that exer-
+cise different parts of the system such as the Web server, database
+server, etc. The benchmark deﬁnes activities such as multiple on-
+line browsing sessions using Remote Browser Emulators (RBEs),
+dynamic page-generation from a database, contention of database
+accesses and updates. The benchmark deﬁnes three different work-
+load scenarios: browsing, shopping and ordering. The browsing
+scenario has mostly browsing related interactions (95%). The shop-
+ping scenario consists of 80% browsing related interactions and
+20% shopping interactions. The ordering scenario contains an equal
+mixture of shopping and browsing interactions. In our experiments,
+we evaluate GlobeDB for the ordering scenario, as it generates the
+highest number of updates. The performance metrics of TPCW-
+benchmark are WIPS (Web Interactions Per Second), which de-
+notes the throughput one could get out of a system and WIRT,
+which denotes the average end-to-end response time that would be
+experienced by a client.
+
+The benchmark uses the following database tables: (i) tpcw item
+stores details about books and their stocks; (ii) tpcw customer
+stores information about the customers; (iii) tpcw author stores
+the author-related information; (iv) tpcw order and tpcw orderline
+store order-related information. In our experiment, we study the ef-
+fects of replication only for the tpcw customer and the tpcw item
+tables as these are the only tables that receive updates and read ac-
+cesses simultaneously. The tpcw author table is replicated every-
+where as it is never updated by Web clients.
+
+In our experiments, we want to compare the performance of
+GlobeDB with traditional centralized and fully replicated scenar-
+ios. In principle, a fully replicated system should replicate all tables
+at all edge servers. However, each record of ordering-related tables
+is mostly accessed by only a single customer. In addition, the entire
+order database is used to generate the “best sellers” page. In such
+a scenario, full replication of ordering-related tables would be an
+overkill as it would result in too much update trafﬁc among edge
+servers. Any reasonable database administrator would therefore
+store ordering-related database records only in servers that created
+them and maintain a copy at the origin server (which would be re-
+sponsible for generating responses to “best sellers” queries). So,
+for a fair comparison with GlobeDB, we implemented this opti-
+mization manually for the fully replicated system.
+
+We use the open source PHP implementation of TPC-W bench-
+mark [19]. We disabled the image downloading actions of RBEs as
+we want to only evaluate the response time of dynamic page gener-
+ation of the edge server. To account for the geographical diversity
+of the customers, we deﬁned 3 groups of clients which respectively
+issue their requests to a different edge server. We believe this is a
+realistic scenario as customers typically do not move often and are
+usually redirected to the server closest to them.
+
+The tpcw item table stores ﬁelds such as its unique integer iden-
+tiﬁer, author identiﬁer, item name, price and stock. In addition to
+these ﬁelds, it also stores ﬁve integer ﬁelds that have identiﬁers
+of books that are closely related to it and have a similar customer
+
+(a) Read Accesses
+
+(b) Write Accesses
+
+Figure 5: A comparative study of GlobeDB driver implementation with original PHP driver for reading and updating local data
+units
+
+base. These ﬁelds are read by the application code to generate
+promotional advertisements when a client reads about a particu-
+lar book. For example, related ﬁelds of a Harry Potter book may
+contain identiﬁers of the other Harry Potter books. In our experi-
+ment, we ﬁlled these related identiﬁers as follows: the item records
+are classiﬁed into three groups and related entries of each item is
+assigned to an item in the same group.
+In this way, the related
+ﬁeld truly reﬂects books with similar customer base. Furthermore,
+TPC-W stipulates that each Web session should start with a book
+for promotion. In our experiments, client of edge server i receive
+the starting random book id only from item group i. At the outset,
+this might look as if each client group request books from only one
+item group. However, this is not the case as the RBE clients select
+the books to view also from other interactions, such as best-sellers
+and search result interactions, which have books spanning across
+multiple item groups.
+
+As it can be seen, even though the assumptions we make about
+the clients access patterns are realistic, they do not capture all kinds
+of client access patterns. To address this issue, in one of our earlier
+studies, we simulated our proposed replication techniques for dif-
+ferent kinds of access patterns from uniform popularity (all clients
+are interested in all data) to very skewed popularity (only a small
+set of clients are interested in a particular piece of data) using statis-
+tical distributions [25]. We found that our techniques perform well
+in all cases compared to traditional fully replicated and centralized
+systems. Hence, in this experiment we restrict our evaluations to
+only the workload described in this setup and study the relative
+performance of different system implementations.
+
+In our experiments, for each run we ran the benchmark for 8
+hours. After this, the origin server collected the access patterns
+from the edge servers and performed clustering and replication.
+Analysis of the tpcw customer table resulted in 3 clusters. Each
+of these clusters were mostly accessed by only one edge server (dif-
+ferent one in each case). Analysis of tpcw item accesses led to
+4 clusters. 3 out of the 4 clusters are characterized by accesses
+predominantly from only one edge server (a different one in each
+case). However, the fourth cluster represents data units that are
+accessed by clients of all the three edge servers.
+7.2 Experiment Results
+
+We evaluated the performance of four different systems (shown
+in Figure 6): (i) a traditional centralized architecture where the code
+and the database is run in a server across a WAN (Centralized), (ii)
+a simple edge server architecture where three edge servers run a
+Web server and the database is run in a server across the WAN
+(SES), (iii) our proposed system with 3 edge servers (GlobeDB)
+
+Figure 6: Architectures of different systems evaluated
+
+and (iv) a full replication system (Full) which is similar to the
+GlobeDB setup - the only difference being that the tpcw item and
+tpcw customer tables are fully replicated at all edge servers un-
+like GlobeDB.
+
+As we noted earlier, replication decisions are made through eval-
+uation of the cost function and its weights α, β and γ as described
+in Section 5. In our experiments, we assumed the system admin-
+istrator wants to optimize the system for improved response time
+and assigned higher weights to α and β compared to γ. We set
+α=2/rmax; β=2/wmax; and γ=1/bmax, where rmax, wmax and
+bmax are maximum values of average read latency, write latency,
+and number of consistency updates, respectively. These values ef-
+fectively tell the system to consider client read and write latency
+to be twice as important in comparison to update bandwidth (on a
+normalized scale). These weights result in the following placement
+conﬁguration: For the 3 clusters of the customer table, 3 differ-
+ent placement conﬁgurations are obtained where a different edge
+server is the master while hosting a replica of the cluster. Similar
+placement conﬁgurations are obtained for 3 out of the 4 clusters of
+the book table. The fourth cluster (which contains data units that
+were accessed from all edge servers) was automatically placed at
+all the 3 edge servers as it represents book records that are popular
+among all clients.
+
+In our experiments, we study the WIRT for different WIPS until
+the database server cannot handle more connections. The results of
+our experiments are given in Figure 7. As seen in the ﬁgure, even
+for low throughputs GlobeDB performs better than the traditional
+Centralized and SES architectures and reduces response time by
+
+0.0020.0040.0060.0080.010.0120.0140.0160.0180.020246810121416Response Time(s)Requests/secondOriginalGlobeDB0.0450.060.0750.090.1050.120.1350.150.1650.180.1950.210.2250.240.2550.270246810121416Response Time(s)Requests/secondOriginalGlobeDBSystemOrigin ServerOrigin ServerOrigin Server3 Edge servers3 Edge serversFull Repl.    &GlobeDBEdge ServiceSimpleCentralizedWANWANWAN   												
+
+
+
+
+
+
+
+
+
+
+
+    !!!""""""""######$$$$$$$$$$$$%%%%%%%%%%%%&&&&&&''''''(((()))*************+++++++++++++,,,,,,,,,,,-----------...........///////////00000000000111111111112222222222233333333333444444444445555555555566666666666777777777778888888888899999999999:::::::::::tration. We believe this is a promising start for realizing a truly
+scalable self-managing platform for large-scale Web applications.
+7.3 Effect of the Cost Function
+
+Figure 7: Performance of different system architectures run-
+ning TPC-W benchmark
+
+a factor of 4. GlobeDB performs better than SES and centralized
+system as it is able to save on wide-area network latency for each
+data access as it is able to ﬁnd many data records locally. Moreover,
+this also shows that replicating application code is not sufﬁcient to
+obtain good performance.
+
+The difference in WIRT between the GlobeDB and Full setup
+varies from 100 to 400ms. This is because the GlobeDB system is
+capable of performing local updates (the server that writes most to a
+database cluster is elected as its master) but the Full setup forwards
+all updates to the origin server. These updates constitute 30% of
+the workload. On the other hand, the Full setup gains in the fact it
+can handle some complex queries such as search result interactions
+locally, while GlobeDB forwards it to the origin server.
+
+It is obvious that the fully replicated system produces more up-
+date trafﬁc than GlobeDB as it propagates each update to all edge
+servers. In this experiment, we found that GlobeDB reduces the
+update trafﬁc by a factor of 6 compared to Full replication. This
+is because GlobeDB prevents unnecessary update trafﬁc by plac-
+ing data only where they are accessed. Reducing the update trafﬁc
+potentially leads to signiﬁcant cost reduction as CDNs are usually
+charged by the data centers for the amount of bandwidth consumed.
+The centralized and SES systems pay the penalty for making
+connections over a WAN link. Note that between these systems the
+Centralized setup yields lower response time as each client request
+travels only once over the WAN link. In the SES setup, each Web
+request triggers multiple data accesses that need to travel across
+WAN links thereby suffering huge delays. However, among these
+traditional systems, the SES architecture yields better throughput
+as it uses more hardware resources, i.e., the Web server and the
+database system are running in separate machines. SES yields a
+throughput of 7.9 req/s, while the centralized architecture yields
+much less (1.9 req/s) as it runs both Web server and database on
+the same machine.
+
+Replication also affects throughput. GlobeDB attains a through-
+put of 16.9 req/sec and is 2 WIPS better than the Full setup and
+8 WIPS better than SES. It performs better than SES because the
+data handling workload is shared among many database servers.
+While the Full setup has the same number of database servers as
+GlobeDB, the latter sustains higher throughput as a server does
+not receive updates to data that it accesses rarely. This reduces
+the workload of individual database servers in addition to reducing
+overall consumed bandwidth.
+
+In conclusion, the results show that the GlobeDB’s automatic
+data placement can reduce client access latencies for typical e-
+commerce applications with a large mixture of read and write op-
+erations. With these experiments we have shown that automatic
+placement of application data is possible with very little adminis-
+
+Figure 8: Relative performance of autonomic system architec-
+tures
+
+In our earlier experiments, we showed that autonomic placement
+of data can yield better performance than traditional strategies. As
+we noted in Section 5, the underlying decision making tool used
+for autonomic placement is the cost function and its weights α, β,
+and γ.
+
+The objective of the results presented in this section is not to
+show what are the right weights for a system. Rather, this exper-
+iment is just a guide to show the utility of our cost function and
+the simplicity with which it can attain different objectives (latency
+optimization, bandwidth optimization or a mixture of it).
+
+We evaluated the relative performance of autonomic systems that
+uses three different weight parameters, in effect three different cri-
+teria for placement. The three systems evaluated are: (i) GlobeDB
+(0, 0, 1): a system with weights (α, β, γ) =(0,0,1), which implies
+the system wants to preserve only the bandwidth and does not care
+about latency, (ii) GlobeDB (1, 1, 0): a system whose weights are
+set such that the system cares only about the client latency and does
+not have any constraints on the amount of update bandwidth. Effec-
+tively, this situation leads to creating more replicas. (iii) GlobeDB
+( 2, 2, 1): a system that prefers to optimize latency twice as much
+as the update bandwidth.
+
+As can be seen, these systems are designed for different condi-
+tions. For example, GlobeDB(0, 0, 1) is useful for a system that
+cannot afford to pay for the wide-area bandwidth consumed in its
+remote edge servers and GlobeDB(1, 1, 0) is useful for a CDN that
+values its client quality of service (QoS) more than its maintenance
+costs consumed for maintaining consistency among replicas.
+
+The goal of this experiment is to analyze the impact of different
+cost function parameters on the client response time of the TPC-
+W benchmark and the results are given in Figure 8. As seen in
+the ﬁgure, GlobeDB(0, 0, 1) performs the worst in terms of WIRT,
+as it leads to a placement where the data are not replicated at all.
+Furthermore, its throughput is saturated because all transactions
+are sent to a single database server. The other two systems per-
+form equally well and yield good throughput. With respect to up-
+date trafﬁc, GlobeDB(2, 2, 1) performs better than GlobeDB(1, 1,
+0) and reduces update trafﬁc by a factor of 3.5. Note that, while
+GlobeDB(1, 1, 0) and a fully replicated system have similar goals,
+the former yields better WIRT as it is able to perform local updates.
+
+8. RELATED WORK
+
+A number of systems have been developed to handle Web appli-
+cation replication [4, 7, 22]. These systems replicate code at the
+
+020040060080010001200140001234567891011121314151617Web Interaction Response Time (ms)WIPSSESCentralizedGlobeDBFull200400600800100012001400160001234567891011121314151617Web Interaction Response Time (ms)WIPSGlobeDB (2,2,1)GlobeDB (1,1,0)GlobeDB (0,0,1)replica servers, but either do not replicate the application data or
+cache them at the replica servers. Furthermore, all these systems
+also rely on manual administration and the administrator must de-
+cide which data must be cached and placed at which server. This is
+the most important shortcoming of existing systems.
+
+Commercial database caching systems such as DBCache [6] and
+MTCache [17] cache the results of selected queries and keep them
+consistent with the underlying database. Such approaches offer per-
+formance gains provided the data accesses contain few unique read
+and/or write requests. However, the success of these schemes de-
+pends on the ability of the database administrator to identify the
+right set of queries to cache. This requires a careful manual analy-
+sis of the data access patterns to be done periodically.
+
+In [15], the authors propose an application-speciﬁc edge service
+architecture, where the application itself is supposed to take care of
+its own replication. In such a system, access to the shared data is ab-
+stracted by object interfaces. This system aims to achieve scalabil-
+ity by using weaker consistency models tailored to the application.
+However, this requires the application developer to be aware of an
+application’s consistency and distribution semantics and to handle
+replication accordingly. This is in conﬂict with our primary design
+constraint of keeping the process of application development sim-
+ple. Moreover, we demonstrated that such an awareness need not
+be required, as distribution of data can be handled automatically.
+
+Recently, database researchers have built middleware systems
+such as C-JDBC [8] and Ganymed [21] for scalable replication of a
+database in a cluster of servers. However, the focus of these works
+is to improve the throughput of the underlying backend database
+within a cluster environment, while the focus of our work is to im-
+prove the client-perceived performance and reducing wide-area up-
+date trafﬁc. We also note that these works can be combined with
+GlobeDB to scale the database in a single edge server.
+9. CONCLUSION
+
+In this paper, we presented GlobeDB, a system for hosting Web
+applications that performs efﬁcient autonomic replication of appli-
+cation data. We presented the design and implementation of our
+system and its performance. The goal of GlobeDB is to provide
+data-intensive Web applications the same advantages CDNs offered
+to static Web pages: low latency and reduced update trafﬁc. We
+demonstrated this with experimental evaluations of our prototype
+implementation running the TPC-W benchmark over an emulated
+wide-area network.
+In our evaluations, we found that GlobeDB
+signiﬁcantly improves access latencies and reduces update trafﬁc
+by a factor of 6 compared to a fully replicated system. The major
+contribution of our work is to show that the process of application
+development can be largely automated and in such a way that it
+yields substantial improvement in performance.
+
+We note that our current prototype assumes that the system is
+free of server and network failures. However, such failures may
+create a consistency problem if the master for a data unit is un-
+reachable. We plan to address these issues in the near future.
+
+The system presented in this paper is the ﬁrst step in achiev-
+ing the goal of complete autonomic system for replication. There
+are several open issues that need to be addressed to realize an auto-
+nomic CDN we envisage. These issues include effective re-clustering,
+continuous adaptation of placement conﬁgurations and fault toler-
+ance. We plan to address them in our next steps.
+10. ACKNOWLEDGEMENTS
+
+We thank Christian Plattner (ETH) and Arno Bakker (VU) for
+their helpful discussions and helping us with the setup of the em-
+ulator test bed. We also thank the anonymous reviewers for their
+comments that helped in improving the clarity of the paper.
+
+11. REFERENCES
+[1] Java TPC-W Implementation Distribution,
+
+http://www.ece.wisc.edu/˜pharm/tpcw.shtml.
+
+[2] NISTNet: A Network emulation tool,
+
+http://snad.ncsl.nist.gov/itg/nistnet/.
+
+[3] PostgreSQL, http://www.postgresql.org/.
+[4] Akamai Inc. Edge Computing Infrastructure.
+[5] B. H. Bloom. Space/time tradeoffs in hash coding with allowable errors.
+
+Communications of the ACM, 13(7):422–426, 1970.
+
+[6] C. Bornhvd, M. Altinel, C. Mohan, H. Pirahesh, and B. Reinwald. Adaptive
+
+database caching with DBCache. Data Engineering, 27(2):11–18, June 2004.
+[7] P. Cao, J. Zhang, and K. Beach. Active cache: Caching dynamic contents on
+
+the Web. In Proceedings of the Middleware Conference, pages 373–388, Sept.
+1998.
+
+[8] E. Cecchet. C-JDBC: a middleware framework for database clustering. Data
+
+Engineering, 27(2):19–26, June 2004.
+
+[9] J. Challenger, P. Dantzig, and K. Witting. A fragment-based approach for
+efﬁciently creating dynamic web content. ACM Transactions on Internet
+Technology, 4(4), Nov 2004.
+
+[10] Y. Chen, L. Qiu, W. Chen, L. Nguyen, and R. H. Katz. Clustering web content
+for efﬁcient replication. In Proceedings of 10th IEEE International Conference
+on Network Protocols (ICNP’02), pages 165–174, 2002.
+
+[11] A. Datta, K. Dutta, H. Thomas, D. VanderMeer, Suresha, and
+
+K. Ramamritham. Proxy-based acceleration of dynamically generated content
+on the world wide web: an approach and implementation. In Proceedings of
+the 2002 ACM SIGMOD International Conference on Management of Data,
+pages 97–108. ACM Press, 2002.
+
+[12] J. Dilley, B. Maggs, J. Parikh, H. Prokop, R. Sitaraman, and B. Weihl. Globally
+
+distributed content delivery. IEEE Internet Computing, 6(5):50–58, 2002.
+
+[13] F. Douglis, A. Haro, and M. Rabinovich. HPP: HTML macro-preprocessing to
+
+support dynamic document caching. In USENIX Symposium on Internet
+Technologies and Systems, 1997.
+
+[14] Z. Fei, S. Bhattacharjee, E. W. Zegura, and M. H. Ammar. A novel server
+
+selection technique for improving the response time of a replicated service. In
+Proceedings of INFOCOM, pages 783–791, March 1998.
+
+[15] L. Gao, M. Dahlin, A. Nayate, J. Zheng, and A. Iyengar. Application speciﬁc
+data replication for edge services. In Proceedings of the Twelfth International
+World Wide Web Conference, pages 449–460, May 2003.
+
+[16] J. Gray and A. Reuter. Transaction Processing: Concepts and Techniques.
+
+Morgan Kaufman, San Mateo, CA., 1993.
+
+[17] P. Larson, J. Goldstein, H. Guo, and J. Zhou. MTCache: Mid-tier database
+
+caching for SQL server. Data Engineering, 27(2):27–33, June 2004.
+
+[18] W.-S. Li, O. Po, W.-P. Hsiung, K. S. Candan, and D. Agrawal. Engineering
+
+and hosting adaptive freshness-sensitive web applications on data centers. In
+Proceedings of the Twelfth International Conference on World Wide Web,
+pages 587–598. ACM Press, 2003.
+
+[19] PGFoundry. PHP Implementation of TPC-W Benchmark,
+
+http://pgfoundry.org/projects/tpc-w-php/.
+
+[20] G. Pierre, M. van Steen, and A. S. Tanenbaum. Dynamically selecting optimal
+distribution strategies for Web documents. IEEE Transactions on Computers,
+51(6):637–651, June 2002.
+
+[21] C. Plattner and G. Alonso. Ganymed: Scalable replication for transactional
+
+web applications. In Proceedings of the International Middleware Conference,
+Toronto, Canada, Oct. 2004.
+
+[22] M. Rabinovich, Z. Xiao, and A. Agarwal. Computing on the edge: A platform
+for replicating internet applications. In Proceedings of the Eighth International
+Workshop on Web Content Caching and Distribution, pages 57–77,
+Hawthorne, NY, USA, Sept. 2003.
+
+[23] M. Rabinovich, Z. Xiao, F. Douglis, and C. Kalmanek. Moving edge-side
+includes to the real edge - the clients. In USENIX Symposium on Internet
+Technologies and Systems, 1997.
+
+[24] S. Sivasubramanian, G. Pierre, and M. van Steen. A case for dynamic selection
+
+of replication and caching strategies. In Proceedings of the Eighth
+International Workshop Web Content Caching and Distribution, pages
+275–282, Hawthorne, NY, USA, Sept. 2003.
+
+[25] S. Sivasubramanian, G. Pierre, and M. van Steen. Scalable strong consistency
+
+for web applications. In Proceedings of ACM SIGOPS European Workshop,
+Leuven, Belgium, Sept. 2004.
+
+[26] S. Sivasubramanian, M. Szymaniak, G. Pierre, and M. van Steen. Replication
+
+for web hosting systems. ACM Computing Surveys, 36(3), Sept. 2004.
+
+[27] W. Smith. TPC-W: Benchmarking an e-commerce solution.
+
+http://www.tpc.org/tpcw/tpcw ex.asp.
+
+[28] Speedera Inc. http://www.speedera.com.
+[29] D. Terry, A. Demers, K. Petersen, M. Spreitzer, M. Theimer, and B. Welsh.
+
+Session Guarantees for Weakly Consistent Replicated Data. In 3rd
+International Conference on Parallel and Distributed Information Systems,
+pages 140–149, Austin, TX, Sept. 1994. IEEE.
+
+

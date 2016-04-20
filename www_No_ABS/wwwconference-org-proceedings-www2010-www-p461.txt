@@ -1,0 +1,824 @@
+There is a signi cant amount of work in the  eld of named entity recognition (NER), where the goal is to locate and classify parts of free text into a set of prede ned categories.
+These categories include names of persons, organizations, locations and also expressions of phone numbers, date and time entities, monetary values etc.
+NER has been studied extensively as it is quite important for Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+Distribution of these papers is limited to classroom use, and personal use by others.
+a large number of applications including question answering, user-centric entity detection systems, content de-identi cation and information retrieval (e.g., web search engines).
+In this paper we focus on a subset of named entities, which we refer to as semi-structured named entities (SSNE).
+We formally de ne SSNE as those whose entity string may syntactically contain only: (1) digits and white spaces; (2) a  nite set of non-letter characters; (3) a  nite set of domain-speci c terms (tokens), if applicable.
+In other words, we de ne a named entity type to be semi-structured, if its instances (of interest) conform to these restrictions.
+Although the person, location and organization entities do not conform to them, phone or fax numbers, date, time, monetary, weight, length, percentage entities do follow such syntactical properties naturally.
+However, these properties are usually not well-de ned and change greatly from language to language, and even from region to region for the same language.
+As we will describe shortly, traditional approaches for SSNE recognition require signi cant amount of manual effort, either in the form of handcrafting rules or in the form of labeling examples, and therefore they do not scale when many entity types, languages and regions need to be supported.
+Our goal in this work is to provide a scalable solution for the detection of semi-structured named entities for many entity types, languages and regions.
+To achieve this, we propose a novel three-level framework: The framework employs text mining techniques and runs a novel two-step bootstrapping algorithm on a large corpus of text documents, and feeds the output to a machine learning algorithm to create the  nal detector.
+Our approach signi cantly reduces the manual effort and requires very little domain knowledge.
+In fact, in some cases, the input to the system can be provided by non-speakers of the target language.
+We describe our approach in detail for the detection of phone or fax numbers and also date and time entities.
+Note that the techniques can be extended for the detection of other SSNE types.
+Below, we describe some applications that can bene t from our approach, discuss existing solutions and their limitations, and  nally specify our contributions.
+User-centric entity detections systems: These systems typically detect various types of entities in web pages, email messages, content on mobile devices and create intelligent hyperlinks to relevant applications [12, 31].
+For phone numbers, most user-centric entity systems offer shortcuts to address books or online phone services, and for date and time entities they offer calendar applications.
+So these systems can immediately bene t from a scalable solution.
+Web search engines: Search engines can leverage semi-structured entities recognized in the web pages to improve the overall relevancy for certain types of queries.
+For example, if the query intent is to  nd contact information, those pages that contain phone numbers can be boosted for a higher relevancy.
+Also, a number studies try and area codes) as features for the goal of extracting geographic information from web pages.
+Web search engines can use date and time entities to improve results on time sensitive queries.
+Data extraction, integration and classi cation: Detection of semi-structured entities in text can greatly help question answering systems (e.g., [13]), as well as systems focusing on information integration over the Web (e.g., [5]).
+Many comparison shopping engines need to identify money (price), time, and phone number (contact) information on target web pages; scalable non-site spe-ci c techniques can help to boost con dence in extraction.
+Also, semi-structured named entities can be quite useful features for the classi cation systems.
+For example, the detection of currency entities might be a good indicator that the content is about  nance.
+Content de-identi cation systems: Another application that would immediately bene t from this solution is the de-identi cation of documents.
+This is quite crucial for the health research community: No medical record can be released or shared with others unless all the private data, including phone numbers, dates and times are removed [10, 30].
+Before proceeding, we would like to note that for some applications the recognition of date and time entities alone is not suf cient, and a second step, which understands the entity and creates a standard or machine understandable representation, is required.
+This step is usually referred as normalization or resolution of the temporal information [24], and is crucial for event ordering.
+In this paper, we focus on the recognition task which is a prerequisite for the normalization.
+Some studies, such as [25], propose techniques to make the normalization process language independent.
+We will have a detailed description of the related work in the rest of the paper, however, we give an overview of the existing solutions here, as their limitations motivate this work.
+Rule-based approaches: Since SSNE have some syntactical properties by de nition, rule-based solutions work to some extent.
+For this, regular expressions are commonly used, however, they usually require a signi cant manual effort to generate.
+Since production-quality detectors need to handle many cases, the expressions can become more and more complicated.
+To give the reader some idea, the regular expression used for phone number detection in Y!
+Mail (for English in US via [31]) contains more than 600 characters as it is required to have large coverage and handle some ambiguous patterns.
+Clearly, the phone number conventions in US are different than in Sweden, but also in the UK.
+So a different regular expression needs to be developed for every target language and region.
+(These differences, which arise due to local customs and other reasons are also discussed in [15, 16].)
+Imagine an application needs a phone number detector for German in Germany, or Turkish in Turkey.
+In practice, the following steps are taken for this task: (1) Editorial study: People with the domain knowledge collect instances and identify patterns that are commonly used; (2) Development: Programmers develop regular expressions for the patterns speci ed by editors; (3) Maintenance: The  rst two steps usually cannot be done perfectly initially, so a number of iterations usually follow as editors and developers identify problematic cases, such as missing or ambiguous patterns.
+So supporting many languages and regions with regular expressions does not scale (even for phone numbers, which may be considered as a simple type), since the solution requires signi cant amount of coordinated effort.
+A rule-based approach for date and time detection is described in [27].
+Date and time detection is a more dif cult problem as it involves many more patterns, and also due to ambiguity problems, especially with simple patterns:  1/18  can be a fraction, or a date.
+The following contexts contain month and year entities:  We will meet this may ,  2000 is a nice year .
+But the same patterns fail in the following contexts:  This may not be ok ,  Windows 2000 is an operating system .
+To avoid such mistakes, rule-based solutions are usually optimized for the most obvious and common cases, at the cost of coverage.
+For the implementation, regular expressions may be infeasible for some applications, as they are computationally expensive.
+Many programming languages, such as C++, Java, Perl, provide date and time libraries, however, their purpose is to provide infrastructure for calendar operations (parsing, comparison, interval computation of dates, etc.)
+but not directly NER capabilities.
+Machine-learning approaches: Due to shortcomings and efforts required as described above, machine learning approaches are highly preferred.
+The supervised approaches (e.g., [6, 11, 24]) usually require a large annotated corpus, and in most cases, they rely on Part-of-Speech tags, as important features (which again requires another training).
+These aspects make supervised techniques undesirable from the scalability perspective, considering that many entity types, languages and regions need to be supported.
+So we follow a weakly-supervised learning (bootstrapping) approach to address these limitations, and develop text mining techniques for SSNE recognition.
+In Section 2, we review the bootstrapping algorithm in detail, and use it as our baseline in our evaluation.
+In this paper, we study the problem of detecting semi-structured named entities (such as phone numbers, date and time entities etc.)
+in text, and propose a weakly-supervised learning approach by developing new bootstrapping and text mining techniques.
+Our major contributions are listed below: (1) We propose a novel three-level bootstrapping framework, whose main advantage is to allow attacking the recall and precision aspects separately, whereas, traditional bootstrapping algorithms try to balance them at the same time, or require additional resources.
+The last level employs machine learning techniques to create the  nal model, which generalizes the extraction rules further, and can be used on new content for real time detection.
+(2) We adopt the framework for semi-structured entity detection, and propose a two-step bootstrapping algorithm, which can learn both regular expressions and contextual rules at every iteration.
+(3) We evaluate the proposed techniques extensively on English, German, Polish, Swedish and Turkish documents for phone, date and time entities.
+Despite its minimal input, our approach can achieve 95% precision and 84% recall for phone entities, and 94% precision and 81% recall for date and time entities, on average.
+(4) We discuss implementation details for the real-time detection of semi-structured entities.
+We report performance test results for phone number detection; the results show that the proposed approach is an order of magnitude faster than a production-quality regular expression based solution.
+In the remainder of the paper, we review the traditional bootstrapping techniques in Section 2, describe our three-level framework in Section 3, and adopt the framework for the semi-structured entity detection in Section 4.
+We then present our experimental results in Section 5.
+We review implementation issues and performance results in Section 6.
+In this section, we review the baseline bootstrapping algorithm, which is an iterative algorithm, and usually runs on a large collection of text documents.
+The algorithm has been studied exten-plications include: (1) The extraction of the semantic lexicons, where the term semantic lexicon refers to a dictionary of words labeled with semantic categories, such as vehicles, animals, events etc.
+[22, 28]; (2) The recognition of named entities such as persons, organizations or locations [7]; (3) The extraction of pairwise named entities that share a certain relation, where the relation can be organization-hasheadquarters-in for organization and location pairs [1], book-written-by for book title and author pairs [2], and person-bornin-year for person and year entities [19].
+Figure 1: Bootstrapping algorithm Although the proposed solutions have variations, as will be discussed shortly, the main idea can be summarized as follows, and illustrated in Figure 1: The system starts with a small number of seed examples, which are provided by the user.
+The system then  nds occurrences of these examples in a large set of documents.
+By analyzing these occurrences, the system generates contextual extraction patterns (rules) and assigns con dence scores to the patterns.
+After this step, the system applies the extraction patterns to the documents and extracts new candidates.
+Based on some validation mechanism, the system assigns scores to the extracted candidates, and chooses the best ones to add to the seed set.
+Then the system starts over to perform many similar iterations, and at every iteration it learns more patterns and can extract more instances.
+Clearly, the success of the bootstrapping algorithm depends on how the patterns are generated, and also the validation mechanism used for choosing the best candidates, which are then used as seed examples in the next iteration.
+The work in [2] tries to address these issues by assigning a speci city score to the patterns, and proposes to require that candidates are generated by multiple patterns before moving them to the seed set.
+For ef cient computation, the speci- city of a pattern is de ned to be the length of the pattern itself and those patterns that have too low scores are rejected.
+In [22] the authors study the problem of extracting semantic lexicons on a text corpus, for a number of different semantic categories, such as locations, person titles, companies, weapons.
+The system relies on AutoSlog [21] to extract the patterns, which are in the form of pre x and suf x strings.
+The score of an extraction pattern is computed using the RlogF metric [21], which employs the number of both unique lexicons and unique noun phrases produced by the pattern.
+The idea behind this metric is to achieve a good balance between precision and recall.
+In their multilevel approach, the authors propose to add very few number of examples to the seed set at every iteration, so that patterns are reevaluated with a seed set that is growing more conservatively.
+The score of a candidate is computed based on the scores of its matching patterns.
+The work in [1] focuses on the extraction of organization and location pairs that have has-headquarters-in relation.
+The authors propose to use named-entity tags (for organization and location entities) in their pattern representation, and for this, they rely on a named-enity tagger, MITRE Corporation s Alembic Workbench [1].
+To compute the score of a pattern, the authors adapt a metric similar to RlogF.
+The con dence of a candidate tuple is based on the scores of its matching patterns.
+The authors also introduce a parameter to control the learning rate of the system, so that the system trusts new examples less while creating patterns.
+In [19], the authors propose a novel bootstrapping approach to achieve large-scale and fast iterative progression; the algorithm avoids the use of syntactic parsers, named entity recognizers and gazetteers, etc., but relies on the availability of distributionally similar words [14], which needs to be extracted in advance for the target language.
+The proposed system generates basic extraction patterns similar to above systems, however, with the help of pre-generated set of similar words, it generalizes these basic patterns at every iteration, allowing higher coverage and faster progression.
+For the validation, the authors check if the candidates are distribu-tionally similar to the seed examples.
+They also use PMI score [29] and a completeness score.
+In this section, we describe our three-level bootstrapping framework, which is the basis of our approach for semi-structured named entity detection.
+The framework is illustrated in Figure 2.
+Figure 2: Three-level framework
+ As described in Section 2, the traditional bootstrapping algorithm learns extraction rules by analyzing the occurrences of the seed examples in the corpus, which in return enables the extraction of more seed examples.
+Since the discovery of new examples depends on the extraction rules learned, they have to be general enough.
+However, too general rules introduce noisy examples, causing a catastrophic effect in the next iterations.
+The main motivation for the proposed framework is to provide a mechanism to avoid the problem of balancing this trade-off.
+To achieve this, the  rst level requires the implementation of a module that can extract a very large set of candidates from the corpus.
+The main goal here is to have high recall rates and not worry about the precision.
+The implementation clearly depends on the task at hand.
+(For SSNE detection, such modules can be implemented fairly easily due to their syntactical properties, which come by de nition).
+In the  rst level, the module is run on the corpus and a very large set of candidates are extracted with their contexts.
+With context, we refer to a window that surrounds the candidate (in practice the window size could be twenty words).
+This usually reduces the total data size signi cantly, since most parts of the corpus are eliminated.
+The  rst level of the framework is expected to generate a very large set of candidates with their context windows.
+The goal of the second level is to identify the target entities in this set with very high precision.
+To achieve this goal, we employ a bootstrapping algorithm, where the input to the system is only a small number of seed examples.
+Clearly, one could conservatively use the traditional algorithm described in Section 2, which learns contextual extraction rules iteratively and validates the candidates based on the speci city of the rules that extracted them.
+However, we propose a different approach: At every iteration, (1) The candidates with their contexts are moved to a Positive Set if the candidate matches a seed example, (2) The con dence score of each remaining candidate is computed based on the similarity of its contexts to the positive set and valid ones are moved to the positive set, (3) The positive set is analyzed and the qualifying entities are included in the seed set, based on some statistical data.
+So compared to the baseline, the validation does not rely on the extraction rules but on the contextual similarities between the candidates and the positive set.
+We de ne the similarity functions used in this paper below: Cosine Similarity: This metric uses the bag of words model and assigns scores to matching terms based on their tf*idf scores, where tf stands for the term frequency and idf stands for the inverse document frequency [23].
+If the contexts of a given candidate share many signi cant terms with the positive set, then the  nal similarity score of the candidate will be high.
+Cosine Similarity with Distances: This is similar to above, but it also uses the position of the context terms in order to boost the scores of the closer terms.
+The tf*idf scores are divided by the log(distance+1), where the distance represents the number of white spaces to the candidate (e.g., the distance of the term next to the candidate is 1 and it increases by 1 for the following terms).
+String Length: This identi es the longest pre x and suf x strings shared by the candidate and positive set items and uses the sum of both string s lengths as the similarity score.
+We compute the score of a candidate ci in context C, by comparing C to the contexts seen in positive set: score(ci, C) =
+ k=1 similarity(Contextk, C)
+ (1) Note that our approach does not necessarily require a pairwise comparison of all candidates and the positive set.
+After every iteration, depending on the similarity function used, a hash table or some other ef cient structure can be constructed from the positive set to allow ef cient computation of the similarity score.
+We validate candidates based on two rankings and the qualifying ones are moved to positive set: Local Ranking: This simply ranks all the candidates seen in the current iteration based on their similarity scores, and identi es the top candidates (say top 1%, or equally ranking threshold of 0.01).
+Global Ranking: This keeps track of all the scores computed in previous iterations and makes sure the best candidates are also ranked high globally (say top 2%, or equally ranking threshold of 0.02).
+At every iteration, the positive set is analyzed and the best entities are added to the seed set.
+We describe the details in Section 4, for now, it is suf cient to say the quali cation is based on statistical data, such as the frequencies of the entities and seed examples.
+We stop the bootstrapping algorithm when the positive set growth slows signi cantly (e.g., if it grows by less than 1%).
+This eventually happens as the similarity scores decrease after many iterations and ultimately very few qualify according to the global ranking.
+The  rst level creates a very large set of candidates with high recall and the second level identi es more of the seed examples with high precision.
+The goal of the third level is to create a  nal model using machine learning techniques to balance and further improve the overall precision and recall rates.
+Below we describe the feature spaces and models used.
+Feature space: The  rst representation follows a bag of words model and uses individual terms as features.
+In practice, very rarely occurring terms may be excluded from the feature space.
+As a second feature space, we generate multi-term phrases using point-wise mutual information [29] and include them in the bag of words model.
+The third feature space we employ does not follow a bag of words model, but uses pre x and suf x strings that immediately precede or follow the candidates (or seeds) as features.
+Each unique delimiter found is represented by a unique feature in the space (we call this approach delimiter-based feature space).
+Model creation: In our approach, we employ an implementation of support vector machine (SVM) to create the models.
+An open source library for SVM models is also available in SVMlight 1.
+[9] describes an open source library 2 for large-scale linear classi cation without kernels.
+For the model creation, we can follow two approaches: (1) We can use the positive set alone and create a one-class model [26], or (2) In addition to the positive set alone, we can also  nd most dissimilar candidates with respect to the positive set, according to Equation 1, and use them as negative examples.
+Once the SVM model is created, it is run on all the candidates created in the  rst level and unique entities classi ed as positive are output as the  nal set of seed examples.
+This model can also be used on new documents in the future for a real time detection.
+We adopt this framework in Section 4 for SSNE recognition.
+In our case, it is quite trivial to implement the  rst level by taking advantage of the syntactical properties of SSNE.
+However, a number of large scale relation extraction tasks involve named entities (see Section 2), and the  rst level can be fairly easily implemented for those cases as well, by leveraging off-the shelf named entity tagging tools.
+In fact, some approaches, such as [1], already employ named entity tagging tools.
+So we discuss the advantages of the framework below as it can be used for such tasks.
+Instead of trying to balance the precision and recall at the same time, the framework targets for the highest recall and precision values at the  rst two levels, and explicitly separates these two tasks.
+The second level acts conservatively to build a set of examples with high precision, and can take advantage of all the information and global statistics made available at the  rst level.
+More speci cally, the validation of the candidates can be done more reliably, because now all the occurrences (contexts) of the candidate is available for this decision.
+In other words, the score of a candidate can be computed not only based on the patterns that extract it, but also other contexts that the candidate appears in.
+Some approaches such as [8] try to achieve a similar goal by using search engine results.
+The third level employs machine learning techniques and uses the output generated by earlier levels.
+At this level the problem is reduced to a classi cation problem, and the model learned goes beyond simple extraction rules that the bootstrapping algorithm can potentially generate.
+Also, this model can be used later on new documents for real time detection when the implementation of the  rst level is incorporated.
+1http://svmlight.joachims.org 2http://www.csie.ntu.edu.tw/ cjlin/liblinear Level 1 Input Level 1 Tokens Pattern Level 2   7 to 13 digits separated by -+()./[]_* and space Input SeedPattern SeedTerms (ddd)ddd-dddd {phone, telephone, contact, fax, call} Table 1: Input for phone detection in English (US)
+
+ In this section, we adopt the three-level framework for semi-structured named entity detection, and propose a novel two-step bootstrapping algorithm, which is employed at the second level of the framework.
+For clarity, we describe our approach for phone numbers in Section 4.1 as a case study, and adopt the approach for date and time detection in Section 4.2.
+First Level: The implementation of the  rst level is quite straightforward for SSNE as they follow certain syntactical properties by de nition (see Section 1 for the de nition).
+The module for phone number detection simply  nds sequences of digits that may be separated by space character and following characters: -+()./[]_* (no tokens applicable in this case).
+For any sequence found, the module requires that the number of digits is between seven and thirteen, and also the number of non-digit characters does not exceed ten.
+This module gives a large set of candidates which contains possibly all phone numbers, and it can be used for many languages.
+Second Level: A two-step algorithm: We now describe our two-step bootstrapping algorithm and illustrate it for phone number detection (Figure 3).
+The second level input from the user is one seed regular expression and optionally a small number of seed terms (Table 1).
+The algorithm follows a two-step approach while moving the candidates to the Positive Set.
+In the  rst step, the algorithm runs the regular expression on all the candidates, and considers any candidate that matches the expression to be a positive match, only if its context window contains at least one of the seed terms.
+The reason for using the optional seed terms is to improve our con -dence and avoid false positives.
+In the second step, the algorithm computes similarity scores for each candidate with respect to the existing positive set, and adds the best candidates to the set.
+As described in Section 3.2, the algorithm uses local and global rankings to determine the best candidates.
+Once these two steps are completed, the algorithm analyzes all the examples in the positive set, and may add new seed regular expressions or new seed terms.
+Figure 3: Two-step bootstrapping algorithm Adding new regular expressions: The algorithm makes a pass over the positive set, and replaces the digits found in the phone numbers with a special character.
+Then it identi es the most frequent two or more non-seed expressions to be added as seed regular expressions.
+However, to ensure that no incorrect expressions are added, the algorithm requires a minimum number of occurrences.
+This number LongWeekdays ShortWeekdays LongMonths (LM) ShortMonths (SM) LongTimeZone ShortTimeZone GeneralKeywords PreText PostText Connectors NumbersWithText Pattern Level 2 SeedPattern SeedPattern SeedTerms {monday, tuesday, ..., sundays} {mon, tue, ..., sun} {january, february, ..., december} {jan, feb, ..., dec} {alaska daylight, ..., paci c time zone} {akdt, ..., pt} {yesterday, today, ..., nights} {this coming, due, next, ..., past} {am, a.m, ..., p.m.} {from, at, on, -,  , ..., until} d*{am, a.m, ..., st, nd, rd, th} digits separated by ()+-.,:/# Input (SM|LM) D(D)?(th|st|nd|rd)?,?
+dddd D(D)?
+:DD (a|p)(.)?m(.)?
+  Table 2: Input for date and time detection in English (US) can be obtained based on the occurrences of the most frequent and the least frequent seed expressions, (fmax and fmin respectively), such as max(fmax/c1, fmin/c2), where c1 and c2 are constants.
+For phone number detection, we used values of 5 and 1, for c1 and c2, respectively.
+Clearly, other functions as well as some  xed numbers could be used for this.
+Adding new seed terms: The algorithm learns and adds new seed terms by identifying frequently occurring context terms in the positive set.
+To achieve this, it computes tf*idf values of all the context terms seen and identi es the top ones.
+Then it uses the same function as above to ensure they are not noisy and adds the qualifying terms to the seed terms set.
+Third Level: Once the bootstrapping algorithm stops, we follow the approach described in Section 3.3 and create a model using machine learning techniques.
+For the classi cation model, we create negative examples by identifying the most dissimilar candidates, using Equation 1.
+But now, since the semi-structured entities follow certain syntactical formats, the similarity functions can also leverage these expressions, in addition to the contextual similarities discussed.
+More speci cally, the score in Equation 1 is now multiplied by the ratio of positive examples that have the same pattern as the candidate to all positive examples found.
+Similarly, each unique pattern seen in the training set is used as a feature in the model.
+We now apply the proposed techniques for the detection of date and time entities.
+Before proceeding, we would like to mention that our focus is to detect explicit entities (e.g.,  1/1/2009 ,  on Monday ,  4/15 ), implicit references (e.g.,  last Monday ), intervals for both (e.g.,  2-3pm ,  mon to tue ) and also periodic expressions (e.g.,  on Fridays ), but not durations (e.g.,  10 minutes ) or event anchored expressions (e.g.,  two days after the accident ).
+Clearly, a large number of expressions, or labeled training data would be required to capture all these target entities with the existing solutions, and putting the same effort for every language may not be feasible.
+First Level: Date and time entities (differently than phone numbers) use a limited set of tokens.
+We split this set into logical subsets and show the input needed for the  rst level implementation, in Table 2.
+Each input  eld runs separately on a given page and the de-tections are merged to represent a single entity if they are separated by white space characters.
+The  elds for weekday, month, general keywords and time zones are self-explanatory.
+PreText simply lists a set of keywords to be detected if they precede another detection, and similarly PostText de nes terms that may follow another detection.
+Connectors help to get two other detections merged into one for phone detection and used for all languages: It simply matches any digits that are separated by ()+-.,:/#.
+Clearly, this matches a large number of digit sequences that possibly contain all the numerical date and time expressions.
+Lastly, NumbersWithText de- nes some patterns that involve both digits and letters that are not separated by white space characters, if used in the language.
+Although constructing this input might initially seem dif cult, it is signi cantly simpler than enumerating all possible date and time patterns, and developing them via regular expressions or other languages.
+Our users (native speakers of the target languages) found the task quite easy, but online dictionaries or thesauruses could also be used either to automate this process or to assist the users.
+This module can not only successfully capture the numerical date and time entities (e.g.,  1:10 ,  11.15.2005 , or  11/15 ), and formally written entities (e.g.,  Thu Apr 30 11:33:52 PDT 2009 ), but also long entities (e.g.,  on monday april 6th from 5:15pm to 6:15 pm pst ).
+This is possible as it merges contiguous detections to be a single entity, if they are separated by white space characters.
+This ideally captures all the date and time entities of interest based on the user input, which in fact, expresses the desired detection capabilities in a very  exible manner.
+Clearly, this  exibility causes many ambiguous and noisy data to be extracted as candidates as well, including all the numerical values (such as  13/13 ,  100 ,  15-15.9999 ) and text pieces (such as in contexts  Usa Today ,  Jan sings well ,  sun is shining ).
+However, the next levels in the framework are designed particularly to handle these cases.
+Second and Third Levels: These work exactly same as in the phone number detection.
+The input for the second level is shown in Table 2: We use two seed regular expressions (one for date and one for time entities), and we do not require any seed terms, since these expressions are already strong and contain some keywords.
+As mentioned above, the contiguous detections are merged into a single date and time entity, if they are separated by space characters.
+Although this approach signi cantly improves coverage and simpli es the input from the user, it may cause some over-selection problems (i.e including extra text as part of the entity).
+For example, in context  ...
+in year 2002 3rd place was ... , the approach would merge 2002 and 3rd into a single entity.
+We address this issue by leveraging the distribution of the patterns: When the algorithm stops, we compute the frequencies of all the patterns found in the corpus.
+Then for each entity found, we require its pattern to have a minimum frequency and trim the surrounding text until the requirement is satis ed.
+This effectively adjusts the entity boundaries based on the pattern frequencies observed in the corpus.
+We now present our experimental setup and results for phone and date-time entity detection in English, German, Polish, Swedish and Turkish, for the regions US, Germany, Poland, Sweden and Turkey, respectively.
+For each language, we use a corpus of 1GB, which contains about 200K random web pages from a large crawl.
+We run the proposed algorithms on this corpora; due to the infea-sibility of examining every detected entity we use a sample set.
+In our case, the  rst level identi es all the target entities of interest by de nition, in addition to the other possibly large noisy data.
+We sample this output, and for each language we use 250 and 300 instances for phone numbers and date-time entities, respectively.
+Each instance is then judged by a native speaker of the language:  No : This is not a target entity;  Yes : This is a target entity and boundaries are correct;  Over-Selection : This is a target entity, but some unrelated text is included;  Under-Selection : This is a target entity, but some part of the entity is not included.
+We evaluate the algorithms using these judgments (boundary problems reported separately, if any).
+Our key metrics in the evaluation are precision and recall.
+By de nition, Precision = TP/(TP+FP) and Recall = TP/(TP+FN), where TP, FP and FN represent true positives, false positives and false negatives, respectively.
+We focus on two target behaviors in the evaluation: (1) Highest possible precision with as high recall as possible, as many target consumer applications require, (2) Highest F-measure score, where F-measure is the weighted harmonic mean of precision and recall, de ned as F  = (1 +   2).precision.recall/(  2.precision + recall).
+For the parameter  , we use the value 1, which weighs the precision and recall equally.
+In our experiments, we parse the html tags, lower case all the characters and remove the surrounding punctuation characters in the context window.
+We tried the alternatives for all the algorithms and the results were either worse or comparable.
+We  rst review the bootstrapping algorithms below, and perform some initial experiments to choose the best termination settings, as well as to get some insights on various feature sets and models used in the three-level framework.
+For these initial experiments, we use a collection of English (US) web pages randomly chosen from a large crawl.
+The size of the collection is again 1GB and it contains
+ Baseline: We adopt the bootstrapping algorithm described in Section 2 as our baseline algorithm.
+Clearly, providing individual phone numbers as seed examples would not achieve the desired behavior; the numbers may not even exist in the corpus.
+So we use the following approach: We run the seed regular expression on the corpus and require occurrence of at least one seed term.
+This generates more than 1000 examples (positive set) in this corpus.
+We provide them to the baseline algorithm to be used in the creation of contextual extraction patterns.
+Recall that the contextual extraction patterns are based on pre x and suf x context strings of the entities identi ed.
+The con dence score is computed based on the length of the pattern, as was done in [2].
+So the candidates which are generated by longer patterns get higher scores at every iteration.
+Since we run the baseline algorithm on the contexts created by the  rst level of our framework, they are ensured to contain phone candidates.
+For fair comparison, we also adopt the local and global ranking mechanism, described in Section 3.2, which de nes the terminating condition.
+Recall that at every iteration, the candidates are sorted based on their scores, and those candidates that get ranked high locally (speci ed by the local ranking threshold) are moved to seed set only if their scores are also ranked high globally (speci ed by the global ranking threshold).
+We test with all pairwise combinations of local ranking threshold values of {0.0005, 0.001, 0.005, 0.01, 0.02, 0.03}, and global ranking thresholds values of {0.005, 0.01, 0.02, 0.10, 0.15}; this is done for all algorithms.
+Similarity-based bootstrapping algorithm: We keep everything same as the baseline algorithm, but replace the candidate scoring mechanism with the similarity functions described in Section 3.2.
+We test all three functions, and the best results are obtained with the longest string length similarity function, so we use this one.
+Two-step bootstrapping algorithm: We employ the two-step bootstrapping algorithm (Section 4.1), which moves the candidates to the positive set not only based on the contextual similarities, but also when they are matched with seed regular expressions and terms.
+Three-level framework: In the third level, we create an SVM model using the positive set generated by the two-step algorithm (Section 3.3): This can be one-class SVM model (using only positive examples), or C-support vector classi cation (using both positive and negative examples, where the latter are obtained from the Precision Recall F-measure Lang Algorithm Baseline Sim-based Two-step 0.01 and 0.05 0.03 and 0.025 0.02 and 0.05
+
+
+
+
+
+ Baseline Sim-based Two-step Algorithm Setting 0.03 and 0.15 0.01 and 0.10 0.03 and 0.10
+
+
+
+
+
+ Precision Recall Three-level (C-svm) BoW Regexp BoW+Regexp Regexp  
+
+
+
+
+
+
+
+
+
+
+
+
+
+ F-measure
+
+
+
+ Table 3: Initial results for phone number detection for the best precision, best f-measure, three-level framework and regexp most dissimilar 25% of all non-positive candidates).
+In the experiments, C-svm performed signi cantly better and we do not include one-class SVM results here due to space constraints.
+For the SVM kernels, we test with linear, rbf and poly kernels with the default settings, and choose to use the linear model since its results were either comparable or better.
+We experimented with the following contextual feature spaces: bag of words (BoW), BoW with multi-term phrases, and delimiter-based feature space.
+The delimiter-based feature space alone performed signi cantly worse than the others, and including multi-term phrases did not improve BoW.
+These observations are inline with our intuition and due to space constraints we do not include the results here.
+We also performed experiments to understand the effect of contextual and regular expression features; the combined set performs best, as expected.
+With C-svm model, a probability estimate (con dence score) is returned for each instance.
+In the initial experiments, we used the default threshold value of 0.5, however, a higher value can be used for a better precision at the cost of a reduced recall, or vice versa.
+Regexp: We include the results of a regular expression based solution for English (US), which is currently being used in a production system [31] on Yahoo!
+Mail.
+The expression is manually tuned carefully over time and contains more than 600 characters.
+We  rst perform experiments to  nd the termination settings that yield the best precision and best f-measure values for each algorithm (Table 3).
+As we can see, the two-step bootstrapping algorithm greatly improves the baseline and similarity-based algorithms, which only employ contextual extraction rules.
+The three-level framework, which internally employs the best precision two-step bootstrapping algorithm, performs signi cantly better than the baseline approach.
+Compared to the regexp approach, which requires a signi cant amount of effort, three-level framework achieves a comparable perfect precision and improves the recall.
+Experiments in Five Languages: We obtain a new collection for English (US) and collections for German, Polish, Swedish and Turkish, as described earlier.
+We use the parameters according to the initial experiments performed above.
+The input (one seed regular expression and about 5 seed terms, as shown in Table 1) is obtained as follows: We check the websites of three international companies (Microsoft, Citibank, and IBM in our case) and identify one common phone expression for each language; during this process we favor patterns that have the most non-digit characters.
+For the seed terms, we use online dictionaries for the translations.
+We would like to note that these tasks were done by a user who does not speak German, Polish or Swedish, and the judgments are performed by native speakers of the target languages.
+In Table 4, we present the precision and recall values obtained for the two settings of interest: best precision (left) and best f-measure (right).
+We see similar trends as in the initial experiments, not only English German Polish Swedish Turkish regexp baseline sim-based 2-step 3-level (0.50) 3-level (best) baseline sim-based 2-step 3-level (0.50) 3-level (best) baseline sim-based 2-step 3-level (0.50) 3-level (best) baseline sim-based 2-step 3-level (0.50) 3-level (best) baseline sim-based 2-step 3-level (0.50) 3-level (best)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Table 4: Phone number detection results in  ve languages for English, but other languages as well.
+As mentioned earlier, the SVM model in the three-level framework produces a probability estimate (con dence score).
+Although we used the default value of 0.5 in our experiments, we can use different threshold values to boost either precision or recall, at the cost of the other.
+Next, we test various threshold values and report the precision and recall values in Figure 4.
+The best values are also included in Table 4 to illustrate the potential improvements.
+To get a sense on the phone patterns used in each language, we list the most frequent 10 patterns in Table 5.
+We also present the frequency of the patterns along with the total number of unique patterns (that occur at least three times).
+As we can see, the phone numbers used in English (US) follow well-accepted conventions, however, this does not seem to be the case for other languages.
+For example, the number of phone patterns used in German is quite large, and the most frequent one only has a frequency of about
+ pressions for other languages to be as successful as in English (US).
+Detection in Multi-Language Documents: Since some documents or messages are authored by multilingual people, it is possible that the authors follow the conventions of one language although they are writing in another one.
+To address this edge case, we employ the three-level framework, and create a model using only the contextual features.
+Under this setup, the system could use two models: one with the full feature set to capture the common case as usual, and another one with only contextual features but with a higher con dence threshold.
+So the second model would cover the edge case with less recall.
+To test this, we rerun the experiments with only contextual features with a con dence level of 0.75, and report the results in Table 6.
+As we can see, the solution can detect phone numbers (that may have unexpected formats) with high precision, by just using the contextual features.
+We use the same setup and metrics as we do for phone number detection, which is described above.
+Below, we perform our initial experiments to  nd the best settings.
+In Table 7, we present the Precision Recall F-measure Baseline Sim-based Two-step Baseline Sim-based Two-step 0.01 and 0.01 0.01 and 0.01 0.03 and 0.02 0.03 and 0.15 0.02 and 0.15 0.02 and 0.15
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Algorithm Setting Precision Recall F-measure Three-level (C-svm) BoW Regexp BoW+Regexp
+
+
+
+
+
+
+
+
+ Table 7: Date and time detection results for the best precision, best f-measure scores, and three-level framework Lang Algorithm English German Polish Swedish Turkish baseline sim-based 2-step 3-level (0.50) 3-level (best) baseline sim-based 2-step 3-level (0.50) 3-level (best) baseline sim-based 2-step 3-level (0.50) 3-level (best) baseline sim-based 2-step 3-level (0.50) 3-level (best) baseline sim-based 2-step 3-level (0.50) 3-level (best)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Table 8: Date and time detection results in  ve languages best precision (upper part) and best f-measure (middle part) values achieved by each algorithm.
+Next, we run experiments with C-svm model (lowest part): As expected and observed in Section 5.1, combined set of BoW and regular expressions performs best.
+Experiments in Five Languages: The input for English (US) has already been shown in Table 2.
+For other languages, we obtain the translations and the seed patterns from our users.
+Although online dictionaries could be leveraged for assistance, this was not necessary as our users found the task trivial.
+We run the algorithms on the  ve collections with the best settings found above.
+In Table 8, we present the precision and recall values for the best precision and best f-measure settings.
+Similar to the results obtained in phone number detection, we see signi cant improvements with the proposed techniques.
+Recall the SVM model in the three-level framework produces a probability estimate.
+Next, we test with various threshold values and report the precision and recall values in Figure 5.
+The best values are also included in Table 8 to illustrate the potential improvements.
+In Table 9, we report the boundary detection problems observed.
+The left part of the table shows over and under selection cases in terms of percentages, when the  rst level candidates are directly used in the  nal output.
+The right part of the table shows the results when the boundaries are adjusted based on the frequencies of the Figure 4: Phone detection results with three-level framework %
+
+
+
+
+
+
+
+
+
+ %
+
+
+
+
+
+
+
+
+
+ Patterns (English, 245) % Patterns (German, 2290) ddd-ddd-dddd (ddd) ddd-dddd d-ddd-ddd-dddd ddd.ddd.dddd (ddd)ddd-dddd ddd-dddd ddd/ddd-dddd d.ddd.ddd.dddd dddddddddd ddd ddd dddd ddddd/dddddd ddddd-dddddd ddddd dddddd ddddd/ddddd dddd-ddddddd dddd/ddddddd dddd ddddddd ddddddddddd ddddd-ddddd ddddd / dddddd
+
+
+
+
+
+
+
+
+
+ Patterns (Polish, 691) ddddddd ddd ddd dd dd d-ddd ddd ddd (ddd) ddd dd dd dddddddddd +dd dd ddd dd dd ddd/ddddddd ddd dd dd ddd-dd-dd d ddd ddd ddd % Patterns (Swedish, 502)
+
+
+
+
+
+
+
+
+
+ dddd-dd dd dd ddd-ddd dd dd dd-ddd ddd dd dddd-dddddd dddddddddd ddd-ddddddd dddd-ddd ddd ddd - ddd dd dd ddd-ddd dddd dd-ddd dd ddd Patterns (Turkish, 344) %
+ dddd ddd dd dd
+ d ddd ddd dd dd (ddd) ddd dd dd
+
+ ddd dd dd
+ +dd ddd ddd dd dd
+ (dddd) ddd dd dd
+ dd-ddd-ddddddd
+ +dd (ddd) ddd dd dd ddddddd
+
+ (ddd) ddd dddd Table 5: Common phone patterns in each language, their frequencies and total number of unique patterns discovered Language Precision Recall F-measure English German Polish Swedish Turkish
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Table 6: Phone number detection results when only contextual features are used to support multi-language documents framework using various threshold values Language Over (%) Under (%) Over (%) Under (%) English German Polish Swedish Turkish
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Table 9: Selection problems when 1st level output is used (left), when boundaries adjusted based on pattern frequencies (right) patterns, as described in Section 4.2.
+Based on our observations, the reasons for under selection cases include character problems (use of nonwhite space characters as separators), missing input from the users for the  rst level module, and not-optimal settings.
+We compute SampleError = (FP+FN)/SampleSize for the baseline and three-level algorithms using all the judgments in  ve languages, and compute the true error intervals at 99% con dence level.
+For phone number detection, baseline: 0.218   0.033, and three-level: 0.048   0.016.
+For date and time detection, baseline: 0.458   0.033 and three-level: 0.139   0.023.
+We also perform a Cohen s Kappa test to see the agreement rate between the judgments and the two approaches.
+For the phone detection, the kappa scores and the agreement strengths are baseline:
+ detection, baseline: 0.100 (poor) and three-level: 0.702 (good).
+For some applications, the running time performance of the SSNE detector can be a crucial factor.
+For example, user-centric entity detection systems perform real-time detection and certain response time requirements apply.
+Web search engines process large collections of crawled web pages and even small improvements can result in big reductions in the overall processing time.
+Therefore, we review some implementation details here and present performance test results for phone number detection, as a case study.
+We implement the proposed approach in C++ and use a linear SVM model based on [9].
+The integration of the  nal detector, which is created by the three-level framework, is illustrated in Figure 6.
+The  rst level module in the framework is reused and it Figure 6: Implementation overview Algorithm Run Time Processing Rate regexp level1regexp svmModel 3.813 sec 0.842 sec 0.082 sec
+
+
+ Table 10: Running time performance results generates the candidates.
+The module can run quite ef ciently, as it simply  nds sequences of digits in the string which may be separated by phone characters (Section 4.1).
+For these candidates, we  rst create features based on the terms found in the context window.
+Next, we replace the digits in the candidate with a special character and obtain a regular expression feature.
+We then make lookups into the feature table, and create an SVM vector to run with the model.
+Based on the probability estimate, we output the candidate as an entity.
+We call this approach as svmModel, and compare it to a production-quality regular expression, which is currently used in [31] and tested in Section 5.1.
+This is based on the PCRE library [20] and called via a C++ wrapper library.
+We call this solution as regexp, which can simply output phone entities found in a given document.
+However, one could argue that it does not have to run on the whole document, but only on the candidates generated by module.
+We test this solution as well and call it as level1regexp.
+For the run time results, we perform the following experiment on a Linux machine with Dual Core AMD Opteron Processor 275 (1808 MHz) with enough main memory and 1MB cache.
+In the test, we used 1493 randomly chosen documents with an average size of 2.5KB.
+The corpus contained 152 phone numbers according to the svmModel detector.
+The total running time and processing rates of the above solutions are shown in Table 10.
+As we can see, the proposed approach is an order of magnitude faster than the production quality regular expression solution.
+Much of the relevant work was already reviewed in the  rst three sections, so we brie y describe here the most closely related results and differences in our approach.
+The  rst category of related work involves bootstrapping algorithms, such as [1, 2, 19, 22], which have been successfully employed for the extraction of relations, semantic lexicons and named entities on large collections of text documents.
+In [17, 18], bootstrapping algorithms are run on web search engine query logs for the goal of extracting class attributes (such as side effects or generic equivalent for drugs).
+We are unaware of any previous studies that employed bootstrapping techniques for the recognition of semi-structured named entities.
+To provide a scalable solution for this problem, we propose a new framework and a two-step bootstrapping algorithm that can learn not only contextual rules but also regular expressions.
+techniques developed for the recognition of temporal expressions, including [11, 24].
+In addition to our target entities (Section 4.2), these approaches focus on more complex expressions (e.g.,  the same period a year ago ,  Christmas Day ).
+To achieve this, they usually require a large training data.
+For example, above studies use the ACE2004 (automatic context extraction) corpus, which contains 767 documents and more than 8000 labeled temporal expressions.
+Obtaining such training data for many languages is a dif cult task.
+Additionally, the  nal model depends on the nature and style of the training data.
+So if a small training set is used, we would not expect that model to perform well on web content as it is generated by many authors from different backgrounds.
+Therefore, we focus on the scalability aspect and propose a weakly-supervised technique as many languages need to be supported for the target entities, as speci ed by the users.
+In this paper, we study the problem of detecting semi-structured named entities (such as phone numbers, date and time entities etc.)
+in text, and propose a scalable three-level bootstrapping framework to support many entity types, languages and regions.
+The framework identi es a large set of candidates in the  rst level by running a simple module, and employs a novel two-step bootstrapping algorithm in the second level to obtain an accurate set of positive examples.
+The algorithm can learn both regular expressions and contextual rules at every iteration.
+In the third level, the framework employs machine learning techniques and creates a model using the examples generated in the  rst two levels.
+This model, which generalizes the extraction rules further, can be used on new content for real time detection.
+We evaluate the proposed techniques extensively on English, German, Polish, Swedish and Turkish documents for phone, date and time entities.
+Although the input required from the user is minimal, our approach can achieve 95% precision and 84% recall for phone entities, and 94% precision and 81% recall for date and time entities, on average.
+We also discuss some implementation issues and report our performance test results for phone number detection.
+The results show that the proposed approach is an order of magnitude faster than a production-quality regular expression based solution.
+In our future work, we are planning to incorporate active learning techniques to the framework and investigate capabilities for the extraction of other named entities and relations.
+Acknowledgment We are grateful to Vadim von Brzeski and Omid Rouhani-Kalleh for their help in the experimental evaluation.
+We would like to thank John Thrall and Kun Liu for their helpful suggestions.

@@ -1,0 +1,669 @@
+Increasingly, organizations try to automate their business processes using coarse-grained services that implement spe-ci c parts of their business functionality.
+Services are self-describing, platform-agnostic computational elements that support rapid low-cost composition of distributed applications [22].
+Recently, Web services are one popular technology for implementing such services.
+Composing di erent services into a structured process can be done by using an orchestration language (also called composition language) such as WS-BPEL, the Web Service Business Process Execution Language (BPEL for short) [19].
+It is an XML-based Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+Distribution of these papers is limited to classroom use, and personal use by others.
+language that provides the user with variables, conditionals, loops, asynchronous messages, process correlation and facilities for transaction and exception handling.
+The language itself was originally designed by BEA, Microsoft and IBM.
+Finally, WS-BPEL 2.0 is now standardized by OASIS.
+When leveraging BPEL as a process execution language, there are some major concerns that have to be considered when using it in high-availability environments.
+As a motivating scenario, consider an online store where the back-end business logic is implemented using a BPEL based solution, and the front-end for the customers is a Web application which gathers data and hands it over to the BPEL engine for processing the order.
+The order processing requires some communication with the local back-end services (such as stock services) or partner services o ered by other organizations (e.g., credit card veri cation and payment).
+A failure or downtime of one of these services in the process can cause a downtime in the overall process execution.
+This may result in a considerable loss of money due to the fact that the front-end is relying on a fully operational back-end system.
+In this work, we address two issues we identi ed when using BPEL in enterprise systems where monitoring and high-availability play a crucial role: Firstly, one major drawback of BPEL is its inherently static nature.
+Basically, if a process de nition is deployed into a BPEL environment   the BPEL engine   it cannot be changed dynamically at runtime.
+Every information is hardwired after a process is deployed, for example, references to other services (called partner links) used in the BPEL process cannot be changed and exchanged without editing and redeploying the process which implies a downtime of the overall system.
+Although it is possible for the process to bind to partner links at runtime, the process de nition would contain a tremendous amount of code that is not related to the business process (see Section 4 for more details on runtime partner link binding).
+A dynamic replacement of partner Web services in the process is, therefore, a necessary approach when the service provider quality in terms of response time (or other QoS) aspects is not good enough and a ects the overall quality of the process.
+Secondly, the BPEL standard does not provide any means for monitoring a running process.
+Nevertheless, monitoring of business processes is a very important issue in enterprise systems as they are a key factor for running a business.
+Currently, it is up to the BPEL engine to provide monitoring interfaces.
+However, to the best of our knowledge, available BPEL engines lack this ability.
+The monitoring of QoS is a necessary foundation to decide whether a replacement of
+ based selection criteria should be used.
+We address these aforementioned issues in our VieDAME (Vienna Dynamic Adaptation and Monitoring Environment for WS-BPEL) system1.
+It is an extension to the ActiveBPEL engine [1] and allows monitoring of various QoS attributes of running BPEL processes and to perform a fully dynamic service adaptation of existing processes in a non-intrusive way by providing a number of alternative services for a given service.
+Additionally, we provide a mechanism to handle service interface mismatches by allowing transformations to be applied to incoming and outgoing SOAP messages to adapt them to the currently used interface in the BPEL process.
+We show that the performance overhead introduced by our extension is minimal and the overall system performance is su cient for high performance service based applications.
+Furthermore, we provide a Web-based administration interface allowing access to monitoring data and the con gura-tion of the adaptation and its possible transformations.
+This paper is structured as follows: In Section 2 we discuss the basic model of our approach as well as the detailed system architecture and its components.
+Section 3 describes the monitoring strategy for BPEL processes and Section 4 presents the service adaptation and the necessary message transformation if the service interfaces do not match.
+In Section 5 we brie y describe the system implementation and the technologies we used to build the extension.
+Section 6 presents the case study that we use in our approach and depicts an in-depth performance evaluation to show that our system is well-suited for high-availability environments.
+Related work is discussed in Section 7 and Section 8 concludes this paper and presents some future work.
+In this section, we  rstly discuss the design goals for the VieDAME system, followed by a system overview that brie y introduces the architectural approach.
+An in-depth discussion of the VieDAME system architecture concludes this section.
+In general, dynamic process adaptation deals with a multitude of di erent aspects concerning the adapted parts of a process and the applied adaptation techniques.
+The main idea for VieDAME was to achieve non-intrusive behavior with regard to dynamic service adaptation, which enables the runtime exchange of partner links within a BPEL process, without any changes to the BPEL process or the involved partner services.
+Such a dynamic service adaptation only leverages one possible fragment of a process model that can be adapted at runtime.
+In general, there is no restriction what fragments of a process need to be adapted and why.
+Service adaptation is one of the most obvious requirements that stems from the fact that BPEL has no e cient possibility of dynamically exchanging partner links or adding alternative services to the process at runtime.
+Unlike other approaches that modify the process de nition to redirect partner link communication to a proxy service that is capable of adding additional
+ ac.at/prototypes/viedame features such as logging or partner service selection, we propose a lightweight adaptation layer to intercept and control incoming and outgoing (SOAP) message  ow (refer to Section 2.3 for details).
+As an example, the work presented in [8] discusses the implementation of software fault tolerance for Web services by mapping various fault tolerance patterns to WS-BPEL, using standard BPEL constructs only.
+While being an interesting and standard compliant approach, the main advantage of our solution is the fact that the process model itself does not have to be changed, and, therefore, does not introduce any logic that is not related to the business process itself.
+Other adaptation techniques coming from the work ow area allow to change di erent process fragments at runtime mainly based on execution monitoring [28].
+Certainly, such process adaptation techniques can be applied also to BPEL, nevertheless, it would require a tighter coupling between the BPEL engine and the adaptation layer, which is not the chosen approach in this paper.
+Our contribution includes lightweight techniques to truly adapt services in a process at runtime.
+We currently do not adapt the process control  ow itself, which is, for example, necessary when a service has to be replaced by two other services which ful ll the same functional requirements but require adaptions in the control  ow to achieve the same behavior.
+In Figure 1 we have depicted our conceptual model we use for the dynamic service adaptation.
+The core part is the BPEL process which has a certain control  ow and invokes a number of partner services.
+The partner services are generally hosted on di erent machines distributed over the Web.
+In VieDAME each service in a BPEL process can be marked as replaceable to indicate that alternative services can be con gured and invoked instead of the original service that is hardwired in the process.
+An alternative service can either be syntactically or semantically equivalent.
+The former indicates that the interfaces of the original and the alternative services match.
+This is, for example, the case, when multiple instances of the same service are hosted on di erent machines to provide increased reliability.
+The latter indicates that the services only have the same functionality but expose it using di erent interfaces which mainly occurs when services needs to be exchanged that come from completely di erent providers on the Web.
+Each service and all of its alternative services  endpoints are stored in the VieDAME service repository.
+If a service should be dynamically replaced with an alternative service during process execution, the original partner service captured by the VieDAME adaptation layer has to be marked replaceable in the VieDAME UI (right side of Figure 1).
+Alternative services that can replace the original service de- ned by the BPEL process may be added at any time by providing their interface description in the VieDAME UI.
+Once they are linked to the original service, a replacement policy can be selected to control which of the available alternatives will be used (see Section 4.1).
+Additionally, the VieDAME UI allows the de nition of mediation rules that allow alternative services to be used where the interfaces do not match the original interface of the partner service.
+The VieDAME system is split into the VieDAME core and the VieDAME engine adapters.
+The VieDAME core ties together the monitoring, service selection and message trans-
+
+
+
+
+
+
+: ; 
+
+
+
+ : ;
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ;   
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Figure 1: VieDAME enhanced BPEL environment formation facilities as well as provides services such as data store access, scheduling and con guration data, whereas the engine adapters represent the connector to the BPEL engine.
+Thus, to support new BPEL engines, it is (only) necessary to implement an engine adapter speci cally to the desired engine implementation.
+The VieDAME environment currently supports ActiveBPEL 3.0 [1], support for Apache ODE [2] and JBoss jBPM WS-BPEL runtime [27] is planned once they are reliable enough to be used in production environments.
+The VieDAME engine adapters are implemented using aspect-oriented programming (AOP).
+Although extending existing (object oriented) software systems is traditionally achieved by applying subclassing to add additional functionality, we would fail to reach our goal to keep the base system (i.e., the BPEL engine) and the VieDAME system as separate as possible by taking the OOP approach.
+The main drawback with subclassing is that the code is dependent on its base classes.
+Changes in the base system always imply changes in the extension, even if the changes in the new release are unrelated to the extension.
+Moreover, if the number of classes to be modi ed is high, it would be likely that one would end up with code that is hard to maintain.
+These issues, together with the possibility to enable and disable certain parts of the VieDAME system as needed by using load time weaving, were the main reasons for the decision towards AOP.
+The following paragraph gives a very short introduction to the key concepts in AOP.
+For a complete introduction to AOP consider [14] and [15].
+An aspect in AOP can be seen as a concern that is related to one or more places in existing code.
+In AOP, those places are called joinpoints.
+To tell the AOP framework where exactly it should add the additional functionality (called ad-vices in AOP jargon) it requires the de nition of pointcuts   expressions that identify arbitrary events in the runtime system such as method invocations or  eld access.
+Finally, the AOP framework combines the base system with the additional code.
+This step is called code weaving and affects the performance and ease of deployment of the altered code.
+Whereas compile-time weaving requires an intermediate step to generate the modi ed classes, load-time weaving adds the advice code during class loading time.
+As an additional bene t, aspects can be deployed and undeployed during runtime.
+Another approach is source-level weaving, which is not popular any more since it requires access to the base system s source code.
+Section 3 explains the Service-StatisticsCollectorAspect s advice code and shows sample pointcut expressions for JBossAOP.
+Figure 2 depicts the architectural approach taken as well as the system dependencies.
+Firstly, the  ow of events in a standard BPEL environment is described, without any interaction with the VieDAME system.
+Secondly, the additional steps performed in a full-featured VieDAME environment are explained.
+It includes service monitoring, alternative service selection and message transformation, which are explained in detail in the subsequent sections.
+Please note that only a simple scenario   without process correlation and other advanced BPEL features   is used for explanation.
+Nevertheless, the VieDAME system does not impose any limitations in this regard.
+After deployment of a process de nition (1), the BPEL processor (2) is ready to create new process instances.
+A new BPEL process instance (2a) is created when one of its start activities is triggered, e.g., by an incoming message.
+Interaction with a partner link is initiated by invoke activities (2b) that create SOAP calls (3a).
+These SOAP calls are executed by a SOAP engine (10) that returns the result of the invocation of an arbitrary partner service (11) upon completion of the request.
+The invoke activity reports the result to the process instance which in turn proceeds to the next activity.
+When the VieDAME system is enabled, an additional level of processing is introduced, manifested in the Interception and Adaptation Layer (5b), hereinafter referred to as the IAL.
+Basically, the IAL is created by aspects that are
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ $ %
+
+
+
+ % =
+
+  4  % >
+
+
+
+ 
+
+
+  
+
+ = ?
+
+ 
+
+
+
+
+ 
+
+ & =
+
+
+
+
+ & > & ?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ '
+=
+
+
+
+
+
+ >
+
+ !
+=
+ # >
+ @
+
+ 
+
+  
+
+ = ?
+
+ 
+
+
+
+   ?
+?
+ 
+
+
+
+
+ 
+  ?
+=
+
+     @
+
+
+
+
+ "
+
+
+
+
+             !
+>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Figure 2: VieDAME Overall System Architecture bound to speci c joinpoints in the BPEL engine s code by the de nition of pointcuts.
+The advice code is then woven into the original method invocations by the AOP framework (4) at load time.
+The IAL provides a bidirectional interface for the engine adapter (5a) to tap the communication between the invoke activity (2b) and the SOAP engine (10).
+The engine adapter in turn provides read-write access to the invocation context, enabling other VieDAME components   such as Monitor (8a) or Selector (8c)   to access and modify invocation parameters and other runtime data.
+The  rst VieDAME component that is called after interception of a partner link invocation by the IAL is the Monitor component.
+It examines the invocation context to  nd the service name, endpoint address and operation name in order to load a previously persisted service reference or to persist a new service reference for future requests.
+The Monitor leverages the VieDAME core (6) and the ORM framework (7b) respectively to persist objects to a data store (10).
+Furthermore, the Monitor activates a timer to measure the time elapsed during the actual SOAP call and stores this information together with a reference to the involved service and success/failed  ag.
+A scheduling framework (7a) is used to bulk-insert invocation events in order to optimize data store access.
+The Monitor component is explained in more detail in Section 3.
+If the service reference loaded by (8a) is marked as replaceable, the next VieDAME component takes control.
+The Selector component (8c) determines an alternative partner service by applying some selection algorithm to a list of con gured alternative services (9).
+If an alternative service is found, the invocation context is updated with the alternative s endpoint parameters.
+Section 4.1 explains the Selector concept in more detail.
+Like the Monitor component, Selectors access the data store by using (6) and (7b).
+The same applies to the last VieDAME component that can be called, the Transformer component.
+A Transformer (8b) is responsible for compensating the interface mismatch between the original service and the alternative.
+The Transformer uses transformation rules (e.g., XSLT stylesheets) stored in (9) to perform the required transformations.
+Consider Section 4.2 for more information on Transformers.
+After all required modi cations are applied to the invocation context, the SOAP call is  nally proceeded, probably invoking an alternative partner service instead of the original service.
+The di erence between the unaltered invoke (3a) and the advised invoke (3b) is called the Invocation Context Delta, or ICD.
+A big ICD indicates many di er-ences between the original service interface and the alternative service interface, whereas a small ICD indicates a replica of the original service (i.e., the original partner service and the alternative partner service only di er in their endpoint address).
+A zero ICD indicates that neither a service replacement nor message transformation was applied.
+The ICD measured value can be used as an indicator for determining the degree of adaptation the VieDAME system has performed and whether the environment running VieDAME uses the adaptation facilities at all.
+As the BPEL standard does not specify any details about process monitoring a possible workaround to accomplish
+ tivities that can be utilized to trigger additional activities (e.g., invoking an alerting service) in case of an error.
+We think that there are two severe problems with this approach: On the one hand, this solution is not very  exi-ble.
+If a partner service becomes unavailable or faulty, the process could call an alerting service which in turn could inform the operators about the situation.
+Fixing the problem, which is only possible if the operators have access to the broken partner service will result in a service downtime.
+Moreover, using a Web service for sending out alerts about service problems does not seem to be an appropriate solution as it introduces a new single point of failure.
+In the worst case, the alerting service is down and the operators would not even notice what is going on.
+On the other hand, exception handling is only useful if a service fails completely to respond to a request, either by returning malformed responses or by being unavailable.
+If one or more partner services become slow in terms of responsiveness, the impact on business processes could turn out even worse, since the approach discussed above is not applicable in such a case.
+Imagine a customer clicking the  nalize order button, expecting a response in a reasonable amount of time.
+How long the customer has to wait depends on how fast each of the involved partner services responds.
+It is not only a matter of  succeeded or failed , but rather fast enough or too slow.
+If statistical monitoring data about previous service invocations is available, calculating the overall execution time of the BPEL process is possible.
+The VieDAME system can provide this information, which can be used to optimize the business process in terms of partner service invocations.
+The Monitor component (8a in Figure 2) is responsible for storing the partner service invocation events (i.e., SOAP calls that result from <invoke> activities in the BPEL process), that in turn are aggregated to calculate performance related QoS values such as average response time, accuracy or availability of some particular operation.
+QoS Attribute Response Time Availability Accuracy Formula
+
+ rti #requests 1 - downtime uptime 1 - #f ailedrequests #totalrequests Category Performance Dependability Dependability Table 1: Monitored QoS Attributes Table 1 lists the monitored QoS attributes and their underlying formulas.
+These values serve as input for some Selector components that are explained in Section 4.1.
+Furthermore, other issues such as handling peak-time loads can be addressed by adding additional alternative partner services based on long-term observations.
+Listing 1 shows the skeleton of the VieDAME Monitor component, exemplifying the structure of the Selector and Transformer components and explaining how AOP is used to examine the invocation context.
+On Line 2 3, an invocation context attribute (EndpointReference, in this case) is accessed and the name of the invoked partner service is examined (line 4).
+The call to invocation.invokeNext() on line 9 hands over control to the next applicable aspect (i.e., to the Selector component), e ectively returning the result of the actual method invocation after all other VieDAME components have succeeded.
+Line 15 shows the storeInvo-cation() method call that persists the operation invocation event.
+void handleInvoke( MethodInvocation invocation ) { EndpointReference endpointRef = ( EndpointReference ) invocation .
+getArgs [ 0 ] ; String name = endpointRef .
+getServiceName ( ) ; ServiceEndpoint endpoint = endpointDao .
+loadEndpoint ( name , url ) ; try { monitor .
+start ( ) ; Object result = invocation .
+invokeNext ( ) ; monitor .
+stop ( ) ; return result ; } catch ( Exception e ) { success = false ; } finally { storeInvocation( operation , duration , success )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ } } Listing 1: Monitor Component Structure The QoS statistics (e.g., availability) for a particular operation are calculated by a scheduled job based on the list of saved operation invocation events.
+Since the VieDAME system relies on a relational database for persistence, immediately  ushing the invocation events to the database can cause serious performance issues when dealing with a lot of concurrent requests.
+Thus, the VieDAME system leverages a scheduling framework to implement write-behind semantics in this regard, allowing to e ciently batch insert a con gurable number of events at once.
+Besides the bu er size used for temporary storage of invocation events, a resize factor can be de ned that the VieDAME system uses to dynamically change the bu er size if the backlog of events waiting to be  ushed exceeds a con gurable threshold.
+These parameters allow for tuning the VieDAME system to deal with di erent workload scenarios as well as optimizing database access.
+We will now explain how the AOP framework is con g-ured where and when the code from Listing 1 is applied.
+Listing 2 shows pointcut de nitions and advice-to-pointcut bindings for JBoss AOP that enable the VieDAME system to intercept partner link communication in order to monitor partner service behavior.
+<a s p e c t c l a s s=" StatisticsCollectorAspect"/> <bind p o i n t c u t=
+ 2 <aop>
+
+
+
+
+
+ 9 </ aop> " execution(* invokers .
+* - > invoke (..)) "> a s p e c t=" StatisticsCollectorAspect"/> <a d v i c e name=" interceptInvoke" </ bind> Listing 2: Pointcut de nition and Aspect binding The <aspect> tag on line 3 tells the AOP framework where to look for advice methods, whereas <bind> (line
+ Invoke of aspect StatisticsCollectorAspect (lines 6 7) when method invoke (>) of an arbitrary class (*) found in the invokers package of the ActiveBPEL engine implementation is executed with any number of arguments of arbitrary type (..), returning an arbitrary object (*).
+For more information on JBoss AOP consider [26].
+As aforementioned in Section 2, the VieDAME system takes a lightweight approach to dynamically adapt partner service invocations based on the IAL.
+This allows to e ciently exchange partner links at runtime.
+This section shows  rst, how runtime partner link binding can be performed with standard BPEL constructs, followed by a wrap-up of limitations inherent to this approach and  nally explains the two VieDAME components responsible for conquering these limitations.
+A partner link endpoint reference in BPEL is represented as a wsa:EndpointReference XML element de ned by the WS-Addressing [30] standard.
+It is possible to declare a variable of type wsa:EndpointReferenceType and dynamically assign its value to a particular partner link.
+Juric et al. [13] refer to this technique as dynamic partner link assignment.
+Although it is possible to use this approach to force the process to dynamically bind to partner services at runtime, it does not allow adding new partner services at runtime, let alone additional partner services that di er from the original in their interface description.
+Furthermore, it is not possible to change the way how and when a particular service is picked, i.e., the selection criterion is statically hardwired into the process de nition (where it conceptually does not belong to).
+Taken together, these limitations indicate the need for a more  exible and viable solution to the problem of dynamically adapting the process at runtime.
+The VieDAME environment allows to add alternative services while the process is running and choose Selectors to de ne the replacement algorithm.
+The replacement algorithm in turn determines the alternative service by matching some pre-de ned criteria (i.e., QoS attributes such as availability or response time) against the data gathered by the monitoring component.
+Thus, the selectors do not solely rely on predetermined data but rather uses up-to-date information about the quality of the alternative service.
+Following [17] we distinguish between deterministic and non-deterministic QoS attributes.
+Deterministic QoS attributes, on the one hand, indicate that their value is known before a service is invoked, including price or penalty rate.
+On the other hand, their non-deterministic counterpart include all attributes that are uncertain at service invocation time, for example service availability [29].
+Dealing with non-deterministic attributes is more complex since it requires to perform calculations based on data gathered during runtime observations (see Section 3).
+Thus, we will only take these non-deterministic attributes into consideration for the evaluation.
+Nevertheless, the VieDAME system also supports service selection based on deterministic attributes.
+The fact that not all alternative services provide the same interface as the original partner service makes the situation even more challenging.
+The VieDAME system addresses this issue by supporting basic and extended transformation components, called Transformers.
+Both the Selectors and Transformers are key components that need further explanation.
+A Selector (8c in  gure 2) in the VieDAME system context is an implementation of some particular selection algorithm that determines which of the available alternative services matches one or more selection criteria best.
+The VieDAME systems provides a variety of selection algorithms, ranging from simple randomized and round-robin selectors that can be used for load balancing, to more sophisticated selectors that combine several QoS attributes such as performance and dependability for the selection criterion.
+Moreover, the VieDAME system o ers fault-compensating selectors that retry failed service invocations, either with the original service or with an appropriate replacement.
+To meet further requirements, the VieDAME system can easily be extended with additional Selector implementations.
+Figure 3 gives an overview of the selector hierarchies.
+Basically, the load balancing selectors are used for choosing a service out of a group of services that are deployed on di erent nodes to distribute the load and increase the fault-tolerance in a round-robin or randomized way.
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Figure 3: VieDAME Non Deterministic Selectors The dependability selector are used for choosing a service that either has the highest availability or the best accuracy based on its execution history measured by the monitoring module.
+The performance selectors choose a service based on its average response time or it transactions per second rate.
+These di erent selectors provide a very powerful mechanism to select services based on certain QoS criteria that typically arise in enterprise systems.
+A Transformer in the VieDAME system is a mediation component that compensates the interface mismatch between the original service and an alternative service by applying transformation rules to incoming and outgoing messages.
+Thus, only semantic equivalence is necessary for a service to qualify itself as a replacement for another service.
+The VieDAME system o ers two di erent types of Transformers that are described below.
+Figure 4 illustrates the dependencies between partner services, Transformers and transformation rules and the IAL.
+BasicTransformers accomplish the interface mismatch compensation by substitutions based on regular expressions.
+While creating transformation rules by leveraging regular expressions is straightforward, this approach is only viable if both interfaces di er only in tag or attribute names.
+ExtendedTransformers, on the other hand, support full XSLT 2.0 [31] transformations and therefore allow to use alternative services even if their interface descriptions are rather di erent from the original partner service WSDL.
+Furthermore, it is possible to assign
+ allows the Transformer to apply di erent rules to di erent parts of the incoming and outgoing messages or implement chained transformations.
+In the rare situation that both Basic and Extended-Transformers are not applicable (i.e., if the transformation requirements cannot be met by neither regular expression nor XSLT), the VieDAME system allows to con gure an external transformation engine such as Apache Synapse [3].
+This would also allow to attach other messaging back-ends such as the Java Messaging Service (JMS) or REST based services [11].
+
+
+
+
+  
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Figure 4: VieDAME Transformers
+
+ For evaluating our approach, ActiveBPEL 3.0.1 [1] (2) is used (The number in braces references the respective component in Figure 2).
+The prototype for the VieDAME system was implemented based on the Java 5 platform, con guration, dependency management, and component wiring are provided by the Spring Framework [12] (7).
+Object-Relational mapping is implemented using Hibernate [23] (7a), which o ers sophisticated caching mechanisms the VieDAME system uses to avoid unnecessary database access.
+JBoss Application Server 4.2.1 [24] (shown in the background of Figure 2) is used for deployment of both the ActiveBPEL Engine and the VieDAME system, JBoss AOP 2.0 [26] (4) seamlessly integrates AOP capabilities into the application server deployment concept.
+JBoss Seam 2.0 [25], an application framework that integrates JSF and EJB 3.0, was used to implement a Web-based user interface for con guring the VieDAME system, allowing the user to add alternative services by providing the service s WSDL, choose the desired Selectors and de ne/upload Transformer rules.
+Moreover, the partner services QoS statistics are displayed using JFree [21] charts on a per operation basis.
+We are using Postgres
+
+
+ In this section the VieDAME system performance is compared to the performance achieved with a plain ActiveBPEL setup (without using any VieDAME components) using a load-test scenario with a di erent number of virtual users.
+We use a multistage comparison regarding the VieDAME
+
+
+
+
+
+
+
+
+
+
+ system features to show the additional overhead each component (e.g., a Transformer) adds to the plain ActiveBPEL system.
+In the Selector tests, a simple round robin selector is applied, whereas for the transformer tests, an Extended Transformer was used that uses an XSLT transformation on the incoming and outgoing SOAP message of the service that needs to be adapted.
+The case study we have implemented for evaluation of our approach describes the business process behind an externally available PurchaseOrder Web service that is implemented as a BPEL process.
+It enables partner companies to perform one-shot orders, meaning that all activities that are required for placing an order are performed at once.
+Figure 5 illustrates the process using BPMN (Business Process Modeling Notation) [20].
+ 
+
+
+
+
+
+
+
+ Figure 5: PurchaseOrder Process The process is triggered upon receipt of the Purchase-Order request from the service requester.
+Then it will check if the required order items are in stock.
+If one or more items are out of stock or currently not available in the desired quantity, the requester has to be informed and eventually given an alternative.
+If all items are in stock, then a total price, including additional fees like shipping costs and taxes, has to be calculated.
+Furthermore, this activity triggers a shipping address validation, which is necessary to calculate the shipping fee.
+The next step is the validation of the customers payment option.
+To simplify matters, it is assumed that only major credit cards are accepted for payment.
+This requires a check to assure that the credit card data supplied by the business partner is valid and the card can be charged.
+The  nal steps include the actual charging of the supplied credit card and the initiation of the delivery process which also con rms the successful order placement by sending an email to the customer.
+The process is built upon  ve di erent Web services, the service names resemble the activity names in Figure 5.
+Moreover, the following operations have to be invoked to complete the PurchaseOrder process: checkStockStatus, calculate-TotalPrice, isChargeable, chargeOrder and deliverOrder.
+All requests used in this scenario follow the synchronous request-response message pattern.
+Besides using internal back-end services in the process (e.g., for checking the stock),
+ card data validation and payment, the CheckCreditCard service and the ChargeCreditCard.
+For the evaluation, we replace the CheckCreditCard service with other alternative credit card services where the services are only semantically equivalent, thus a transformation using XSLT has to be applied.
+The evaluation was carried out using two di erent physical machines, connected using a 100 Mbit LAN.
+One machine was running ActiveBPEL to execute the process and to host VieDAME, the other machine was used to host the di er-ent Web services used in the process.
+The VieDAME/Ac-tiveBPEL host was powered by an Intel Core2Duo CPU clocked at 2.66 Ghz, whereas the Web service host had an AMD64 2.0 Ghz CPU installed.
+Both machines were equipped with 2 GB of RAM and fast SATA disks, running Linux 2.6.22.
+For running the load tests we use a commercial tool called Mercury LoadRunner [18] that allows to create real world load scenarios that can be used to simulate and predict system behavior in production environments under heavy load.
+The VieDAME system was stressed in three di erent setups: Firstly, only the Monitor component was enabled.
+For the next test run, the Selector component was additionally enabled, and  nally, in the third step, the Transformer component was turned on too.
+Each of these four setups (including the VieDAME-disabled scenario) had to undergo a 50 minute load test, serving 50, 100 and 200 concurrent vir- tual users, respectively.
+A randomized pacing time between one and two seconds for consecutive requests was used to create a realistic high-load scenario.
+Additionally, an initial ramp up phase was de ned to start 5, 10 or 20 users (depending on the number of virtual users) every 15 seconds to not overload the system in the very beginning.
+We measured the average response times for Purchase-Order requests and the number of PurchaseOrder transactions per second for each of the four aforementioned scenarios.
+The decision to use response times and transactions per second as evaluation metrics is based on the fact that they are the two most important factors of performance in production systems in the domain of process execution environments.
+The results of the load test are illustrated in Figure 6.
+The  rst three upper diagrams show the response times for
+ execution.
+The three lower diagrams show transactions per second for the di erent virtual users.
+Stage VieDAME Disabled Monitor only +RRobin Selector +XSLT Transformer
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Table 2: Response Times (ms) / Transactions per Second The results demonstrate that the VieDAME system provides good performance for all three scenarios, whereas the
+ almost identical to the results measured in the VieDAME-disabled test.
+Only the results of the Transformer tests show that the XSLT transformations have an considerable impact on system performance.
+The next release of VieDAME will introduce Transformer caches to address this issue and speed up the transformation performance.
+A summary for both average response times (left value) and transactions per second (right value) is provided in Table 2.
+Please note that our discussion and illustration of the system performance only shows the small penalty the VieDAME system adds to an existing BPEL engine.
+If we would consider the case where several alternative services are con gured for a particularly slow original service, the overhead introduced by the base system is negligible because the overall process performance increase is much higher than the penalty of the VieDAME.
+Ezenwoye et al. provide an approach [10] to transparently adapt BPEL processes to compensate runtime faults and to improve the process performance with respect to partner services.
+In their previous work [9], they presented the RobustBPEL framework that can generate an adapt-ready version of an existing BPEL process that is capable of monitoring the invocation of partner Web services.
+Upon failure, a static proxy service is invoked, which tries to  nd a replacement service for the failed one.
+In this static proxy approach, information about the replacement services is hard-coded at proxy generation time.
+With RobustBPEL2 [10], a new concept, called dynamic proxies, is introduced allowing runtime discovery of replacement services.
+Furthermore, Ro-bustBPEL2 adds self-optimizing behavior to existing BPEL processes.
+While their work is similar to ours with respect to their aim to improve reliability and performance in the context of BPEL and Web services, they are using a proxy based approach to monitor process execution and improve process performance whereas the VieDAME system leverages a lightweight adaptation and monitoring layer based on AOP to achieve these goals.
+RobustBPEL2 uses UDDI to discover alternative services upon failure, but it does not incorporate selection criteria when multiple services are found, while the VieDAME system chooses the most adequate (in terms of QoS) service in advance to optimize process performance.
+In [5], Baresi et al. present a solution for self-healing of BPEL processes.
+Their approach is based on Dynamo, a supervision framework proposed in [4] together with an AOP extension to ActiveBPEL, and a monitoring and recovery subsystem that leverages JBoss Rules.
+This assertion based solution provides the user with two domain spe-ci c languages (WSCoL, the Web Service Constraint Language and WSReL, the Web Service Recovery Language) to declaratively de ne Web service monitoring and recovery rules, respectively.
+WSCol and WSReL allow to create complex recovery strategies that are beyond the capabilities of VieDAME.
+However, their solution does not explicitly address the problem of selecting alternative services and dealing with possible interface mismatches when forwarding a request to an alternative endpoint during recovery.
+Our solution provides a viable way to select alternative services and to compensate these mismatches by using Selectors and Transformers.
+Additionally, their recovery rules cannot be changed dynamically as they need to be compiled
+ Transaction Response Times (100 Users) Transaction Response Times (200 Users) ) s d n o c e s ( s e m
+ e s n o p s e
+ i
+
+
+
+
+
+
+
+
+ s n o i t c a s n a r
+
+
+
+
+
+
+
+
+
+ disabled monitors selectors transformers ) s d n o c e s ( s e m
+ e s n o p s e
+ i
+
+
+
+ Transactions per Second (50 Users) disabled monitors selectors transformers s n o i t c a s n a r
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ disabled monitors selectors transformers
+
+
+
+ ) s d n o c e s ( s e m
+ e s n o p s e
+ i
+
+
+
+
+
+ disabled monitors selectors transformers
+
+
+
+ Transactions per Second (100 Users) Transactions per Second (200 Users) disabled monitors selectors transformers
+
+
+
+ s n o i t c a s n a r
+
+
+
+
+
+
+
+ disabled monitors selectors transformers
+
+
+
+ Figure 6: Response Times and Transactions per Second during VieDAME Loadtest o ine, whereas our system can con gure all alternative services and selectors during runtime of the system.
+AO4BPEL [7] is an aspect-oriented extension to BPEL that supports the de nition of work ow aspects for BPEL processes.
+It is a powerful framework to de ne crosscutting concerns like logging, security or transactional processing for given business processes.
+Aspects are de ned in XML documents that in turn de ne one or more pointcuts and advices.
+An advice in terms of AO4BPEL is a BPEL activity that implements a crosscutting concern or a work ow change.
+AO4BPEL also allows for dynamically change the deployed process by simply activating or deactivating aspects.
+In contrast to Char s work, our approach focuses on enhancing process performance and  exibility speci cally with regard to partner service interaction.
+The implementation of AO4BPEL is based on an aspect-aware engine approach, thus limiting its application to a particular BPEL engine (in this case IBM s BPWS4J), whereas the VieDAME system takes a non-intrusive approach to intercept interaction between the BPEL engine and its partner links.
+While not strictly related to our approach, the work presented in [6] shows that the idea of interface mismatch compensation can be taken one step further to solve behavioral mismatch among BPEL processes.
+Their proposed adaptation process, given two communicating BPEL processes whose interaction may lock, builds (if possible) a BPEL process that allows the two processes to successfully interoper-ate.
+In [16], Kongdenfha et al. propose an aspect-oriented framework to provide service adaptation.
+Their approach uses aspect-based templates to automate the task of handling interface mismatches.
+Moreover, their solution is capable of handling protocol mismatches to compensate di er-ences between the external speci cation and the implementation of arbitrary BPEL processes.
+However, both [6] and [16] do not aim for neither partner service monitoring nor service selection like our solution does.
+In this paper we introduced an aspect-oriented extension for existing BPEL environments that allows: (i) the monitoring of existing BPEL processes according to certain QoS criteria and (ii) an adaptation strategy to replace existing partner services based on various selectors that implement di erent replacement strategies.
+The replacement services can either be syntactically or semantically equivalent to the interface used in the BPEL process.
+In case of a interface mismatches, a set of Transformers can be speci ed to handle theses mismatches on a SOAP message level.
+These mechanisms allow a non-intrusive adaptation of partner services within a BPEL process without any downtime of the overall system.
+No modi cations to the process de nition or the partner services are required.
+Therefore, VieDAME is a feasible candidate for transparently enhancing BPEL engines used in high-availability environments.
+Our evaluation demonstrates that the system scales very well even when the number of users is high and the overhead introduced by the monitoring, selection and transformation is minimal.
+Our future work includes extending and improving our VieDAME environment by implementing more advanced Selector algorithms that can learn from previous execution traces to choose the best selection strategy for di erent time periods, thereby allowing an optimal transaction per seconds rate.
+Another important issue is the development of algorithms for assisting developers to create Transformers between semantically equivalent replacement services.
+For increasing the performance, we will implement additional batch processing and storage concepts to allow even more concurrent requests.
+Moreover, we will extend our evaluation scenario to examine the real performance gain in process execution times when replacing particularly slow services with high-performance pendants, as these results will be essential to the decision whether the VieDAME is ready for application in production environments.

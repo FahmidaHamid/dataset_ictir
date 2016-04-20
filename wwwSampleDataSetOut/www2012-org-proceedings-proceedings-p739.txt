@@ -1,0 +1,1472 @@
+Document Hierarchies from Text and Links
+
+Qirong Ho
+
+Machine Learning Department
+School of Computer Science
+Carnegie Mellon University
+
+qho@cs.cmu.edu
+
+∗
+
+Jacob Eisenstein
+
+School of Interactive Computing
+Georgia Institute of Technology
+
+jacobe@gatech.edu
+
+Eric P. Xing
+
+Machine Learning Department
+School of Computer Science
+Carnegie Mellon University
+epxing@cs.cmu.edu
+
+ABSTRACT
+Hierarchical taxonomies provide a multi-level view of large doc-
+ument collections, allowing users to rapidly drill down to ﬁne-
+grained distinctions in topics of interest. We show that automat-
+ically induced taxonomies can be made more robust by combining
+text with relational links. The underlying mechanism is a Bayesian
+generative model in which a latent hierarchical structure explains
+the observed data — thus, ﬁnding hierarchical groups of documents
+with similar word distributions and dense network connections. As
+a nonparametric Bayesian model, our approach does not require
+pre-speciﬁcation of the branching factor at each non-terminal, but
+ﬁnds the appropriate level of detail directly from the data. Unlike
+many prior latent space models of network structure, the complex-
+ity of our approach does not grow quadratically in the number of
+documents, enabling application to networks with more than ten
+thousand nodes. Experimental results on hypertext and citation
+network corpora demonstrate the advantages of our hierarchical,
+multimodal approach.
+
+Categories and Subject Descriptors
+I.2.6 [Artiﬁcial Intelligence]: Learning; G.3 [Probability and Statis-
+tics]
+
+General Terms
+Algorithms, Experimentation
+
+Keywords
+hierarchical clustering, Bayesian generative models, topic models,
+stochastic block models
+
+1.
+
+INTRODUCTION
+
+As the quantity of online documents continues to increase, there
+is a need for organizational structures to help readers ﬁnd the con-
+tent that they need. Libraries have long employed hierarchical tax-
+onomies such as the Library of Congress System1 for this purpose;
+a similar approach was taken in the early days of the Web, with
+portal sites that present the user with a hierarchical organization of
+∗
+Jacob Eisenstein’s contribution to this work was performed at
+Carnegie Mellon University.
+1http://www.loc.gov/catdir/cpso/lcco
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2012, April 16–20, 2012, Lyon, France.
+ACM 978-1-4503-1229-5/12/04.
+
+web pages. The key advantage of such taxonomies is that the log-
+arithmic depth of tree structures permits ﬁne-grained distinctions
+between thousands of “leaf” subtopics, while presenting the user
+with at most a few dozen choices at a time. The user can recur-
+sively drill down to a very ﬁne-grained categorization in an area of
+interest, while quickly disregarding irrelevant topics at the coarse-
+grained level. A partial example of a hierarchical taxonomy for
+Wikipedia is shown in Figure 1.
+
+Manual curation of taxonomies was possible when membership
+was restricted to books or a relatively small number of web pub-
+lishers, but becomes increasingly impractical as the volume of doc-
+uments grows. This has motivated research towards inducing hi-
+erarchical taxonomies automatically from data [39, 7]. However,
+these existing solutions rely exclusively on a single modality, usu-
+ally text. This can be problematic, as content is often ambiguous
+— for example, the words “scale” and “chord” have very different
+meanings in the contexts of computer networks and music theory.
+As a solution, we propose to build taxonomies that incorporate
+the widely available metadata of links between documents. Such
+links appear in many settings: hyperlinks between web pages, ci-
+tations between academic articles, and social network connections
+between the authors of social media. Network metadata can dis-
+ambiguate content by incorporating an additional view which is
+often orthogonal to text. For example, we can avoid conﬂating two
+documents that mention “scales” and “chords” if they exist in com-
+pletely different network communities; analagously, we can group
+documents which share network properties, even if the text is su-
+perﬁcially different.
+
+We have incorporated these ideas into a system called TopicBlock,
+which uses both text and network data to induce a hierarchical tax-
+onomy for a document collection. This requires meeting three tech-
+nical challenges:
+
+• Challenge 1: Combining the disparate representations of
+text and network data. Network and text content have very
+different underlying representations. We propose a model
+in which both the text and network are stochastic emissions
+from a latent hierarchical structure. The inference task is to
+ﬁnd the latent structure which is likely to have emitted the
+observed data. On the text side we use the machinery of hi-
+erarchical latent topic models [7], a coarse-to-ﬁne represen-
+tation in which high-level content is generated from shared
+nodes near the root of the hierarchy, while more technical
+information is generated from the detailed subtopics at the
+leaves. On the network side, we employ a hierarchical ver-
+sion of the stochastic block model [21], in which links are
+emissions from Bernoulli distributions associated with nodes
+in the hierarchy.
+
+WWW 2012 – Session: Entity and Taxonomy ExtractionApril 16–20, 2012, Lyon, France739Figure 1: An example 4-level topic hierarchy built from Wikipedia Simple English. We annotate each topic with its number of
+documents, a manually-chosen label describing the topic, and a list of highly ranked-words according to TF-IDF. The dotted lines
+in the hierarchy show parent and child topics (only the children of some parents are shown). For the bottom level topics, we also
+provide the names of some Wikipedia documents associated with them. The associated network data is shown in Figure 4.
+
+• Challenge 2: Selecting the appropriate granularity. The
+problem of identifying model granularity is endemic for la-
+tent structure models [38], but it is particulary vexing in the
+hierarchical setting. A ﬂat mixture model or topic model
+requires only a single granularity parameter (the number of
+clusters or topics), but a hierarchy requires a granularity pa-
+rameter at each non-terminal. Furthermore, the ideal granu-
+larity is not likely to be identical across the hierarchy: for ex-
+ample, the nuclear physics topic may demand fewer subtopics
+than the cephalopods topic. TopicBlock incorporates a Bayesian
+nonparametric prior which lets the data speak for itself, thus
+automatically determining the appropriate granularity at each
+node in the hierarchy.
+
+• Challenge 3: Scaling the network analysis.
+
+In network
+data, the number of possible links grows quadratically with
+the number of nodes. This limits the scalability of many pre-
+vious techniques [2, 29]. In contrast, TopicBlock’s complex-
+ity scales linearly with the number of nodes and the depth
+of the hierarchy. This is possible due to the hierarchically-
+structured latent representation, which has the ﬂexibility to
+model link probabilities ﬁnely where necessary (at the leaf
+level), while backing off to a coarse representation where
+possible (between nodes in disparate parts of the hierarchy).
+
+We apply TopicBlock to two datasets. The ﬁrst is Simple English
+Wikipedia, in which documents on a very broad array of subjects
+are connected by hyperlinks. The second is the ACL Anthology [5],
+a collection of scientiﬁc research articles, in which documents are
+connected by citations. TopicBlock yields hierarchies which are
+coherent with respect to both text and relational structure, group-
+ing documents which share terms and also contain dense relational
+patterns. In the ACL Anthology data, we evaluate the capability
+of TopicBlock to recommend citation links from text alone. In the
+Wikipedia data, we evaluate TopicBlock’s ability to identify the
+correct target of a hyperlink that is lexically ambiguous.
+
+2. RELATED WORK
+
+There is substantial prior work on hierarchical document cluster-
+ing. Early approaches were greedy, using single-link or complete-
+link heuristics [39]. This yields a dendrogram of documents, in
+which a root node is decomposed in a series of binary branching
+decisions until every leaf contains a single document. We pre-
+fer ﬂatter trees with fewer non-terminals, which are more simi-
+lar to manually-curated hierarchies.2 Other work on hierarchical
+clustering includes top-down techniques for iteratively partitioning
+the data [41], search-based incremental methods [36], probabilis-
+tic modeling of manually-created taxonomies [31], and interactive
+exploration [11].
+
+The splitting and merging decisions that characterize most hier-
+archical clustering algorithms can be made on the basis of Bayesian
+hypothesis tests [19]. However, our work more closely relates to
+Bayesian generative models over the document content, as we fo-
+cus on inducing a latent structure that provides a likely explanation
+for the observed text and links. Hierarchical latent Dirichlet alloca-
+tion (hLDA) is a prototypical example of such an approach: each
+document sits on a path through a hierarchy with unbounded tree-
+width, and the text is generated from a mixture of multinomials
+along the path. We extend hLDA by incorporating network data,
+enabling a better understanding of the relationship between these
+two modalities. Adams et al. [1] present a hierarchical topic model
+which differs from hLDA in that documents can be located at any
+level, rather than exclusively at leaf nodes. Because all content
+for each document is generated from the hierarchy node at which
+it sits, the generative distributions must be formed by chaining to-
+gether conjugate priors, requiring more complex inference.
+
+In network data, clustering is often called “community discov-
+ery” [23]. Graph-based approaches such as normalized-cut [37]
+are fast and deterministic, but often require the desired number of
+clusters to be speciﬁed in advance, and do not easily generalize
+to hierarchical models. SHRINK [22] induces a hierarchical clus-
+tering that prioritizes high modularity, while tolerating hubs and
+outliers that violate the traditional hierarchical structure. However,
+our work is more closely related to probabilistic approaches, which
+
+2e.g., the Open Directory Project, http://www.dmoz.org
+
+WWW 2012 – Session: Entity and Taxonomy ExtractionApril 16–20, 2012, Lyon, France740provide a principled way to combine content and network struc-
+ture. Clauset et al. show that hierarchical community discovery can
+be obtained using a Monte Carlo sampling algorithm; the genera-
+tive model assigns a link probability at each node in the hierarchy,
+and the sampling moves then converge on a stationary distribution
+centered on a hierarchy with high likelihood of generating the ob-
+served links [9]. However, this model is restricted to dendrograms,
+or binary trees, which are unlike the ﬂatter hierarchies produced by
+human curators.
+
+An alternative line of work on network clustering begins with
+the Stochastic Block Model (SBM) [21]. The SBM is a generative
+model in which nodes are partitioned into communities, which in
+turn determine the link probabilities. This idea was extended in
+the mixed-membership stochastic blockmodel (MMSB) [2], where
+each node has a mixed-membership vector over possible “roles”; an
+additional pair of latent variables selects the roles that are relevant
+for each potential network connection. The multiscale community
+block model (MSCB) places this idea in a non-parametric hierar-
+chical setting: each document is associated with a path through a
+hierarchy, and the roles correspond to levels on the path [20]. Both
+the MSCB and MMSB assign latent variables to every potential
+link, so that each sampling pass requires O(N 2) complexity in the
+number of nodes.
+
+A key feature of TopicBlock is that we merge text and network
+data, with the goal of inducing a more robust hierarchy and en-
+abling applications in which the two modalities can help to explain
+each other. Mei et al. combine latent topic models with network in-
+formation by compiling the network into a regularizer that encour-
+ages the topic proportions of linked documents to be similar [28].
+This approach encodes the network into the structure of the gen-
+erative model, so it does not permit probabilistic inferences about
+the likelihood of additional network connections. Topic-sensitive
+PageRank [17] takes a different notion of “topic,” seeding each
+topic with documents from the top-level categories of the manually-
+curated Open Directory Project hierarchy. This method is designed
+to support information retrieval, and does not permit probabilistic
+modeling of new content or unseen links. Unlike both of these ap-
+proaches, TopicBlock is generative over both text and links.
+
+Much of the prior work on joint generative models of text and
+links falls into two classes.
+In one class, the identity of the tar-
+get and/or source of the link is encoded as a discrete random vari-
+able [10, 29, 14, 27, 35]. Such models permit probabilistic infer-
+ence within the documents in the training set, but they are closed
+to outside documents; it is not possible to use the text of an un-
+seen document to predict who will link to it. In the second class
+of models, each link is a binary random variable generated from
+a Bernoulli distribution that is parametrized by the topical similar-
+ity of the documents. In the Relational Topic Model (RTM), the
+link probability is a function of the topical similarity [8] (Liu et
+al. extend the RTM by incorporating a per-document “community”
+membership vector [25]). The RTM treats non-edges as hidden
+data, so its complexity is linear in the number of edges, and thus
+less than the O(N 2) required by the blockmodel variants. Such a
+model is encouraged to assign arbitrarily high likelihood to the ob-
+served links, leading to instability in the parameter estimates, which
+must be corrected by a regularization heuristic.
+In contrast, we
+model both edges and non-edges probabilistically, achieving sub-
+quadratic complexity by limiting the ﬂexibility of the link proba-
+bility model.
+
+3. MODEL DESCRIPTION
+
+TopicBlock treats document text and relational links as emis-
+sions from a latent hierarchy, which has ﬁxed depth L but a non-
+
+N 
+
+(
+
+.
+
+m
+o
+n
+
+(cid:955) 
+
+(cid:580) 
+(cid:574)h 
+Dirichlet((cid:580)) 
+Beta((cid:585)1, (cid:585)2) 
+(cid:560)h 
+(cid:955) 
+(cid:585)1, (cid:585)2 
+
+(cid:576) 
+
+i
+t
+l
+u
+M
+
+(cid:590)i )
+
+Mi 
+ Multinom.((cid:574) (ri ,vik )) 
+zik wik 
+ri 
+(cid:590)i 
+nCRP((cid:576)) 
+Dirichlet((cid:573)) 
+N (cid:238)N Eij 
+Bernoulli(S(cid:560)(ri ,rj)) 
+
+(cid:573) 
+
+Figure 2: Graphical model illustration
+
+parametric branching factor at each non-terminal. Each document
+is represented as a complete path through the hierarchy, with words
+generated from a mixture across levels in the path, and links gen-
+erated directly from the paths. We now present the model in detail.
+A summary of the hypothesized generative process is presented in
+Table 1, and a plate diagram is shown in Figure 2.
+3.1 Latent hierarchy
+Each document’s position in the hierarchy is denoted by an L×1
+vector of integers ri ∈ Z
+L, which we call a path. The path is inter-
+preted as follows: ri1 denotes the hierarchy branch taken by docu-
+ment i from level 0 (the implicit root, denoted by r0) to level 1, ri2
+denotes the branch taken from level 1 to level 2 relative to ri1 (the
+branch just taken), and so forth. Example: ri = (2, 1, 3, . . .) says
+that entity i is reached by taking the 2nd branch from the root, then
+the 1st branch at the node we just arrived at, followed by the 3rd
+branch at the next node, etc. The set of all paths ri fully determines
+the shape of the hierarchy.
+
+The nested Chinese Restaurant Process (nCRP) provides a suit-
+able Bayesian prior for non-parametric hierarchies [7]. Each path
+is obtained by making a series of draws from standard Chinese
+Restaurant Processes associated with each node in the hierarchy.
+This prior displays the “rich-get-richer” property: at each level,
+a draw is likely to follow branches taken by previous documents;
+however, there is always a possibility of choosing a new branch
+which has never been taken before. Blei et al. [7] show that this
+model permits collapsed sampling in a way that follows naturally
+from the original Chinese Restaurant Process.
+3.2 Generating words and links
+
+We assume that each document i ∈ {1, . . . , N} is associated
+with two kinds of observed data. The ﬁrst is a collection of words
+w, where wik denotes the k-th word associated with document i,
+and Mi is the total number of word tokens in document i. The
+second type of observation is a collection of directed links to other
+documents, referred to as a network. This network is given as an
+N×N adjacency matrix E, such that Eij = 1 denotes the presence
+of a (directed) link from document i to document j, whileE ij = 0
+denotes its absence. We ignore self-links Eii.
+
+Every node in the hierarchy represents a distribution over words
+and links; documents whose path contains a hierarchy node h can
+draw their words and links from the distributions in h. More for-
+mally, every hierarchy node h is associated with two distributions.
+For the text, we deﬁne a set of vocabularies βh which generate
+words wik; speciﬁcally, βh is a V -dimensional multinomial pa-
+rameter representing a distribution over words, as in LDA. For the
+links, we deﬁne a set of link-density probabilities Φh. Here, Φh
+is the probability of generating a link between documents whose
+
+WWW 2012 – Session: Entity and Taxonomy ExtractionApril 16–20, 2012, Lyon, France741paths both contain hierarchy node h. In cases where two document
+paths share multiple hierarchy nodes, we take h to be the deepest
+shared node, which may be the root of the tree.
+
+3.2.1 Words
+
+Document text is generated from a bag-of-words model, in which
+each word is produced by some node along the document’s path
+through the hierarchy. On this view, some words will be general
+and could appear in any document (these words are drawn from the
+root) while others will be speciﬁc (these are drawn from a leaf).
+This encourages a hierarchy in which the most similar documents
+are grouped at the leaf level, while moderately similar documents
+are grouped at coarser levels of the hierarchy.
+
+More formally, the words for document i are generated from a
+mixture of the β distributions found along the path ri, including
+the implicit root. Each word wik associated with document i can
+be generated by any of the path nodes ri1, . . . , riL or the root r0.
+The speciﬁc path node chosen to generate wik is given by a level
+indicator zik ∈ {0, . . . , L}, for example, zik = 3 means that wik
+is generated from the vocabulary βh associated with the hierarchy
+node at (ri1, ri2, ri3). These level indicators zik are drawn from
+(L + 1)-dimensional multinomial parameters πi, which we refer
+to as level distributions. Intuitively, these represent document i’s
+preference for shallower or deeper hierarchy levels.
+
+3.2.2 Links
+
+The generative model for links between documents is motivated
+by the intuition that the non-terminals of the hierarchy represent
+progressively more speciﬁc communities of documents. While one
+might explicitly model the link probability between, say, organic
+chemistry and ancient Greek history (as distinct from the likeli-
+hood of links from organic chemistry to ancient Roman history),
+a much simpler and more tractable model can be obtained by us-
+ing the hierarchical structure to abstract this relationship. We make
+the simplifying assumption that relations between communities in
+disparate parts of the hierarchy can be summarized by their deep-
+est common ancestor. As a result, the number of parameters grows
+linearly rather than quadratically with the number of non-terminals.
+More formally, each nonterminal h has an associated Bernoulli
+parameter Φh, which indicates the link-likelihood between docu-
+ments that share h as their deepest common ancestor. We deﬁne
+S(ri, rj) as a function that selects the deepest shared Φh between
+the paths ri, rj:
+
+SΦ(ri, rj ) := Φh
+h := (ri1, . . . , riω),
+
+so that,
+
+P (E | r, Φ) =
+
+(cid:2)
+i,j(cid:3)=i
+
+ω := arg max
+k≥0
+
+I(ri,1:k = rj,1:k),
+
+SΦ(ri, rj )Eij (1 − SΦ(ri, rj ))1−Eij .
+
+The likelihood is a product over all N 2 potential links, but as we
+will see, it can be computed in fewer than O(N 2) steps. Note that
+SΦ(ri, rj) will select the root parameter Φr0 when ri and rj are
+completely different.
+3.3 Parameters
+
+TopicBlock has four parameter types: the paths ri, level distri-
+butions πi, word probabilities βh, and the link probabilities Φh.
+the paths ri are
+Each parameter is drawn from a suitable prior:
+drawn from a depth-L nCRP(γ); the level distributions πi are
+drawn from Dirichlet(α); the topics βh are drawn from a sym-
+metric Dirichlet(ηk) (where k is the depth of node h); and the link
+
+(1)
+
+(rx1, . . . , rxzxy ) = (ri1, . . . , rizik ), wxy = v
+
+(cid:4)(cid:5)(cid:5) .
+
+• Draw the hierarchy — for each entity i:
+
+– Path ri ∼ nCRP(γ)
+– Word level distribution πi ∼ Dirichlet(α)
+• Draw hierarchy node parameters — for each node h:
+– Word probabilities βh ∼ Dirichlet(ηdepth(h))
+– Link probabilities Φh ∼ Beta(λ1, λ2)
+• Draw text — for each entity i and word k:
+– Word level zik ∼ Multinomial(πi)
+– Word wik ∼ Multinomial(βh),
+
+where h is the hierarchy node at (ri,1, . . . , ri,zik )
+
+• Draw network — for each pair of entities i and j (cid:3)= i:
+
+– Link Eij ∼ Bernoulli(SΦ(ri, rj )), where SΦ() is deﬁned
+
+in Section 3.2
+
+Table 1: The generative process for TopicBlock’s model of text
+and relational connections
+
+probabilities Φh are drawn from Beta(λ1, λ2). The hyperparam-
+eter γ > 0 is an L × 1 vector, while α, η > 0 are (L + 1) × 1
+vectors, and λ1, λ2 > 0 are scalars.
+
+4.
+
+INFERENCE
+
+Exact inference on our model is intractable, so we derive a col-
+lapsed Gibbs sampler for posterior inference [34]. We integrate out
+π, β and Φ for faster mixing (collapsed sampling for topic mod-
+els was introduced in [13]), so we need sample only the paths r
+and word levels z. We present the sampling distributions for these
+parameters now.
+
+Word levels z.
+
+The sampling distribution of zik is
+P(zik | r, z−(ik), E, w)
+
+∝ P(wik, zik | r, z−(ik), E, w−(ik))
+= P(wik | r, z, w−(ik))P(zik | zi,(−k))
+
+(2)
+where zi,(−k) = {zi·} \ zik and w−(ik) = {w.} \w ik. The ﬁrst
+term represents the likelihood; for a particular value of zik, it is
+
+P(wik | r, z, w−(ik)) =
+av = |{(x, y) | (x, y) (cid:3)= (i, k), zxy = zik,
+
+(cid:3)V
+ηzik + awik
+
+V ηzik +
+
+v=1 av
+
+,
+
+(3)
+
+In plain English, av is the number of words wxy equal to v (ex-
+cluding wik) and coming from hierarchy position (ri1, . . . , rizik ).
+Thus, we are computing the empirical frequency of emitting word
+v, smoothed by level zik’s symmetric Dirichlet prior ηzik .
+
+The second term represents the prior on zik:
+
+P(zik | zi,(−k)) =
+
+αzik + #[zi,(−k) = zik]
+(cid:3)L
+(cid:3)=1 α(cid:3) + #[zi,(−k) = (cid:9)]
+
+.
+
+Paths r.
+
+The sampling distribution for the path ri is
+P(ri | r−i, z, E, w)
+
+∝ P(ri, E(i·),(·i), wi | r−i, z, E−(i·),−(·i), w−i)
+= P(E(i·),(·i) | r, E−(i·),−(·i))P(wi | r, z, w−i)P(ri | r−i)
+
+where wi = {wi·} is the set of tokens in document i, and w−i is
+its complement. E(i,·),(·,i) = {Exy | x = i ∨ y = i} is the set of
+
+(4)
+
+(5)
+
+WWW 2012 – Session: Entity and Taxonomy ExtractionApril 16–20, 2012, Lyon, France742all links touching document i and E−(i,·),−(·,i) is its complement.
+In particular, the set E(i,·),(·,i) is just the i-th row and i-th column
+of the adjacency matrix E, sans the self-link Eii.
+
+Equation 5 decomposes into three terms, corresponding to link
+likelihoods, word likelihoods, and the path prior distribution re-
+spectively. The ﬁrst term represents the link likelihoods for all
+links touching document i. These likelihoods are Bernoulli dis-
+tributed, with a Beta prior; marginalizing the parameter Φ yields a
+Beta-Bernoulli distribution, which has an analytic closed-form:
+
+(cid:2)
+
+Γ(A+B+λ1+λ2)
+Γ(A+λ1)Γ(B+λ2)
+
+· Γ(A+C+λ1)Γ(B+D+λ2)
+Γ(A+B+C+D+λ1+λ2)
+
+Φ∈Φ(i·),(·i)
+Φ(i·),(·i) ={Φh |∃(x, y)[Exy ∈ E(i·),(·i), S
+A =
+B =
+C =
+D =
+
+(cid:5)(cid:5)(cid:6)
+(x, y) | Exy ∈ E−(i·),−(·i), S
+(cid:5)(cid:5)(cid:6)
+(x, y) | Exy ∈ E−(i·),−(·i), S
+(cid:5)(cid:5)(cid:6)
+(x, y) | Exy ∈ E(i·),(·i), S
+(cid:5)(cid:5)(cid:6)
+(x, y) | Exy ∈ E(i·),(·i), S
+
+Φ = Φh]}
+(cid:4)(cid:5)(cid:5)
+xy
+Φ = Φ, Exy = 1
+(cid:4)(cid:5)(cid:5)
+xy
+Φ = Φ, Exy = 0
+(cid:4)(cid:5)(cid:5)
+xy
+Φ = Φ, Exy = 1
+(cid:4)(cid:5)(cid:5)
+xy
+Φ = Φ, Exy = 0
+
+xy
+
+(6)
+
+where Φ(i·),(·i) is the set of all link probability parameters Φh
+touched by the link set E(i,·),(·,i). Observe that only those Φh
+along path ri (or the root) can be in this set, thus it has size |Φ(i·),(·i)| ≤
+L + 1. Also, note that the terms A, B, C, D depend on Φ. The sec-
+ond term of Equation 5 represents the word likelihoods:
+
+L(cid:2)
+
+(cid:3)=1
+
+(cid:2)V
+
+Γ(V η(cid:2)+
+(cid:3)V
+
+v=1 G(cid:2),v )
+v=1 Γ(G(cid:2),v +η(cid:2))
+
+· (cid:3)V
+
+v=1 Γ(G(cid:2),v +H(cid:2),v +η(cid:2))
+v=1 G(cid:2),v +H(cid:2),v )
+
+(cid:2)V
+
+Γ(V η(cid:2)+
+
+(7)
+
+G(cid:3),v = |{(x, y) | x (cid:3)= i, zxy = (cid:9),
+
+(rx1, . . . , rx(cid:3)) = (ri1, . . . , ri(cid:3)), wxy = v}|
+
+H(cid:3),v = |{y | ziy = (cid:9), wiy = v}|
+
+where V is the vocabulary size. G(cid:3),v is just the number of words in
+w−i equal to v and coming from hierarchy position (ri1, . . . , ri(cid:3)).
+H(cid:3),v is similarly deﬁned, but for words in wi.
+
+The third term of Equation 5 represents the probability of draw-
+ing the path ri from the nCRP, and can be computed recursively for
+all levels (cid:8),
+P(ri(cid:3) = x | r−i, ri,1:((cid:3)−1)) =
+⎧⎪⎨
+⎪⎩
+
+|{j(cid:3)=i | rj,1:((cid:2)−1)=ri,1:((cid:2)−1),rj(cid:2)=x}|
+|{j(cid:3)=i | rj,1:((cid:2)−1)=ri,1:((cid:2)−1)}|+γ(cid:2)
+|{j(cid:3)=i | rj,1:((cid:2)−1)=ri,1:((cid:2)−1)}|+γ(cid:2)
+
+if x is an existing branch,
+if x is a new branch
+
+(8)
+
+γ(cid:2)
+
+This equation gives the probability of path ri taking branch x at
+depth (cid:8). At step (cid:8) in the path, the probability of following an ex-
+isting branch is proportional to the number of documents already
+in that branch, while the probability of creating a new branch is
+proportional to γ(cid:3).
+
+Hyperparameter Tuning.
+
+The hyperparameters γ, α, η, λ1, λ2 signiﬁcantly inﬂuence the
+size and shape of the hierarchy. We automatically choose suitable
+values for them by endowing γ, α, η with a symmetric Dirichlet(1)
+hyperprior, and λ1, λ2 with an Exponential(1) hyperprior. Using
+the Metropolis-Hastings algorithm with these hyperpriors as pro-
+posal distributions, we sample new values for γ, α, η, λ1, λ2 after
+every Gibbs sampling iteration.
+4.1 Linear time Gibbs sampling
+
+To be practical on larger datasets, each Gibbs sampling sweep
+must have runtime linear in both the number of tokens and the
+number of 1-links Eij = 1. This is problematic for standard imple-
+mentations of generative network models such as ours, because we
+are modeling the generative probability of all 1-links and 0-links.
+The sufﬁcient statistics for each Φh are the number of 1-links and
+
+Algorithm 1 Removing document i from sufﬁcient statistics of Φh
+
+Let h0, . . . , hL be the hierarchy nodes along ri.
+Let A be a temporary variable.
+for (cid:8) = L . . .0 do
+
+if (cid:8) < L then
+
+uh(cid:2) ← uh(cid:2) − (A − Uh(cid:2)+1 )
+th(cid:2) ← th(cid:2) − 1
+
+(Store the original value of Uh(cid:2) )
+
+end if
+A ← Uh(cid:2)
+Uh(cid:2) ← Uh(cid:2) − Uh(cid:2),i
+Th(cid:2) ← Th(cid:2) − 1
+for j s.t. j ∈ Neighbors(i) and h(cid:3) ⊆ rj do
+
+Uh(cid:2),j ← Uh(cid:2),j − I(Eij = 1) − I(Eji = 1)
+Uh(cid:2),i ← Uh(cid:2),i − I(Eij = 1) − I(Eji = 1)
+
+end for
+
+end for
+
+0-links, and these statistics must be updated when we resample the
+paths ri. Naïvely updating these parameters would take O(N ) time
+since there are 2N − 2 links touching document i. It follows that a
+Gibbs sampling sweep over all ri would require O(N 2) quadratic
+runtime.
+The solution is to maintain an augmented set of sufﬁcient statis-
+tics for Φh. Deﬁne h ⊆ ri to be true if path ri passes through node
+h. Then the augmented sufﬁcient statistics are:
+(cid:3)
+j(cid:3)=i(Eij + Eji)I(h ⊆ ri, h ⊆ rj ), the number of 1-
+1. Uh,i =
+(cid:3)
+links touching document i and drawn from Φh and its descendants.
+i,j Eij I(h ⊆ ri, h ⊆ rj ), the number of 1-links drawn
+(cid:3)
+h(cid:2)∈children(h) Uh(cid:2) , the number of 1-links drawn from
+(cid:3)
+i I(h ⊆ ri), the number of documents at h and its descen-
+(cid:3)
+
+from Φh and its hierarchy descendants.
+
+Φh’s descendants only.
+
+3. uh =
+
+2. Uh =
+
+h(cid:2)∈children(h) Th(cid:2) , the number of documents at h’s de-
+
+4. Th =
+dants.
+5. th =
+
+scendants only.
+
+The number of 0- or 1-links speciﬁcally at Φh is given by
+#[1-links at h] =U h − uh
+(9)
+#[0-links at h] = [(Th)(Th − 1) − (th)(th − 1)] − (Uh − uh)
+Before sampling a new value for document i’s path ri, we need to
+remove its edge set E(i,·),(·,i) from the above sufﬁcient statistics.
+Once ri has been sampled, we need to add E(i,·),(·,i) back to the
+sufﬁcient statistics, based on the new ri. Algorithms 1, 2 perform
+these operations efﬁciently; observe that they run in O(PiL) time
+where Pi is the number of 1-links touching document i. Letting
+P be the total number of 1-links in E, we see that a Gibbs sam-
+pler sweep over all ri spends O(P L) time updating Φh sufﬁcient
+statistics, which is linear in P .
+
+The remaining work for sampling ri boils down to (1) calculat-
+ing existing and new path probabilities through the hierarchy, and
+(2) updating sufﬁcient statistics related to the vocabularies β. Cal-
+culating the path probabilities requires O(HLV ) time, where H is
+the number of hierarchy nodes and V is the vocabulary size; updat-
+ing the vocabularies requires O(MiL) time where Mi is the num-
+ber of tokens wik belonging to document i. Thus, the total runtime
+required to sweep over all ri is O(P L + N HLV + M L) where
+M is the total number of tokens w. Treating L, H, V as constants
+and noting that N ≤ M, we see that sampling all ri is indeed
+linear in the number of tokens M and number of 1-links P . We
+also need to sample each word level zik, which takes O(L) time
+(including sufﬁcient statistic updates) for a total of O(M L) linear
+work over all z. Finally, the hyperparameter tuning steps require
+
+WWW 2012 – Session: Entity and Taxonomy ExtractionApril 16–20, 2012, Lyon, France743Algorithm 2 Adding document i to sufﬁcient statistics of Φh
+
+There is previous work on modeling the topics underlying Wikipedia
+
+Let h0, . . . , hL be the hierarchy nodes along ri.
+Let A be a temporary variable.
+for (cid:8) = L . . .0 do
+
+if (cid:8) < L then
+
+uh(cid:2) ← uh(cid:2) + (Uh(cid:2)+1 − A)
+th(cid:2) ← th(cid:2) + 1
+
+end if
+for j s.t. j ∈ Neighbors(i) and h(cid:3) ⊆ rj do
+
+Uh(cid:2),j ← Uh(cid:2),j + I(Eij = 1) + I(Eji = 1)
+Uh(cid:2),i ← Uh(cid:2),i + I(Eij = 1) + I(Eji = 1)
+
+end for
+A ← Uh(cid:2)
+Uh(cid:2) ← Uh(cid:2) + Uh(cid:2),i
+Th(cid:2) ← Th(cid:2) + 1
+
+end for
+
+(Store the original value of Uh(cid:2))
+
+Wikipedia ACL Anthology
+
+documents
+tokens
+links
+vocabulary
+
+14,675
+
+1,467,500
+134,827
+10,013
+
+15,032
+
+2,913,665
+
+41,112
+2,505
+
+Table 2: Basic statistics about each dataset
+
+us to compute the probability of all tokens w and links E given
+the paths r and word levelsz , which can be performed in at most
+linear O(P L + M L) time. Since we only update the hyperparam-
+eters once after every Gibbs sampling sweep, our total runtime per
+sweep remains linear.
+
+We contrast our linear efﬁciency with alternative models such as
+the Mixed-Membership Stochastic Block Model (MMSB [2]) and
+Pairwise Link-LDA [29]. The published inference techniques for
+these models are quadratic in the number of nodes, so it would be
+very difﬁcult for serial implementations to scale to the 104 node
+datasets that we handle in this paper.
+
+5. DATA
+
+We evaluate our system on two corpora: Wikipedia and the ACL
+Anthology. The Wikipedia dataset is meant to capture familiar con-
+cepts which are easily comprehended by non-experts; the ACL An-
+thology dataset tests the ability of our model to build reasonable
+taxonomies for more technical datasets. We expect different net-
+work behavior for the two datasets: a Wikipedia page can contain
+an arbitrary number of citations, while research articles may be
+space-limited, and can only cite articles which have already been
+published. Thus, the ACL dataset may fail to include many links
+which would seem to be demanded by the text, but were omitted
+due to space constraints or simply because the relevant article had
+not yet been published. The Wikipedia dataset poses its own chal-
+lenges, as some links are almost completely unrelated to document
+topical content. For example, the article on DNA contains a link
+to the article on Switzerland, because DNA was ﬁrst isolated by a
+Swiss scientist.
+5.1 Simple English Wikipedia
+
+Our ﬁrst dataset is built from Wikipedia; our goal is to use the
+text and hyperlinks in this dataset to induce a hierarchical structure
+that reﬂects the underlying content and connections. We chose this
+dataset because the content is written at a non-technical level, al-
+lowing easy inspection for non-experts. The dataset supports the
+evaluation of link resolution (deﬁned in Section 6.3).
+
+data [14, 32]. Gruber et al. [14] constructed a small corpus of
+text and links by crawling 105 pages starting from the page for the
+NIPS conference, capturing 799 in-collection links. Our goal was a
+much larger-scale evaluation; in addition, we were concerned that
+a crawl-based approach would bias the resulting network to implic-
+itly reﬂect a hierarchical structure (centered on the seed node) and
+an unusually dense network of links.
+
+Instead of building a dataset by crawling, we downloaded the en-
+tire “Simple English” Wikipedia, a set of 133,462 articles written
+in easy-to-read English. Many of these documents are very short,
+including placeholders for future articles. We limited our corpus to
+documents that were at least 100 tokens in length (using the Ling-
+Pipe tokenizer [3]), and considered only articles (ignoring discus-
+sion pages, templates, etc.). This resulted in a corpus of 14675
+documents. The link data includes all 152,674 in-collection hyper-
+links; the text data consists of the ﬁrst 100 tokens of each document,
+resulting in a total of 1,467,500 tokens. We limited the vocabulary
+to all words appearing at least as frequently as the 10,000th most
+frequent word, resulting in a total vocabulary of 10,013. We apply
+a standard ﬁlter to remove stopwords [24].
+5.2 ACL Anthology
+
+Our second dataset is based on the scientiﬁc literature, which
+contains both text and citations between documents. The ACL
+anthology is a curated collection of papers published in computa-
+tional lingusitics venues, dating back to 1965 [5]. We downloaded
+the 2009 release of this dataset, including papers up to that year,
+for a total of 15,032 documents. Taxonomy induction on research
+corpora can serve an important function, as manually-curated tax-
+onomies always risk falling behind new developments which may
+splinter new ﬁelds or unite disparate ones. As noted above, we use
+the entire ACL Anthology dataset from 1965 to 2009. We limit the
+vocabulary to 2,500 terms, and limit each document to the ﬁrst 200
+tokens — roughly equivalent to the title and abstract — and remove
+stopwords [24].
+
+There is substantial previous work on the ACL Anthology, in-
+cluding temporal and bibliometric analysis [16, 33], citation pre-
+diction [4], and recognition of latent themes [15] and inﬂuence [12,
+30]. However, none of this work has considered the problem of
+inducing hierarchical structure of the discipline of computational
+linguistics.
+
+Our quantitative evaluation addresses the citation-prediction task
+considered by Bethard and Jurafsky [4]. Following their method-
+ology, we restrict our quantitative analysis to the 1,739 journal and
+conference papers from 2000 to 2009. Our version of the corpus
+is a more recent release, so our data subset is very similar but not
+identical to their evaluation set.
+
+6. QUANTITATIVE ANALYSIS
+
+We present a series of quantitative and qualitative evalutions of
+TopicBlock’s ability to learn accurate and interpretable models of
+networked text. Our main evaluations (sections 6.2 and 6.3) test
+the ability of TopicBlock to predict and resolve ambiguous links
+involving heldout documents.
+6.1 System Details
+
+For all experiments, we use an L = 2 hierarchy (root plus two
+levels) unless otherwise stated. We initialize TopicBlock’s docu-
+ment paths r by using a Dirichlet Process Mixture Model (essen-
+tially a one-level, text-only TopicBlock with no shared root) in a
+recursive clustering fashion, which provides a good starting hier-
+archy. From there, we ran our Gibbs sampler cum Metropolis-
+
+WWW 2012 – Session: Entity and Taxonomy ExtractionApril 16–20, 2012, Lyon, France744Hastings algorithm for 2,500 passes through the data or for 7 days,
+whichever came ﬁrst; our slowest experiments completed at least
+1,000 passes. All experiments were run with 10 repeat trials, and
+results were always obtained from the most recent sample. We se-
+lected the best trial according to experimentally-relevant criteria:
+for the qualitative analyses (Section 7), we selected according to
+sample log-likelihood; in the citation prediction task we employed
+a development set; in the link resolution task we show the results
+of all trials.
+6.2 Citation Prediction
+
+Our citation prediction evaluation uses the induced TopicBlock
+hierarchy to predict outgoing citation links from documents which
+were not seen during training time. For this evaluation, we use the
+1,739-paper ACL subset described earlier. Citation prediction has
+been considered in prior research; for example, Bethard and Ju-
+rafsky present a supervised algorithm that considers a broad range
+of features, including both content and citation information [4]. We
+view our approach as complementary; our hierarchical model could
+provide features for such a discriminative approach. He et al. attack
+the related problem of recommending citations in the context of a
+snippet of text describing the purpose of the citation [18], focusing
+on concept-based relevance between citing and cited documents.
+Again, one might combine these approaches by mining the local
+context to determine which part of the induced hierarchy is most
+likely to contain the desired citation.
+Metric.
+
+We evaluate using mean average precision, an information re-
+trieval metric designed for ranking tasks [26]. The average preci-
+sion is the mean of the precisions at the ranks of all the relevant ex-
+amples; mean average precision takes the mean of the average pre-
+cisions across all queries (heldout documents). This metric can be
+viewed as an approximation to the area under the precision-recall
+curve.
+
+Systems.
+
+We divided the 1,739-paper ACL subset into a training set (pa-
+pers from 2000-2006), a development set (2006-2007), and a held-
+out set (2008-2009). For each experiment we conducted 10 trials,
+using the following procedure:
+
+1. build a topic hierarchy from the training set using TOPICBLOCK,
+2. ﬁt the development set text to the learnt hierarchy, and predict
+
+development links,
+
+3. retrieve the trial with the highest mean average precision over
+
+development set links,
+
+4. ﬁt the heldout set text to that trial’s hierarchy, and predict
+
+heldout links,
+
+5. compute mean average precision over heldout set links.
+
+In essence, the development set is being used to select the best-
+trained model with respect to the citation prediction task. The ﬁnal
+predictions were obtained by inferring each test document’s most
+appropriate hierarchy path r given only its text, and then using the
+path r to predict links to training documents according to our net-
+work model.
+
+Baselines.
+
+To evaluate the contribution of jointly modeling text with net-
+work structure, we compare against hierarchical latent Dirichlet al-
+location (HLDA) [7], a closely-related model which ignores net-
+work structure. We use our own implementation, which is based on
+the TOPICBLOCK codebase. As HLDA does not explicitly model
+links, we postﬁt a hierarchical blockmodel to the induced hierarchy
+over the training data; this hierarchy is learnt only from the text.
+
+System
+TOPICBLOCK
+HLDA
+HSBM
+IN-DEGREE
+TF-IDF
+
+x
+x
+
+Text? Network? Hierarchical? MAP
+0.137
+0.117
+0.112
+0.0731
+0.0144
+
+x
+x
+x
+
+x
+
+x
+x
+
+x
+
+Table 3: Results on the citation prediction task for the ACL
+Anthology data. Higher scores are better. Note that HLDA is
+equivalent to TOPICBLOCK without the network component,
+while HSBM is equivalent to TOPICBLOCK without text.
+
+Thus, the comparison with HLDA directly tests the contribution of
+network information to the quality of the hierarchy, over what the
+text already provides. After postﬁtting the blockmodel, we ﬁt the
+development and heldout sets as described earlier.
+
+We can also isolate the contribution of network information to
+the hierarchy, by learning the shape of the hierarchy based on net-
+work contributions but not text. After learning the hierarchy’s shape
+(which is deﬁned by the paths r) this way, we postﬁt text topics to
+this hierarchy by running hLDA while keeping the paths r ﬁxed.
+Then we ﬁt the development and heldout sets as usual. This ap-
+proach can be viewed as a hierarchical stochastic blockmodel, so
+we name the system HSBM.
+
+Next, we consider a simpler text-only baseline, predicting links
+based on the term similarity between the query and each possible
+target document; speciﬁcally, we use the TF-IDF measure consid-
+ered by Bethard and Jurafsky [4]. For a fair comparison, we use the
+same text which was available to TopicBlock and hLDA, which is
+the ﬁrst 200 words of each document.
+
+Finally, we consider a network-only baseline, where we rank
+potential documents in descending order of IN-DEGREE. In other
+words, we simply predict highly cited documents ﬁrst.
+
+Results.
+
+As shown in Table 3, TOPICBLOCK achieves the highest MAP
+score of all methods, besting the hierarchies trained using only text
+(HLDA) or only the network (HSBM). This demonstrates that in-
+ducing hierarchies from text and network modalities jointly yields
+quantitatively better performance than post-hoc ﬁtting of one modal-
+ity to a hierarchy trained on the other. In addition, all hierarchy-
+based methods beat the TF-IDF and IN-DEGREE baselines by a
+strong margin, validating the use of hierarchies over simpler, non-
+hierarchical alternatives.
+
+6.3 Link Resolution
+
+Wikipedia contains a substantial amount of name ambiguity, as
+multiple articles can share the same title. For example, the term
+“mac” may refer to the Media Access Control address, the luxury
+brand of personal computers, or the ﬂagship sandwich from Mc-
+Donalds. The link resolution task is to determine which possible
+reference article was intended by an ambiguous text string. In our
+Wikipedia data, there were 88 documents with the same base name,
+such as “scale_(music)" and “scale_(map)", and there were 435 ref-
+erences to such articles. These references were initially unambigu-
+ous, but we removed the bracketed disambiguation information in
+order to evaluate TOPICBLOCK’s ability to resolve ambiguous ref-
+erences.
+
+Systems.
+
+We run TOPICBLOCK to induce a hierarchy over the training
+documents, and then learn the best paths r for each of the 88 am-
+
+WWW 2012 – Session: Entity and Taxonomy ExtractionApril 16–20, 2012, Lyon, France745Figure 3: Wikipedia link resolution accuracy, plotted against
+proportion of links which could be resolved by the hierarchy.
+
+Figure 4: The network block matrix for the Simple English
+Wikipedia data.
+
+biguous documents according to just their text. Then, for each of
+the 435 ambiguous references to the 88 target documents, we se-
+lect the target with the highest link probability to the query docu-
+ment. If two targets are equally probable, we select the one with
+the highest text similarity according to TF-IDF. This experiment
+was conducted 10 times, and all results are shown in Figure 3. We
+also compare against HLDA, which is run in the same way as TOP-
+ICBLOCK but trained without network information, using hierarchy
+path similarity instead of link probability to rank query documents.
+Finally, as a baseline we consider simply choosing the target with
+the highest TEXT SIMILARITY.
+
+Metric.
+
+The evaluation metric for this task is accuracy: the proportion of
+ambiguous links which were resolved correctly. In most cases the
+ambiguity set included only two documents, so more complicated
+ranking metrics are unnecessary.
+
+Results.
+
+We performed ten different runs of TOPICBLOCK and HLDA.
+In each run, a certain number of links could not be resolved by
+the hierarchy, because the target nodes were equally probable with
+respect to the query node — in these cases, we use the TF-IDF tie-
+breaker described above. Figure 3 plots the accuracy against the
+proportion of links which could be resolved by the hierarchy. As
+shown in the ﬁgure, TOPICBLOCK is superior to the TEXT SIMI-
+LARITY baseline on all ten runs. Moreover, the accuracy increases
+with the speciﬁcity of the hierarchy with regard to the ambiguous
+links — in other words, the added detail in these hierarchies co-
+heres with the hidden hyperlinks. In contrast, HLDA is rarely better
+than the cosine similarity baseline, and does not improve in accu-
+racy as the hierarchy speciﬁcity increases. This demonstrates that
+training from text alone will not yield a hierarchy that coheres with
+network information, while training from both modalities improves
+link disambiguation.
+
+7. QUALITATIVE ANALYSIS
+
+We perform a manual analysis to reveal the implications of our
+modeling decisions and inference procedure for the induced hierar-
+chies, showcasing our model’s successes while highlighting areas
+for future improvement. Note that while the quantitative experi-
+ments in the previous section required holding out portions of the
+data, here we report topic hierarchies obtained by training on the
+entire dataset.
+
+7.1 Wikipedia
+
+Figure 1 shows a fragment of the hierarchy induced from the
+Simple English Wikipedia Dataset. Unlike our other experiments,
+we have used an L = 3 (root plus 3 levels) hierarchy here to
+capture more detail. We have provided the topic labels manu-
+ally; overall we can characterize the top level as comprised of:
+history (W1), culture (W2), geography (W3), sports (W4), biology
+(W5), physical sciences (W6), technology (W7), and weapons (W8).
+The subcategories of the sports topic are shown in the ﬁgure, but
+the other subcategories are generally reasonable as well: for ex-
+ample biology (W5) divides into non-human and human subtopics;
+history (W1) divides into modern (W1.1), religious (W1.2), medieval
+(W1.3), and Japanese (W1.4). While a manually-created taxonomy
+would likely favor parallel structure and thus avoid placing a re-
+gion (Japan) and a genre (religion) alongside two temporal epochs
+(modern and medieval), TopicBlock chooses an organization that
+reﬂects the underlying word and link distributions.
+
+Figure 4 shows the link structure for the Wikipedia data, with the
+source of the link on the rows and the target on the columns. Doc-
+uments are organized by their position in the induced hierarchy.
+Topic 1 has a very high density of incoming links, reﬂecting the
+generality of these concepts and their relation to many other doc-
+uments. Overall, we see very high link density at the ﬁnest level
+of detail (indicated by small dark blocks directly on the diagonal),
+but we also see evidence of hierarchical link structure in the larger
+shaded blocks such as culture (W2) and physical science (W6).
+
+7.2 ACL Anthology
+
+The full ACL anthology hierarchy is shown in Figure 5, which
+gives the top words corresponding to each topic, by TF-IDF.3 As
+before, the topic labels are provided by us; for simplicity we have
+chosen to focus on an L = 2-level hierarchy. The top-level cate-
+gories include both application areas (interactive systems (A1) and
+information systems (A2)) as well as problem domains (discourse
+and semantics (A4); parsing (A6); machine translation (A8)). These
+areas are often close matches for the session titles of relevant con-
+ferences such as ACL.4 At the second level, we again see coher-
+ent topical groupings: for example, the children of information sys-
+tems include popular shared tasks such as named-entity recogni-
+tion (A2.1), summarization (A2.3), and question answering (A2.4);
+the children of discourse and semantics (A4) include well-known
+
+3Speciﬁcally, we multiplied the term frequency in the topic by the
+log of the inverse average term frequency across all topics [6].
+4http://www.acl2011.org/program.utf8.shtml
+
+WWW 2012 – Session: Entity and Taxonomy ExtractionApril 16–20, 2012, Lyon, France746of the document collection. We also plan to investigate dynamic
+models, in which temporal changes in the hierarchy may reveal
+high-level structural trends in the underlying data. Finally, in many
+practical settings one may obtain a partially-complete initial taxon-
+omy from human annotators. An interesting future direction would
+be to apply techniques such as TopicBlock to reﬁne existing tax-
+onomies [40].
+
+9. ACKNOWLEDGMENTS
+
+This work was supported by NSF IIS-0713379, NSF IIS-1111142,
+
+NSF DBI-0546594 (Career), ONR N000140910758,
+AFOSR FA9550010247, NIH 1R01GM093156, and an Alfred P.
+Sloan Research Fellowship to Eric P. Xing. Qirong Ho is supported
+by a graduate fellowship from the Agency for Science, Technology
+and Research, Singapore.
+
+10. REFERENCES
+[1] R. P. Adams, Z. Ghahramani, and M. I. Jordan. Tree-Structured stick
+
+breaking processes for hierarchical data. In Neural Information
+Processing Systems, June 2010.
+
+[2] E. M. Airoldi, D. M. Blei, S. E. Fienberg, and E. P. Xing. Mixed
+
+membership stochastic blockmodels. Journal of Machine Learning
+Research, 9:1981–2014, 2008.
+[3] Alias-i. Lingpipe 3.9.1, 2010.
+[4] S. Bethard and D. Jurafsky. Who should I cite: learning literature
+
+search models from citation behavior. In Proceedings of CIKM,
+pages 609–618, 2010.
+
+[5] S. Bird, R. Dale, B. J. Dorr, B. Gibson, M. T. Joseph, M.-y. Kan,
+
+D. Lee, B. Powley, D. R. Radev, and Y. F. Tan. The ACL anthology
+reference corpus: A reference dataset for bibliographic research in
+computational linguistics. In Proceedings of LREC, 2008.
+
+[6] D. Blei and J. Lafferty. Topic models. In Text Mining: Theory and
+
+Applications. Taylor and Francis, 2009.
+
+[7] D. M. Blei, T. L. Grifﬁths, and M. I. Jordan. The nested chinese
+restaurant process and bayesian nonparametric inference of topic
+hierarchies. Journal of the ACM, 57(2):1–30, Feb. 2010.
+
+[8] J. Chang and D. Blei. Hierarchical relational models for document
+
+networks. Annals of Applied Statistics, 2009.
+
+[9] A. Clauset, C. Moore, and M. E. J. Newman. Hierarchical structure
+
+and the prediction of missing links in networks. Nature,
+453(7191):98–101, May 2008.
+
+[10] D. Cohn and T. Hofmann. The missing link - a probabilistic model
+
+of document content and hypertext connectivity. In Neural
+Information Processing Systems, 2001.
+
+[11] D. R. Cutting, D. R. Karger, J. O. Pedersen, and J. W. Tukey.
+
+Scatter/Gather: a cluster-based approach to browsing large document
+collections. In Proceedings of SIGIR, 1992.
+
+[12] S. Gerrish and D. Blei. A language-based approach to measuring
+
+scholarly impact. In Proceedings of ICML, 2010.
+
+[13] T. Grifﬁths and M. Steyvers. Finding scientiﬁc topics. Proceedings
+
+of the National Academy of Sciences, 101:5228–5235, 2004.
+
+[14] A. Gruber, M. Rosen-zvi, and Y. Weiss. Latent topic models for
+
+hypertext. In Proceedings of UAI, 2008.
+
+[15] S. Gupta and C. Manning. Analyzing the dynamics of research by
+
+extracting key aspects of scientiﬁc papers. In Proceedings of
+IJCNLP, 2011.
+
+[16] D. Hall, D. Jurafsky, and C. D. Manning. Studying the history of
+
+ideas using topic models. In Proceedings of EMNLP, 2008.
+
+[17] T. H. Haveliwala. Topic-sensitive pagerank: A context-sensitive
+
+ranking algorithm for web search. IEEE Transactions on Knowledge
+Data Engineering, 15(4):784–796, 2003.
+
+[18] Q. He, J. Pei, D. Kifer, P. Mitra, and C. L. Giles. Context-aware
+
+citation recommendation. In Proceedings of WWW, pages 421–430,
+2010.
+
+[19] K. A. Heller and Z. Ghahramani. Bayesian hierarchical clustering. In
+
+Proceedings of ICML. ACM, 2005.
+
+Figure 6: The network block matrix for the ACL Anthology
+Data. Blocks corresponding to links within/between A3 and
+A6.1 have been delineated by black rectangles. There are 2190
+and 2331 citation links within A3 and A6.1 respectively, but
+only 343 links between them.
+
+theoretical frameworks, such as centering theory and propositional
+semantics (not shown here).
+
+Occasionally, seemingly related topics are split into different
+parts of the tree. For example, the keywords for both topics A3
+and A6.1 relate to syntactic parsing. Nonetheless, the citation links
+between these two topics are relatively sparse (see Figure 6), re-
+vealing a more subtle distinction: A3 focuses on representations
+and rule-driven approaches, while A6.1 includes data-driven and
+statistical approaches.
+
+As in the Wikipedia data, the network diagram (Figure 6) reveals
+evidence of hierarchical block structures. For example, A2 contains
+4101 links out of 4.4 million possible, a density of 9.3∗ 10
+−4. This
+is substantially larger than the background density 1.8 ∗ 10
+−4, but
+less than subtopics such as A2.1, which has a density of 6.4∗ 10
+−3.
+We observe similar multilevel density for most of the high-level
+topics, except for interactive systems (A1), which seems to be more
+fractured. One of the densest topics is machine translation (A8),
+an area of computational linguistics which has become sufﬁciently
+distinct as to host its own conferences.5
+
+One could obtain more parallel structure by imposing a domain-
+speciﬁc solution for research papers, such as Gupta and Manning’s
+work on identifying the “focus, technique, and domain” of each
+article [15]; of course, such a solution would not necessarily gen-
+eralize to Wikipedia articles or other document collections. While
+parallel structure is desirable, it is often lacking even in taxonomies
+produced by human experts. For example, a similar critique might
+be leveled at the sessions associated with a research conference, or
+even the ACM taxonomy.6
+
+8. CONCLUSION
+
+We have presented TopicBlock, a hierarchical nonparametric model
+
+for text and network data. By treating these two modalities jointly,
+we not only obtain a more robust latent representation, but are also
+able to better understand the relationship between the text and links.
+Applications such as link prediction, document clustering, and link
+ambiguity resolution demonstrate the strengths of our approach.
+In the future we plan to consider richer structures, such as mul-
+tiple hierarchies which capture alternative possible decompositions
+
+5http://www.amtaweb.org/
+6http://www.computer.org/portal/web/
+publications/acmtaxonomy
+
+WWW 2012 – Session: Entity and Taxonomy ExtractionApril 16–20, 2012, Lyon, France747Figure 5: 3-level topic hierarchy built from the ACL Anthology.
+
+[20] Q. Ho, A. P. Parkih, L. Song, and E. P. Xing. Multiscale Community
+
+[32] X. Phan, L. Nguyen, and S. Horiguchi. Learning to classify short
+
+Blockmodel for Network Exploration. In Proceedings of AISTATS,
+2011.
+
+and sparse text & web with hidden topics from large-scale data
+collections. In Proceedings of WWW, 2008.
+
+[21] P. Holland and S. Leinhardt. Local structure in social networks.
+
+[33] D. Radev, M. Joseph, B. Gibson, and P. Muthukrishnan. A
+
+Sociological methodology, 7:1–45, 1976.
+
+[22] J. Huang, H. Sun, J. Han, H. Deng, Y. Sun, and Y. Liu. Shrink: a
+
+structural clustering algorithm for detecting hierarchical
+communities in networks. In Proceedings of CIKM, pages 219–228,
+2010.
+
+bibliometric and network analysis of the ﬁeld of computational
+linguistics. Journal of the American Society for Information Science
+and Technology, 2009.
+
+[34] C. P. Robert and G. Casella. Monte Carlo Statistical Methods.
+
+Springer, 2004.
+
+[23] A. Lancichinetti and S. Fortunato. Community detection algorithms:
+
+[35] M. Rosen-Zvi, T. Grifﬁths, M. Steyvers, and P. Smyth. The
+
+A comparative analysis. Physical Review E, 80(5):056117+, Nov.
+2009.
+
+[24] D. D. Lewis, Y. Yang, T. G. Rose, and F. Li. Rcv1: A new
+
+benchmark collection for text categorization research. Journal of
+Machine Learning Research, 5:361–397, December 2004.
+
+[25] Y. Liu, A. Niculescu-Mizil, and W. Gryc. Topic-link lda: joint
+
+models of topic and author community. In Proceedings of ICML,
+2009.
+
+[26] C. D. Manning, P. Raghavan, and H. Schütze. Introduction to
+
+Information Retrieval. Cambridge University Press, Cambridge, UK,
+2008.
+
+author-topic model for authors and documents. In Proceedings of
+UAI, pages 487–494, 2004.
+
+[36] N. Sahoo, J. Callan, R. Krishnan, G. Duncan, and R. Padman.
+
+Incremental hierarchical clustering of text documents. In
+Proceedings of CIKM, 2006.
+
+[37] J. Shi and J. Malik. Normalized cuts and image segmentation.
+
+Transactions on Pattern Analysis and Machine Intelligence,
+22(8):888–905, Aug. 2000.
+
+[38] Y. Teh, M. Jordan, M. Beal, and D. Blei. Hierarchical dirichlet
+
+processes. Journal of the American Statistical Association,
+101(476):1566–1581, 2006.
+
+[27] A. McCallum, A. Corrada-Emmanuel, and X. Wang. Topic and role
+
+[39] P. Willett. Recent trends in hierarchic document clustering: A
+
+discovery in social networks. In Proceedings of IJCAI, 2005.
+[28] Q. Mei, D. Cai, D. Zhang, and C. Zhai. Topic modeling with
+
+network regularization. In Proceedings of WWW, 2008.
+
+[29] R. Nallapati, A. Ahmed, E. P. Xing, and W. W. Cohen. Joint latent
+topic models for text and citations. In Proceedings of KDD, 2008.
+
+[30] R. Nallapati, D. McFarland, and C. Manning. Topicﬂow model:
+
+Unsupervised learning of topic-speciﬁc inﬂuences of hyperlinked
+documents. In Proceedings of AISTATS, 2011.
+
+[31] Y. Petinot, K. McKeown, and K. Thadani. A hierarchical model of
+
+web summaries. In Proceedings of ACL, 2011.
+
+critical review. Information Processing & Management,
+24(5):577–597, 1988.
+
+[40] F. Wu and D. S. Weld. Automatically reﬁning the wikipedia infobox
+
+ontology. In Proceedings of WWW, 2008.
+
+[41] Y. Zhao, G. Karypis, and U. Fayyad. Hierarchical clustering
+
+algorithms for document datasets. Data Mining and Knowledge
+Discovery, 10(2):141–168, Mar. 2005.
+
+WWW 2012 – Session: Entity and Taxonomy ExtractionApril 16–20, 2012, Lyon, France748

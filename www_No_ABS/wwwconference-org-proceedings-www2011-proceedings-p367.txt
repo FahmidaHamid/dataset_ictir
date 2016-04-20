@@ -1,0 +1,527 @@
+Ranking is central to many information retrieval (IR) applications, such as web search, collaborative  ltering, and document retrieval.
+Large data sizes make it impractical Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+Distribution of these papers is limited to classroom use, and personal use by others.
+to manually adapt the parameters of the ranking functions.
+Thus, several methods [6, 4, 5, 17, 18, 19], have recently been developed to automatically learn the model parameters using machine learning techniques   a problem known as learning to rank.
+In this paper, we focus on web search.
+Learning to rank algorithms typically use labeled data, for example, query-URL pairs that have been assigned one of several levels of relevance by human judges [5].
+However, often there are several additional sources of relevance labels available.
+For example, in addition to human judgments, search engines today gather user behavior information, such as clicks and dwell time.
+Further examples include freshness (the recency of the data on the page, which can be computed automatically), spamness (the likelihood that the page is spam), and grammaticality (the quality of the written language and grammar).
+Having several sources of relevance labels per query-URL pair can compensate for weaknesses in each single source.
+For example, using human judgments to assign each query-URL pair to, say, one of  ve levels of relevance, leaves open the questions of how to rank items with the same label, and how well the judges can solve the di cult problem of gauging user intent; clearly user click data should be able to help answer these questions.
+A search engine that leverages such markedly distinct sources of relevance would have an advantage over one that doesn t; however, this immediately raises the questions of how to compare the quality of two sets of search results given a  scorecard  rather than a single numeric measure, and how to train systems using multiple label sources.
+Last but not least, the builders of a commercial search engine that uses, for example, human judgments only, may be reluctant to switch to another, unproven evaluation measure computed over labels from a di erent source; in contrast, given the entailed risk and having a graded measure which assures that their familiar measure will reliably be left unimpacted (or improved), while simultaneously improving the unproven measure, could prove valuable.
+In this paper we address these problems by introducing the notion of a graded measure.1 Consider the case where three IR measures {A, B, C} (each of which maps a given ordering of documents for a given query to a score) are available, all taking values in (cid:2).
+The graded measure is then simply the triplet A   {A, B, C} with the associated lexicographic ordering, such that, for example, A1   A2 i  A1   A2, or A1 = A2 and B1   B2, or A1 = A2 and B1 = B2 and C1   C2.
+Clearly this de nition extends to any number of real-valued measures (and associated label
+ parable.
+Here we consider the following two measures as an example: A will be taken as Normalized Discounted Cumulative Gain [13], and B will be a click-based measure [10,
+ follows: if, for example, the test set contains 10,000 queries, then since the NDCG is a single number computed as the mean NDCG over all queries, it seems reasonable to expect that one could keep the same NDCG while improving a secondary measure, such as a click-based one.
+We choose the second measure to be click-based because clicks can be collected at a much lower cost and provide direct user feedback regarding user intent for a large number of real-world query-URL pairs, compared to human-based labels gathered from a small number of annotators who may have di erent knowledge, background, and opinions about relevance.
+We also use clicks in the secondary rather than primary measure since clicks have a strong position bias [15] and a high degree of noise, even when the position bias is removed [14].
+In this paper, we de ne a graded measure over {NDCG, CNDCG}, where CNDCG is a de ned click-based measure, and propose learning the graded measure within the LambdaMART ranking algorithm [19], which has been shown to have excellent empirical accuracy, winning the recent Yahoo!
+Learning to Rank Challenge [8].
+LambdaMART is particularly well-suited to learning IR measures, and a graded IR measure, since learning for such a measure only requires expressing the gradient of the cost with respect to the model scores, and not the cost itself.
+Although the notion of using several sources of relevance is not new, for example learning from user feedback data as ranking features [1], or as labels to replace human labels [10], our work addresses an open learning-to-rank question regarding tiered learning from multiple label sources.
+Our approach learns from several sources of labels and from a graded, user-de ned measure over those labels.
+Our approach is particularly appealing because there is typically a high degree of con ict between label sources, thus making the existence of the globally optimal ranking, which perfectly satis es each source, very unlikely.
+The graded metric idea e ectively avoids this problem by optimizing for each part of the graded measure based on the user-imposed constraints.
+Furthermore, our approach is general, allowing the measures, label sources, and degree of preference between them, to be speci ed.
+Our work also di ers from prior work on learning for multiple measures, where each measure employs the same label source, for example as in [7], where both NDCG and Mean Reciprocal Rank (MRR) are computed over human relevance labels and then simultaneously optimized using a structured SVM framework.
+To our knowledge, our work is the  rst to combine multiple objectives that learn from multiple label sources in a graded way, and that can take advantage of a rich understanding, coming from several data sources, of the importance of a training sample.
+The second part of the paper reveals three problems with optimizing for a single measure using a static objective function, which will be described in more detail below, but which we summarize here as follows.
+First, search engine accuracy is typically evaluated based on the documents in the top few rank positions, since those are the documents most viewed by users; take, for example, NDCG truncated to the top three documents.
+In the spirit of optimizing for what one cares about, one might conclude that we should train using NDCG@3 as the target measure, since LambdaRank (of which LambdaMART is the boosted tree instantiation) can model any IR measure [9].
+However, it has been shown that this gives suboptimal results, probably because the effective amount of training data drops precipitously by so doing [4, 9].
+LambdaRank and LambdaMART are thus typically trained using un-truncated NDCG.
+In this paper, we examine the question: can we get the best of both worlds by training using un-truncated NDCG early during training and gradually using truncated NDCG during later stages of training?
+The key idea is to gradually modify the learning process as the learning progresses by shifting the emphasis on the full ranking to the top of the list.
+This approach allows us to utilize all of the training data while  ne-tuning the model for the target evaluation measure.
+The second problem relates to the margin built into the LambdaRank cost.
+For a query for which all of the documents happen to be ranked correctly by the current model, the LambdaRank gradients (which can be thought of as forces on unit masses, where the masses represent the documents) are still nonzero: LambdaRank still tries to further separate the (correctly ranked) documents.
+The third problem is related: suppose that instead, late during training, a highly relevant document is incorrectly ranked very low in the list.
+Lamb-daRank will try hard to  x this (the force on that document will be large, and pushing upwards), when it likely cannot be  xed (for example, due to a noisy label).
+We give these last two problems the mnemonics Don t Fix what Isn t Broken and Give Up on Lost Causes.
+Intuitively, the hope is that freeing the ranker from having to spend its capacity learning to model these e ects will improve generalization accuracy, or at a minimum achieve the same accuracy with smaller models.
+In this paper, we address the above problems by considering multiple measures as training targets.
+In the graded measure case, the measure is composed of two standard measures (although the technique generalizes to any number of standard measures).
+In the other case, the target measure essentially becomes a linear combination of two measures, such as NDCG and NDCG@3, and an interpolation over iterations is performed between the two desired standard measures.
+We begin by formalizing the problem of learning to rank in the document retrieval domain.
+At training time, we are given a set of N queries Q = {q1, ..., qN}.
+To simplify notation, we drop the query index i, and refer to a general query q.
+Each query q is associated with a set of K documents D = {d1, ...., dK} and their associated relevance labels L = {(cid:2)1, ..., (cid:2)K}.
+Each document dj is represented as a query dependent feature vector in (cid:2)p, where dj[v] denotes the vth feature value, with a corresponding relevance label (cid:2)j   (cid:2) (typically an integer) that indicates how relevant document dj is to query q.
+The goal of learning is to create a ranker F such that, given a set of documents D with relevance labels L for query q, the ranking of documents in D produced by F has maximal agreement with L.
+In this paper we concentrate on LambdaMART s model of F , where F : (cid:2)p   (cid:2) is a document scoring function which assigns scores used for ranking.
+to D.
+We evaluate the agreement between the ranking produced by F and the relevance labels L for query q with Normalized Discounted Cumulative Gain (NDCG) [13]: 2(cid:2)(t)   1 log(1 + t) NDCG@T (q) =
+
+
+ (1) , t=1 where the sum is over documents for query q in ranked top-down order, (cid:2)(t) is the label of the document at rank position t, and Z is a normalizing constant which guarantees that NDCG is between 0 and 1.
+The truncation T is a constant typically set to a small value to emphasize the importance of correctly ranking documents at the top list positions.
+We report mean NDCG   the average NDCG(q) across all queries, and drop q to simplify notation.
+NDCG is well-suited for information retrieval evaluation due to its handling of multilevel labels and its dependence on truncation level.
+The main challenges in optimizing NDCG during training are that it contains a truncated summation over ordered items and is therefore not smooth and not di er-entiable, and that T is generally set to be small, such as 3, which ignores changes in rank position below position 3.
+We address these challenges in this paper.
+Since our approach extends the LambdaMART framework [3, 19], in this section we brie y review the ranking algorithm.
+We choose to extend LambdaMART because it has shown excellent empirical accuracy, recently winning the Yahoo!
+Learning to Rank Challenge [8, 2], and requires only the de nition of the desired gradients of a cost function, which avoids the problem of di erentiating a measure that requires document sorting, as in most IR measures, which are either  at, or discontinuous, everywhere.
+LambdaMART is a combination of the tree-boosting optimization method MART [11] and the listwise ranking model LambdaRank [4].
+LambdaMART learns pairwise preferences over documents with emphasis derived from the NDCG gain found by swapping the rank position of the documents in any given pair, so it is a listwise algorithm (in the sense that the cost depends on the sorted list of documents).
+Remarkably, LambdaRank has been shown empirically to  nd local optima in NDCG [9].
+We now describe the objective function and gradients used in training both LambdaRank and LambdaMART.
+The RankNet objective function, on which the LambdaRank objective is based, is a pairwise cross-entropy cost applied to the logistic function of the di erence of the model scores [5].
+Formally, given a pair of documents dj, dk and assuming (cid:2)j > (cid:2)k, then the objective is expressed as: Ojk   O(ojk) = o jk + log(1 +e ojk ), (2) where ojk   sj   sk is the score di erence.
+The derivative of the objective according to the score di erence is  Ojk/ ojk =  Ojk/ sj =  1/(1 + eojk ).
+(3) The LambdaRank framework uses a smooth approximation to the gradient of a target evaluation measure with respect to the score of a document at position j, and we denote the  gradient as  j.
+The  gradient to best optimize for NDCG (based on empirical evaluation) is de ned as the derivative of the objective (Eq 3) weighted by the di erence in NDCG obtained when a pair of documents swap rank positions:  NDCG@T (sj, sk)   .
+ Ojk  ojk  jk   (4) Thus, at the beginning of each iteration, the documents are sorted according to their current scores, and the di erence in NDCG is computed for each pair of documents by keeping the ranks of all of the other documents constant and swapping only the rank positions for that pair.
+The change in NDCG is computed as    NDCG@T (sj, sk)
+ (cid:2)j   2 (cid:2)k
+  
+ log(1 + t(dj))  
+ log(1 + t(dk)) (5) .
+  The  gradient for document dj is computed by summing the  s for all pairs of documents (dj, dk) for query q:  j =  jk.
+(6)
+ k (dj ,dk): (cid:2)j(cid:3)=(cid:2)k It should be noted that this   representation is schematic, in two senses:  rst, LambdaRank (and hence LambdaMART) is de ned by noting that the models used (neural nets and gradient boosted trees) only need the gradients of the cost with respect to the model scores to be speci ed, not the actual costs, and the  s are then simply de ned to behave smoothly as documents swap rank positions.
+Second, | NDCG@T (sj, sk)| depends on the order of the documents sorted according to the current model s scores, and in this sense, by de ning the gradients after the documents have been sorted by score (Eq 4), we avoid having to write a very complex objective function that would have to encapsulate the e ect of the sort.
+We refer the reader to [3] for details.
+The | NDCG| factor emphasizes those pairs that have the largest impact on NDCG.
+Note that the truncation in NDCG is relaxed to the entire document set to maximize the use of the available training data [9].
+To optimize for NDCG, LambdaMART implements the LambdaRank idea using MART, a boosted tree model where each tree models the derivatives of the cost with respect to the model scores for each training point, and in this case, those derivatives are the  s.
+The scoring function that LambdaMART produces after M iterations can be written as
+ F (dj) =  mfm(dj), m=1 (7) where each fi(dj)   (cid:2) is modeled by a single regression tree and  i   (cid:2) is the weight associated with each regression tree.
+At each iteration the regression tree is created by  rst computing the  j s and their derivatives ( j s):  j =  j  oj .
+(8) The tree is then initialized at the root node and we loop through all documents to  nd the feature v and the threshold   such that, if all document with dj[v]     fall to the left child node, and the rest to the right child node, then the sum
+ ` j L  j    L  2
+ ` + j R  2  j    R that fall to the left (right) subtree and  L ( R) is the mean of the  s for the set of samples that fall to the left (right).
+The split is attached to the root node and the process is repeated at each child node.
+Each fi thus maps a given dj to a real value by passing dj down the tree, where the path (left or right) at a given node in the tree is determined by the value of a particular feature of dj and where the output of the tree is taken to be a  xed value associated with each leaf (cid:2):
+
+  k = dj (cid:2) dj (cid:2)  j  j , where  (cid:2) is a set of documents that fall into leaf (cid:2).
+The denominator here corresponds to taking a Newton step.
+By adding   to the documents  scores we e ectively take a step in the direction that minimizes the objective function.
+A global multiplicative learning rate is often also used.
+Note that the  i can be viewed as all taking the value one, since each leaf value combines the gradient, Newton step, and learning rate into one number.
+Below, it will guide intuition to note that the  s can be interpreted as forces on point masses (represented by the documents), pushing the documents up or down the list [4].
+The LambdaMART approach is very general: it extends the MART model beyond handling costs for which gradients are de ned and well-behaved, to IR measures for which they are not.
+However it does not naturally handle multiple sources of relevance.
+In Section 4 we show how the lexicographic measure described above can be adapted in the LambdaMART framework to handle graded measures, and we apply it to a tiered measure of human judgments and clicks.
+As mentioned above, relevance labels derived from human judges have several disadvantages, and recent work has explored alternative sources, such as user click-through rates [10, 14, 12, 16].
+However, click-through rates also have several signi cant drawbacks, such as a high degree of noise and a strong position bias.
+In this paper we address this issue by o ering a solution that allows optimization over multiple measures that are graded.
+We assume the  rst-tier measure is NDCG and the second-tier measure is a click-based measure, however our framework is general and can be extended to other measures and other sources of relevance labels such as freshness or grammaticality.
+A key advantage of our approach is that it allows for a graded combination of, for example, a potentially more trusted label (e.g., human judge) with a potentially noisy or  yet to be trusted as the sole label source  label (e.g., click information).
+We begin by de ning one possible target evaluation measure for clicks (other examples include [12, 16]).
+Here we assume that the labels L come from human judgments and take values in {0, 1, 2, 3, 4}, where 0 indicates a bad and 4 indicates a perfect document for the query.
+We also assume that we have a second label source for query q denoted by C = {c1, ..., cm}, where in our work we assume that the secondary label source is the query click logs, and each cj   [0, 1] is a score derived from a given function of the query click information for document dj.
+However, many possible label sources can be considered for both the primary and secondary labels.
+We use superscripts L and C Figure 1: A set of documents ordered for a given query.
+The light gray bars represent irrelevant (bad) documents, while the dark blue bars represent relevant (good) documents.
+NDCG@3 will not be affected if the two relevant documents are swapped, as shown by the red arrow.
+However, if the currently lower-ranked relevant document is clicked on more than the higher ranked one (has a higher click label), then the swap will improve CNDCG@3 without a ecting NDCG@3.
+to denote that the labels being used are from label source L or C, respectively, i.e.,  (L) and O(L).
+j
+ To evaluate a ranking model on clicks, we need a suitable evaluation measure.
+Several measures have been proposed in the literature [10, 14, 16, 12]; a popular one is Kendall s   [10, 14], which compares pairwise preferences induced by clicks with those induced by the ranking model s output scores.
+Kendall s   is well suited to comparing full rankings, but is less desirable when preferring the top of the list.
+Our aim is to emphasize the accuracy at the top of the ranked list, and to ultimately optimize for a combination of measures.
+Thus for simplicity, we choose to adapt NDCG, a measure that more heavily rewards correctly ranking the top of the list, to click-based relevance labels as follows:
+
+
+ 2c(t) 4   1 log(1 + t) , t=1
+ (9) where the click label c(t)   [0, 1] is a function of click information for the document at rank position t, and multiplying by 4 (the maximum value of labels L) extends the numerator to the same range as the human-derived relevance labels L, making CNDCG scores comparable to NDCG scores.
+Our aim is to improve CNDCG without decreasing NDCG, in particular at truncation level three.
+For a graded measure, one ranking model is to be preferred over another if it gives at least equivalent NDCG scores, with improved CDCG scores, on a test (valid) set.
+We explore this in the listwise framework of LambdaMART by requiring that document pairs with the same human relevance label (cid:2) should be swapped if the lower-ranked document has a higher click hind our approach is illustrated in Figure 1.
+To achieve this requirement, we de ne a  gradient  (C) that is designed to optimize for CNDCG and considers click labels cj, ck for pairs of documents (dj, dk) with the same human relevance label (cid:2)j = (cid:2)k:
+  (C) j =  (C) jk | CNDCG@T (sj, sk)| log(1 + esk sj ), k (dj ,dk): cj >ck (cid:2)j =(cid:2)k
+ = k (dj ,dk): cj >ck (cid:2)j =(cid:2)k j j j j j , does not contradict that provided by  (C) where | CNDCG@T (sj, sk)| is the di erence in CNDCG obtained when dj is swapped with document dk in the current ranking.
+CNDCG prefers rankings where for every pair of documents with the same relevance label, the document that is clicked more is ranked higher.
+Furthermore, note that  (L) given in Eq 6 does not include pairs of documents with the same relevance label, so the learning signal provided by  (L) .
+To optimize for both NDCG and CNDCG simultaneously, we linearly combine the  gradients:  j = (1   w)  (L) (10) where w   [0, 1] controls the contribution of each  gradient, allowing the tiering of measures to be in a sense more or less graded.
+To minimize con icting signals between the two  s, we exclude documents with zero clicks from  (C) , primarily because zero clicks can result from users not  nding a document relevant, or from users not seeing a document, which can happen if the document is ranked further down the list, or if the document has never been ranked.
+In either case, the document could still be highly relevant, making it potentially dangerous to treat zero clicks as an indicator of irrelevance.
+j + w  (C) and  (C) and  (C) is computed over all {(dj, dk) To investigate the agreement between the two  gradients, we trained a model to optimize for NDCG by using  (L) during learning, but for comparison purposes computed both  (L) at each iteration.
+We de ne  gradient agreement to be either when the signs of  (L) for document dj were the same or when  (C) j = 0.
+Figure 2 shows the percent of  s that agree as learning progresses for two :c j > ck} cases: (1)  (C) is computed over pairs {(dj, dk) :c j (cid:8)= pairs and (2)  (C)
+ (case 1), the agreement between the two   signals is roughly
+ two  gradient signals are relatively compatible, and that it should be possible to optimize for both NDCG and CNDCG simultaneously.
+Furthermore, restricting the use of  (C) to pairs of documents with the same human relevance label and removing documents with zero clicks signi cantly improves agreement by almost 15 percentage points, indicating that such a restriction during learning could o er additional improvements in accuracy.
+Section 6 details our results on using a linear combination of  gradients to learn a graded measure.
+j j j j j j j j All pairs In HRS & No 0 t n e m e e r g a a d b m a l %
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Iteration Figure 2: Training iteration versus percent   agreement on training data when  (C) : cj > ck} pairs (black diamonds) versus {(dj, dk) : cj (cid:8)= 0, ck (cid:8)= 0, cj > ck, (cid:2)j = (cid:2)k} pairs (red circles).
+uses all {(dj, dk) j
+
+ j We now consider learning with several  gradients to optimize for NDCG and NDCG@3, using a single label source.
+Despite the emphasis on truncation three, LambdaMART utilizes all of the training data by relaxing the truncation for NDCG in  (L) to include all documents.
+In this section, we investigate the e ects of this relaxation on learning and propose a modi ed  gradient designed to better optimize for NDCG@3.
+We use NDCG@3 here for illustrative purposes; a similar analysis can easily be extended to NDCG at other truncations.
+The document gradients  (L) j govern how the ranking model changes with each iteration of learning.
+To gain insight, we monitored  (L) s throughout learning.
+In Figure 3(a), for each highly relevant document dj with (cid:2)j = {3, 4} in our training set, we plot the following percentage
+
+
+
+ j:(cid:2)j ={3,4} (cid:2)k=v  (L)  (L) jk j , (11) for v = {0, 1, 2, 3 and 4}, and where H represents the number of highly relevant documents across all queries.
+Throughout learning, contributions from irrelevant and weakly relevant documents ((cid:2)k = {0, 1}) consistently account for on average more than 70% of the total gradient value of a highly relevant document.
+During the initial stages of learning, it is desirable to strongly separate highly relevant documents from irrelevant documents.
+During later stages, however, most irrelevant documents will be already low in the ranked list, and the NDCG@3 gains will come not from further separating relevant and irrelevant documents, but from  ne-grained separations among the top 3 positions.
+That is, separations between documents with labels 3 and 4, or 2 and 3, for example, become more and more essential as learning progresses.
+To support this hypothesis, we plot the distribution of the % 1 % 2 % 3&4 t n e i d a r g f o %
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Iteration
+
+ (a) % from 0 % from 1 % from 2 % from 3 & 4
+ p o t f o %
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Iteration
+
+ (b) Figure 3: Figure 3(a) shows percent   contribution to highly relevant documents with relevance labels 3 and
+ throughout the 500 learning iterations, averaged across all training queries.
+label values (cid:2)j for documents dj ranked in the top 3 positions using the model at iteration t as learning progresses, as shown in Figure 3(b).
+After only a few iterations, irrelevant documents ((cid:2)j = 0) account for less than 5% of the documents in the top 3 positions.
+Furthermore, weakly relevant documents ((cid:2)j = 1) account for less than 20% of the documents in the top 3 positions.
+Over 40% of documents are highly relevant within the  rst few iterations, further demonstrating that the learning algorithm is able to almost immediately separate highly relevant documents from irrelevant ones, and that encouraging  ne-grained separations among top-ranked documents may lead to more accurate ranking models.
+Formally, irrelevant documents low in the ranked list dominate the  gradient values of highly relevant documents throughout learning due to the structure of the  (L) s.
+Recall that  (L) jk is a sigmoid weighted by the change in NDCG when documents dj and dk swap rank positions (Eq 4).
+When the pair of documents is ranked correctly, ojk = sj   sk > 0, the sigmoid will approach 0, but the  NDCG component will grow with increasing rank position, as illustrated by the following example.
+Suppose there are 3 documents: d1 ((cid:2)1 = 4) in position 1, d2 ((cid:2)2 = 0) in position 4, and d3 ((cid:2)3 = 0) in position 50.
+The  NDCG values for the corresponding pairs, namely (d1, d2) and (d1, d3), are: | NDCG(s1, s2)| = | NDCG(s1, s3)| = (24   20) (24   20)       1    
+
+ log(2) log(4)   = ,
+
+
+
+ .
+=
+
+
+ log(2) log(50) Pair (d1, d3) thus gets almost double the weight even though d3 is far down the list.
+In many cases, this weight will counteract the decreasing sigmoid, causing  (L) 1,3 to signi cantly contribute to  (L) .
+In most learning-to-rank datasets there is also a signi cant label imbalance; the number of irrelevant documents typically far outnumber the number of relevant ones.
+This further magni es the e ects of the  NDCG component on learning, since the large number of irrelevant documents ranked low will additively dominate the  gradient.
+% change full % change top 3 Training NDCG@3 Validation NDCG@3
+
+
+
+
+
+
+
+
+
+
+
+ Iteration Figure 4: Train and validation NDCG@3, together with percent of changes that happen across the entire ranking and within the top-3 positions, averaged over all training queries.
+A similar observation can be made for incorrectly ranked pairs.
+When the di erence ojk < 0 for incorrectly ranked documents dj and dk is large, the sigmoid asymptotes to 1.
+Now consider the previous example with swapped labels: d1 ((cid:2)1 = 0) in position 1, d2 ((cid:2)2 = 4) in position 4, and d3 ((cid:2)3 =
+ for pair (d1, d3), the sigmoid will either be 1 for both (d1, d2) and (d1, d3), or it will be larger for (d1, d3).
+Swapping the labels has no e ect on the | NDCG|, so (d1, d3) will still get almost double the weight.
+Thus, the model will learn to separate d1 from d3 more heavily than d1 from d2, when  xing (d1, d2) is much easier.
+The LambdaRank gradient appears to emphasize global changes in ranking throughout learning, instead of targeting easier, more local adjustments.
+In addition, focusing on global changes could be risky, in particular if, say, d3 has an incorrect label.
+More evidence that learning at the top of the list is unable to signi cantly improve can be seen from Figure 4, which tion of changes in ranking that occur in the top 3 positions versus across the entire ranking, averaged across all training queries.
+After 100 iterations, less than 3% of changes occur in the top 3 positions, while there are between 5% and 15% rank changes across the whole list.
+In summary, we have identi ed two related e ects of  (L) on learning:
+ relevant documents, thus Fixing what isn t broken,
+ local ones, thus Not giving up on lost causes.
+-10 8 6 4 Sigmoid RankNet
+
+
+
+
+ 2 delta scores
+ Since both of these e ects arise in later stages of learning, our solution is to gradually modify the  gradients to encourage learning to correctly rank the top of the list.
+To make this transition smooth, we propose an iteration-dependent linear combination of two  gradients that adjusts the weight wm with each boosting iteration m: + wm  (S), (12) where  (L) is the LambdaRank gradient,  (S) is a new gradient, and wm   [0, 1].
+In the next section, we de ne  (S), which aims to address the aforementioned challenges and optimize more directly for NDCG@3.
+ m = (1   wm)  (L) The e ects discussed above partially arise from the cross-entropy cost used in the objective function of LambdaRank and LambdaMART (Eq 2).
+The derivative of the cost is a sigmoid (Eq 3) and is plotted in Figure 5.
+As the di erence in scores increases for an incorrectly ranked pair, the derivative approaches 1.
+Thus, pairs that are further apart have larger  gradients, causing the model to concentrate on  x-ing them.
+We thus need a cost whose derivative decreases as the di erence in scores becomes signi cantly large.
+One choice is a sigmoid:
+ jk =
+ 1 + exp(sj   sk +  ) , (13) where   is the center (mean) of the sigmoid.
+Di erentiating this objective with respect to score di erence (ignoring the sign), we get a weighted exponential:
+ jk  ojk
+ jk  sj = = eojk+  (1 + eojk+ )2 , (14) also plotted in Figure 5.
+Note that when ojk > 0, the derivative (Eq 14) drops o  similarly to the derivative of O(L) (Eq
+ zero as desired.
+Given a document with score sj, the new function will have a neighborhood of [sj       , sj     + ] where the derivative is nonzero, and the further we move from the center sj     of this neighborhood, the smaller the gradient becomes.
+So this objective will strongly encourage local moves in ranking.
+The corresponding  gradient  (S) can be de ned as follows: jk = | NDCG@T (sj, sk)|  (S) (15) However, we showed earlier that the | NDCG| weight is larger for pairs of documents that are ranked further apart.
+(1 + eojk+ )2 eojk+  .
+Figure 5: Plots of the derviatives of the two objectives: O(L) (Eq 3, black circle) and O(C) with   = 0 (Eq 14, blue square), both without the NDCG difference component.
+On the x-axis is the di erence in scores ojk; it is assumed that (cid:2)j > (cid:2)k and document dj should be ranked higher than document dk.
+This weight could counteract the signal from the the sigmoid cost and prefer documents far away from the center of the neighborhood.
+A potential way to address this problem is to raise the truncation level to 3 in the  gradient:  (S@3) jk = | NDCG@3(sj, sk)| eojk+  (1 + eojk+ )2 , (16) which discards pairs where both documents are ranked lower than 3; combining this with the sigmoid cost will result in nonzero gradients only for documents whose scores are close to scores of the documents in the top 3 positions.
+Below position 3, NDCG@3 no longer depends on the order of the documents.
+Using our example with d1 ((cid:2)1 = 0) in position 1, d2 ((cid:2)2 = 4) in position 4 and d3 ((cid:2)3 = 4) in position 50, we now have that: | NDCG@3(s1, s2)| = | NDCG@3(s1, s3)| =
+
+
+
+
+ log(2)
+ log(2) = =
+
+
+
+ , .
+Since the derivative of the sigmoid will be signi cantly larger for pair (d1, d2), the  s will guide the model to swap d1 and d2.
+We have thus created an objective and corresponding  gradient which concentrates on the top of the ranked list and emphasizes local changes.
+Note, however, that using  (S@3) may su er from too few training pairs, thus it may still be advantageous to use  (S) over  (S@3).
+LambdaMART uses the second derivative of the cost in a Newton step that scales each leaf value in each weak learner.
+With the new cost, however, the second derivative becomes jk = | NDCG@T (sj, sk)| eojk+ (eojk+    1)  (S) .
+(1 + eojk+ )3 Since the di erence in scores can be positive or negative, eojk+    1 can be positive or negative; this makes it di cult to control the sign of the gradients when the average step place the Newton step with standard gradient descent when training with the iteration-dependent   (Eq 12).
+In order to preserve the scale-independence, we normalize the  j s for each query by dividing them by their standard deviation.
+We conducted our experiments on a large real-world web dataset.
+The queries were sampled from the user query logs of a commercial search engine, along with roughly 150 200 corresponding URLs per query.
+We divided the data into train/valid/test sets of size 108K/13.5K/13.5K queries, respectively.
+Each query-URL pair has 860 features, a human relevance label (cid:2)   {0, .
+.
+.
+, 4}, and two types of click labels c   [0, 1].
+The click label for a query-document pair q-d is assigned the click-through rate computed over many users, where a click is when a user clicks on d after entering either (1) a query equivalent to q, denoted by =, or (2) a query similar or equal to q, denoted by  .
+To reduce the position bias for the click labels, we used the last clicks (document which was clicked on last during the user session) to measure the click-through rate for each document.
+This method provides a better indication of relevance than aggregating all clicks for each document.
+Typically, the fact that the user stopped browsing after clicking on a particular document often indicates that s/he was satis ed with that document.
+Several of the 860 features used for training were functions of click-through rate.
+Typically, learning from features that encode the target label assignments would result in a model that severely over ts to the training data, essentially memorizing the labels by learning only from those features.
+However, in this case we have two sets of target labels and have enforced the constraint that NDCG must not change signi cantly.
+This constraint forces the model to generalize because the trivial mapping from click features to labels would perform very poorly on the primary NDCG objective.
+Moreover, since click-through rates are available for many documents at test time, we want to leverage this information when making model predictions.
+We do, however, remove those features from the model that encode the label exactly or near exactly in order to learn a more general model.
+For each experiment, we performed extensive parameter sweeps over the LambdaMART parameters and the parameters of our weighted  gradients.
+For each model, we set the number of leaves to 30, the number of boosting iterations to 1000, and swept two values of the learning rate (0.2, 0.5) and three values of the number of documents required to fall in a given leaf node (6000, 8000, 10000).
+We also swept the parameters of each weighted objective function, as described in the text below.
+The best parameters for each model were determined based on the best NDCG@3 accuracy on the validation set.
+Our sweeps were extensive, and showed that relative accuracy among the models was fairly robust to parameter settings.
+Results are reported on the held-out test set.
+We report statistical signi cance using a paired t-test at the 95% con dence level, where we calculate the accuracy di erences between two models on each query in our 13.5K test set and then compute the standard error.
+We compare the standard error of the di erences against the mean di erence; the model is signi cantly better if the ratio of the mean to the standard error is greater than 1.96.
+Iteration t exp(-5/t) exp(-10/t) exp(-20/t) 0.01*t 0.02*t 0.04*t
+
+
+
+ Figure 6: Examples of exponential and linear functions for three di erent values of  .
+We  rst report results on learning to optimize for the graded measure using a graded  gradient (Eq 10), with NDCG (on labels L) as the tier-one measure and CNDCG (on labels C) as the tier-two measure.
+We swept over w   {0.01, 0.1, 0.2, 0.3, 0.4, 0.5}.
+Table 1 shows results from training LambdaMART using  (L) versus using the graded  , for two di erent sources of click labels (with the Newton step).
+The results indicate that optimizing for the graded objective, in the case of both click label sources, yields equivalent NDCG scores to the baseline, while signi cantly improving CNDCG, at all truncation levels.
+Notably, the CNDCG scores increase by as much as 3 5 points at all truncations.
+We next report results on our iteration-dependent objective which uses an iteration-dependent  gradient (Eq 12), where the two objectives are the LambdaRank objective O(L) and the sigmoid objective O(S) (both use labels L).
+The starting weight w0 was determined based on accuracy on the validation set, after sweeping over w0   {0.1, 0.25, 0.5}.
+We experimented with two methods of increasing wm, exponential and linear, wm = wm 1 + exp( /m), and wm = wm 1 +  , respectively, where the rate of increase   was chosen based on accuracy on the validation set, after sweeping over     {100, 250} (exponential) and     {0.1, 0.01, 0.001} (linear), respectively.
+Figure 6 shows examples of exponential and linear functions for di erent values of   as the numbers of boosting iterations increases.
+The results for both linear and exponential methods are shown in Table 2.
+Firstly, it is notable that the baseline using gradient descent signi cantly outperforms the baseline using the Newton step, at all truncations except NDCG@1 and NDCG@2.
+Secondly, we  nd that using all truncation levels for learning,  (S), in our iteration-dependent  gradient signi cantly beats using  (S@3).
+Thirdly, training with the iteration-dependent   based on  (L) and  (S) (denoted  (L) +  (S)) is signi cantly better than both the gradient-descent baseline and the Newton-step baseline at all truncations except NDCG@1 and NDCG@2.
+Finally, re-of click labels are considered: = and  .
+LambdaMART is trained using the Newton step (N.) in both cases.
+Bold indicates statistical signi cance of the graded objective over the baseline at the 95% con dence level.
+Click Method =   Measure @1
+ Baseline (N.)
+  (L) +  (C) (N.) NDCG
+ Baseline (N.)
+  (L) +  (C) (N.) CNDCG 43.11
+ Baseline (N.)
+  (L) +  (C)(N.) NDCG
+ Baseline (N.)
+  (L) +  (C) (N.) CNDCG 53.80 @2
+
+
+
+
+
+
+
+ @3
+
+
+
+
+
+
+
+ @4
+
+
+
+
+
+
+
+ @5
+
+
+
+
+
+
+
+ @6
+
+
+
+
+
+
+
+ @7
+
+
+
+
+
+
+
+ @8
+
+
+
+
+
+
+
+ @9
+
+
+
+
+
+
+
+ @10
+
+
+
+
+
+
+
+ Table 2: NDCG results on the 13.5K test set for LambdaMART (baseline; both Newton and gradient descent) versus LambdaMART using the iteration-dependent objective for two combinations: (1)  (L) and  (S) and (2)  (L) and  (S@3).
+Two methods of weight adjustment are considered: exponential and linear.
+Signi cant di erences are indicated in bold (95% con dence level) and in italic (90% con dence level).
+Signi cance of the baseline gradient descent model is over the baseline Newton model.
+Signi cance of  (L) +  (S) models is over the baseline gradient descent model.
+Signi cance of  (L) +  (S@3) models is omitted since they are consistently worse than the  (L) +  (S) models.
+Method Baseline (Newton) Baseline (Gradient Descent)  (L) +  (S), Exponential  (L) +  (S), Linear  (L) +  (S@3), Exponential  (L) +  (S@3), Linear @1
+
+
+
+
+
+ @2
+
+
+
+
+
+ @3
+
+
+
+
+
+ @4
+
+
+
+
+
+ @5
+
+
+
+
+
+ @6
+
+
+
+
+
+ @7
+
+
+
+
+
+ @8
+
+
+
+
+
+ @9
+
+
+
+
+
+ @10
+
+
+
+
+
+ sults indicate that the two methods of weight adjustment, exponential and linear, produce equivalent ranking models, with the exception that the linear adjustment additionally results in a signi cant (at the 90% level) gain at NDCG@2 over the gradient descent baseline.
+We also conduct experiments to determine if in the presence of smaller amounts of training data (for example in emerging search markets, where less labeled training data is available), training LambdaMART using the iteration-dependent gradients o ers accuracy improvements over the baseline.
+Figures 7(a) 7(c) show NDCG@1, 3, 10 results on the 13.5K test set from training on varying percentages of the 108K training data.
+The results indicate that with even small amounts of training data, the iteration-depedent objective yields signi cant improvements over the baseline methods, at various truncation levels.
+Results also indicate, as previously shown, that the LambdaMART baseline using gradient descent outperforms the LambdaMART baseline using the Newton step.
+We have shown how to extend the   family of functions and apply our approaches to a state-of-the-art ranker, Lamb-daMART, in two ways:  rst, we showed how graded measures can be learned using our   functions.
+This is an increasingly important issue for commercial search engines, as they typically want to optimize for several evaluation measures simultaneously, and simple scorecards of measures are not easily comparable.
+Second, we adjusted the   functions to solve two problems that we showed occur with the current LambdaMART  gradient: the ranking model should stop trying to further separate documents that are already correctly ordered and well-separated, as well as ranking mistakes that persist long into training.
+The application of these ideas, all of which are based on training with multiple measures, resulted in ranking models that gave signi cant improvements in ranking accuracy over the baseline state-of-the-art ranker LambdaMART.
+Future work includes extending our multi-tiered learning to include other standard IR measures.
+One can also imagine, as discussed in the introduction, having a triplet of measures, or perhaps an entire scorecard of measures, and thus extending learning to several measures of interest.
+We would also like to determine ways to learn for multiple measures when not all of the training samples have labels from the various sources.
+For example, click information is readily available on many pages that lack a human judgment.
+Developing a principled approach to learning for multiple measures employing several (sometimes missing) label sources is a promising direction for future research.

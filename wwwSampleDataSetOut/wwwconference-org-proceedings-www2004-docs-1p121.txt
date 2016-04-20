@@ -1,0 +1,1676 @@
+Session Level Techniques for Improving Web Browsing
+
+Performance on Wireless Links
+
+Pablo Rodriguez
+Microsoft Research
+
+Cambridge, UK
+
+Sarit Mukherjee
+Bell Laboratories
+
+Holmdel, NJ
+
+Sampath Rangarajan
+
+Bell Laboratories
+
+Holmdel, NJ
+
+pablo@microsoft.com
+
+sarit@bell-labs.com
+
+sampath@bell-labs.com
+
+ABSTRACT
+Recent observations through experiments that we have performed
+in current third generation wireless networks have revealed that the
+achieved throughput over wireless links varies widely depending on
+the application. In particular, the throughput achieved by ﬁle trans-
+fer application (FTP) and web browsing application (HTTP) are
+quite different. The throughput achieved over a HTTP session is
+much lower than that achieved over an FTP session. The reason for
+the lower HTTP throughput is that the HTTP protocol is affected
+by the large Round-Trip Time (RTT) across Wireless links. HTTP
+transfers require multiple TCP connections and DNS lookups be-
+fore a HTTP page can be displayed. Each TCP connection requires
+several RTTs to fully open the TCP send window and each DNS
+lookup requires several RTTs before resolving the domain name to
+IP mapping. These TCP/DNS RTTs signiﬁcantly degrade the per-
+formance of HTTP over wireless links. To overcome these prob-
+lems, we have developed session level optimization techniques to
+enhance HTTP download mechanisms. These techniques (a) min-
+imize the number of DNS lookups over the wireless link and (b)
+minimize the number of TCP connections opened by the browser.
+These optimizations bridge the mismatch caused by wireless links
+between application-level protocols (such as HTTP) and transport-
+level protocols (such as TCP). Our solutions do not require any
+client-side software and can be deployed transparently on a service
+provider network to provide 30 (cid:0) 50% decrease in end-to-end user
+perceived latency and 50(cid:0)100% increase in data throughput across
+wireless links for HTTP sessions.
+
+Categories and Subject Descriptors
+C.2 [Computer Systems Organization]: Computer-Communication
+Networks; H.4.m [Information Systems]: Miscellaneous
+
+General Terms
+Performance
+
+Keywords
+Wireless, Web, Optimizations
+
+1.
+
+INTRODUCTION
+
+In current third generation wireless networks, the wireless links
+have very large and variable Round-Trip Times (RTTs) [10]. This
+is due to the need for buffering and retransmissions from the base
+Copyright is held by the author/owner(s).
+WWW2004, May 17–22, 2004, New York, New York, USA.
+ACM 1-58113-844-X/04/0005.
+
+station to the mobile node (MN) at the link-layer to compensate
+for packet losses [2]. Experiments conducted on deployed systems
+show that the RTTs experienced across the wireless link vary from
+400 msec up to 1 sec. Because of this, user experienced throughput
+for speciﬁc applications is much lower than the maximum possible
+physical layer data rate. For example, with CDMA2000-1xRTT [1]
+physical layer, the maximum physical layer data rate is 153.6 Kbps.
+With this, the maximum TCP throughput (with protocol overhead)
+works out to be 128 Kbps. But our measurements have shown
+that for FTP, the throughput achieved in an unloaded CDMA2000-
+1xRTT cell is in the range of 100 (cid:0) 120 Kbps, and for HTTP the
+throughput is much lower and is in the range of 50 (cid:0) 70 Kbps. With
+FTP connections, the throughput does approach that of raw TCP as
+the connections are usually long-lived. But HTTP throughput is
+degraded mainly due to the following two reasons.
+
+DNS Queries: Popular web pages usually contain several em-
+bedded objects hosted under different domain names. For example,
+sites such as www.weather.com, ﬁnance.cnn.com, etc. have embed-
+ded objects that point to many distinct domains. This behavior is
+seen even with URL-rewritten [25] pages where the embedded ob-
+jects are rewritten to point to Content Delivery Network’s (CDN)
+server. For example, the embedded URLs in the top level pages for
+Shari’s Berries (www.berries.com) and Britannica (www.britannica.
+com), both of which are URL-rewritten, point to sixteen different
+Akamai domain names. The web browser performs DNS queries
+for these domain names, each of which incurs one to three seconds
+delay. On top of this, the time-to-live (TTL) parameter for DNS
+responses to the popular web sites is kept small so that DNS based
+load-balancing to one of multiple servers is possible [22]. With
+web sites that are served through CDNs, this is certainly a require-
+ment so that the CDN service provider can redirect requests to an
+“optimal” server in their network. A smaller TTL suppresses the
+advantages of DNS caching and leads to the browser making very
+frequent queries to the DNS server to resolve domain names. For
+a better discussion on the overhead of DNS queries on Web trafﬁc,
+please refer to [22, 16].
+
+TCP Connections: The web browser at the MN opens at least
+one (possibly more) TCP connection to each domain name referred
+to by the embedded objects in a top level web page. Thus, even if
+the browser and the server support persistent connections (HTTP/1.0
+keep-alive or HTTP/1.1), given that at least one persistent HTTP
+connection has to be opened to each distinct domain, if the number
+of distinct domain names that host the embedded objects is large,
+the number of TCP connections opened is also substantial.
+
+The above behavior affects web browsing performance in wire-
+line networks as well but in wireless networks, the effect is ampli-
+ﬁed due to the large and varying RTT across the wireless link. A
+
+121large RTT increases the delay incurred by DNS lookups; with very
+many DNS lookups per web page, this delay increase is substantial
+to affect the user perceived performance. A large RTT also leads
+to an increase in TCP connection establishment and the ramp up
+delay. Again, with the need to establish many TCP connections
+per web page, this affects user perceived performance. Thus, TCP
+setup delays of a large number of TCP connections and delays due
+to DNS queries can account for a signiﬁcant overhead leading to
+decreased HTTP throughput and degraded user perceived perfor-
+mance. Notice that the FTP application, whose throughput is close
+to the theoretical maximum, performs only one DNS lookup for
+the server name and uses only one long-lived TCP connection to
+transfer the data.
+
+The focus of this paper is to design solutions to mitigate the ef-
+fect due to the above mentioned problems. We propose session
+level optimization techniques to enhance the current HTTP down-
+load mechanisms, to “mimic” the behavior of FTP over the wire-
+less link to achieve better throughput. These techniques strive to
+(a) minimize the number of DNS requests made across the wire-
+less links and (b) minimize the number of distinct TCP connections
+opened across the wireless links when web pages are downloaded.
+In other words, most of the DNS lookups and short-lived TCP con-
+nections are pushed to the wireline part of the network, making the
+wireless part behave like an FTP session. The solutions are HTTP
+standards compliant and do not require any changes to be made to
+either web clients, web servers or DNS servers. We propose how
+our solutions can be deployed transparently (to the web clients, the
+web servers and the DNS servers) on a service provider network
+and how they can gracefully handle client mobility. Through ex-
+periments we demonstrate that the solutions can provide 30 (cid:0) 50%
+decrease in end-to-end user perceived latency and 50 (cid:0) 100% in-
+crease in data throughput across wireless links for HTTP sessions.
+We now discuss how our schemes ﬁt within the realm of a mul-
+titude of solutions that have been proposed to improve data perfor-
+mance over wireless links. As shown in Figure 1, solutions have
+
+Application Layer Optimizations
+
+(e.g. compression)
+
+Session Layer Optimizations
+
+(e.g. URL Rewrite, DNS Rewrite)
+
+Transport Layer Optimizations
+
+(e.g. TCP optimizations, ACK regulator)
+
+Physical/Link Layer optimizations
+
+(e.g. QoS, FEC)
+
+Figure 1: Different data optimization solutions.
+
+been proposed at various levels of the protocol stack, such as the
+physical/link layer (MAC optimizations) [20, 6, 5], the transport
+layer (TCP optimizations) [3, 4, 13, 9, 10, 7, 23] and the applica-
+tion layer (data compression) [15, 14].
+
+In the literature, physical/link/MAC layer enhancements have
+been proposed that aim to provide improved scheduling algorithms
+over the wireless links to increase the total system throughput [5,
+6], provide fairness or priorities between the different users [20, 6],
+assure minimum transmission rates to each user [5] and incorpo-
+rate forward error correction on the link to reduce retransmissions.
+
+The scheduling algorithms aim at controlling the system or user
+throughput at the physical layer.
+
+For data applications, it is equally important to consider the data
+performance at higher layers in the protocol stack, especially at
+the transport (TCP/IP) layer. It has been observed that the round
+trip time for TCP packets can abruptly increase and lead to de-
+lay spikes (due to lower-layer retransmissions, channel condition
+changes, handoff delays or priority scheduling) over wireless links
+[10]. These delay spikes may cause TCP timeout, which triggers
+the congestion control mechanism in TCP, leading to a decreased
+TCP window size and consequently low throughput performance
+[10, 7, 23]. Techniques such as the ACK Regulator [10] or Flow
+Aggregation [9] have been proposed to minimize the impact of
+burstiness in TCP. The motivation for these solutions is to increase
+fairness, and avoid buffer overﬂow and the resulting congestion
+avoidance mechanism of TCP.
+
+At the application layer several data compression techniques have
+been proposed [15, 14, 12] to increase the effective throughput of
+wireless links. Examples include degrading the quality of an im-
+age, reducing the number of colors, compressing texts, etc. To
+overcome some of the application-level performance problems of
+HTTP in wireless links, several proposals have suggested the use
+of a special client-side software to implement new wireless speciﬁc
+protocols [18, 8] or client-side includes to minimize the amount
+of data sent over the last mile [21]. Other application-level opti-
+mizations try to improve how application-level protocols such as
+HTTP perform in these wireless links. Examples include the use of
+HTTP1.1 request pipelining [8].
+
+The techniques proposed in this paper can be thought to fall be-
+tween application layer optimizations and transport layer optimiza-
+tions and hence can be categorized as session layer optimizations
+(see Figure 1). These solutions are independent of optimizations at
+other layers and are complementary to those solutions. To the best
+of our knowledge, this is the ﬁrst research work that proposes to
+enhance web browsing performance over wireless link using ses-
+sion layer techniques without adding any client and/or server side
+components.
+
+The rest of the paper is organized as follows. The next section
+explores some obvious solutions to the HTTP throughput degra-
+dation problem across wireless links and discusses their shortcom-
+ings. Section 3 describes our session level optimization techniques.
+Section 4 discusses experimental results that illustrate the beneﬁts
+of these optimization techniques. Numerical results show the im-
+provements achieved by these techniques on user perceived delay
+and throughput during HTTP downloads. Section 5 discusses how
+the proposed scheme works with client mobility. Conclusions are
+presented in Section 6.
+
+2. POSSIBLE TECHNIQUES FOR SESSION
+
+LEVEL OPTIMIZATIONS
+
+In the previous section, we identiﬁed TCP setup delays and de-
+lays due to DNS queries as two major sources of decreased HTTP
+throughput and increased user perceived response times. Before
+we discuss our session level optimization techniques, we consider
+other possible obvious solutions to solve these problems and ex-
+plain their shortcomings.
+
+2.1 Explicit Proxy Conﬁguration
+
+The web browsers can be conﬁgured explicitly to point to a proxy
+cache which is on the wireline network. With such a conﬁguration,
+(a) once a DNS lookup is performed to map the proxy’s domain
+name to an IP address, no more DNS lookups are needed (as long
+
+122as the DNS cache at the MN does not time out; this timeout can
+be made large using a large TTL for the DNS entry). The DNS
+lookups required to identify the IP addresses of the domains that
+host the embedded objects are now pushed to the proxy which will
+perform these operations over the wireline network, and (b) the
+browser needs to open TCP connections only to the proxy. With
+support for persistent connections, only one or a few (for paral-
+lelism) TCP connections will be opened and these will be kept per-
+sistent over multiple top level web page downloads as well as em-
+bedded object downloads. The overhead of opening multiple TCP
+connections to different domains is now pushed to the proxy.
+
+However, explicit proxy conﬁguration is not a viable practical
+option as service providers must setup and maintain client’s browser
+settings to point to the proxy. This is a management overhead that
+the service providers are not willing to take up. Another concern
+with an explicit proxy conﬁguration is that this provides the user
+the ﬂexibility to reconﬁgure the proxy setup in the browser and not
+go through the service provider’s proxy. This is also a security con-
+cern because the service providers implement URL ﬁltering and
+other security mechanisms at the proxy and being able to bypass
+the proxy defeats these security mechanisms. One possibility is
+for the browser to automatically detect and conﬁgure a proxy. But
+there is no standard solution for automatic proxy conﬁguration.
+
+The most common approach for request redirection is the use of a
+transparent proxy. With this approach, client trafﬁc is transparently
+redirected to a proxy using a Layer 4 switch [19]. More than 90%
+of all proxy deployments happen in transparent mode [11]. But
+redirecting trafﬁc to a transparent proxy does not solve the afore-
+mentioned problems due to TCP setup and DNS lookups. With a
+transparent conﬁguration, the browser still thinks that it is directly
+connecting to a server and hence performs all the DNS lookups that
+it usually performs and opens the same number of TCP connections
+as it would without a proxy; now, all these TCP connections are ter-
+minated at the transparent proxy without the browser’s knowledge,
+but the TCP setup delay across the wireless link is still the same.
+
+Our solutions discussed in Section 3 permit the deployment of
+transparent proxies (i.e., no client conﬁguration required), while
+enjoying the beneﬁts of an explicit proxy conﬁguration, e.g., no
+DNS lookups and few TCP connections.
+
+2.2 Bundling Content
+
+Another solution is to bundle content at the server and ensure that
+all embedded objects in a single top-level page are downloaded in a
+single ﬁle. The content could either be bundled at the server (which
+is not as efﬁcient, as different domains host different embedded ob-
+jects, and only content hosted within a domain can be bundled) or
+a web proxy can pre-fetch all objects within a web page, create a
+single large ﬁle, and transfer it to the web browser. The browser
+needs to break up the ﬁle into individual objects before display-
+ing them. The goal here is to download one single ﬁle that carries
+all the embedded objects and thereby try to achieve a throughput
+performance across a wireless link that matches FTP performance.
+There are two main problems with this approach. The ﬁrst is
+that traditional proxies are not able to bundle content. Therefore a
+proxy that can bundle contents of a web page has to be built and
+deployed. Second, content bundling requires installing a client side
+component to break up the page into its individual components be-
+fore passing them to the browser for display.
+
+Both the aforementioned possible solutions can be used to en-
+hance HTTP downloads. However, the solutions are not very prac-
+tical. The goal of the session level optimization techniques pre-
+sented in this paper is to ensure that the web browser fetches all
+embedded objects from a single proxy without the need to explic-
+
+itly conﬁgure the browsers to point to the proxy. At the same time,
+our solutions will have the same beneﬁts as an explicit proxy solu-
+tion in that only the domain name of the proxy is looked up at the
+DNS server and only one or a few TCP connections to the proxy is
+opened which is then reused for multiple downloads. The solutions
+work with any standard browser (e.g. Netscape, Internet Explorer)
+and does not require any client-side modiﬁcation. The next section
+details the session level optimization techniques.
+
+3. SESSION LEVEL OPTIMIZATION
+
+TECHNIQUES
+
+In this section, we discuss two different solutions for session-
+level optimization. One solution is based on URL rewriting and
+the other is based on DNS response rewriting. Each of these solu-
+tions has its own advantages and disadvantages. We discuss them
+qualitatively after presenting the solutions. In the remainder of the
+paper, the terms Mobile Node, Mobile/Wireless Client and Mobile
+User are used interchangeably.
+
+3.1 URL Rewriting
+
+Currently, some Content Distribution Network (CDN) service
+providers use URL rewriting to redirect requests for embedded ob-
+jects to servers in the CDN [25]. The CDN service providers rewrite
+content on the origin servers by preﬁxing the URLs that refer to the
+embedded objects with the domain name of the CDN [25]. The
+browser gets a top level page from the origin server but because
+the embedded object URLs are rewritten to point to the CDN, to
+fetch the embedded objects, the browser sends DNS requests to re-
+solve domain names within the CDN domain. These requests are
+resolved by a DNS server in the CDN network which returns IP
+addresses of servers in the CDN network. The embedded objects
+are then fetched from these servers.
+
+The URL rewriting technique that we propose for session level
+optimization is quite similar to URL rewriting performed by CDN
+service providers except that the URL rewriting is performed closer
+to the client by a URL rewriting proxy. Further, instead of preﬁx-
+ing the URLs with domain names, the URLs are preﬁxed with the
+IP address of a caching proxy on the wireline network. The URL
+rewriting mechanism works as follows. When the browser sends a
+request to a top level page, the request as well as the response from
+the origin server are intercepted transparently by the URL rewriting
+proxy. The response is parsed by the URL rewriting proxy which
+rewrites the URLs of the embedded objects by preﬁxing them with
+the IP address of a caching proxy. The URL rewriting proxy and
+the caching proxy could be co-located or could be different entities
+on different machines.
+
+Figure 2 shows an example of this process. Assume that the
+browser retrieves the top level page from www.foo.com. The URL
+rewriting proxy transparently intercepts this page and preﬁxes the
+embedded URLs with the IP address of the caching proxy (which is
+10.0.0.12). For example http://i.cnn.net/images/plane.jpg is changed
+to http://10.0.0.12/i.cnn.net/images/plane.jpg. When the browser is
+required to fetch this embedded object, it opens a TCP connection
+to 10.0.0.12 and requests the URL i.cnn.net/images/plane.jpg. This
+is similar to a request that would be sent by the browser if it had
+been explicitly conﬁgured to connect to the caching proxy. The
+caching proxy connects to i.cnn.net to retrieve /images/plane.jpg or
+serve the object if it is locally available. Note that no DNS requests
+are made by the browser during this process as the IP address is
+preﬁxed to the embedded URLs. The only DNS request made is
+the one to resolve the domain name of the server that hosts the top
+level page. The DNS request for i.cnn.net is made by the caching
+
+123ZZZ(cid:17)IRR(cid:17)FRP
+
+L(cid:17)FQQ(cid:17)QHW LPDJHV(cid:17)\DKRR(cid:17)FRP
+
+ZZZ(cid:17)QHZV(cid:17)FRP
+
+<img src = http://i.cnn.net/images/plane.jpg>
+<img src = http:// www.foo.com/latest.gif>
+<img src = http:// images.yahoo.com/news/world.jpg>
+<img src = http:// www.news.com/news/rpundup.gif>
+Original
+
+85/(cid:3)
+5HZULWLQJ(cid:3)
+3UR[\
+
+Rewritten
+
+&DFKLQJ(cid:3)
+3UR[\
+(cid:20)(cid:19)(cid:17)(cid:19)(cid:17)(cid:19)(cid:17)(cid:20)(cid:21)
+
+<img src = http:// 10.0.0.12/i.cnn.net/plane.jpg>
+<img src = http:// 10.0.0.12/www.foo.com/views/latest.gif>
+<img src = http:// 10.0.0.12/images.yahoo.com/news/world.jpg>
+<img src = http:// 10.0.0.12/www.news.com/news/roundup.gif>
+
+Figure 2: Example of URL rewriting.
+
+proxy, if need be, over the wireline network.
+
+Once a TCP connection is established to 10.0.0.12, the browser
+uses this connection to retrieve other embedded objects (i.e., the
+gif and jpg images as shown in Figure 2). Other top level pages
+are rewritten to preﬁx embedded URLs with the same IP address
+and thus more objects are retrieved through the same connection
+until the connection is teared down for some reason; thus TCP con-
+nection setup across the wireless link is restricted to only one (or
+a few if connections are opened in parallel) TCP connection to the
+caching proxy. As evident from the description, with URL rewrite,
+all the embedded objects in all top level pages from all web sites
+come from the same caching proxy.
+3.2 DNS Rewriting
+
+This mechanism for session level optimization rewrites the DNS
+responses to point to the caching proxy. When the browser makes
+a DNS request for a domain name (both to fetch top level pages as
+well as embedded objects within the pages) the DNS responses are
+intercepted by a DNS rewriting proxy. The DNS rewriting proxy
+and the caching proxy could be co-located or could be different
+entities on different machines. A DNS response may contain a list
+of IP addresses. The IP address of the caching proxy is added to the
+top of the list (so that this is the ﬁrst IP address that the browser tries
+to connect to) and the original IP addresses in the list (that point to
+origin server IP addresses) are left as they are. This is done so that
+if the wireless client has roamed out and is not able to connect to
+the caching proxy, it can try to connect to one of the origin server
+IP addresses. We will consider in more detail the impact of client
+mobility in Section 5.
+
+At the same time, the time-to-live (TTL) for the caching proxy IP
+address is set to a large value so that this is cached at the client for a
+reasonably long interval. When the browser receives the rewritten
+DNS response, it connects to the IP address of the caching proxy
+to retrieve the web pages. Because all DNS responses are rewritten
+to add the IP address of the same caching proxy to the top of the
+list, the browser opens a TCP connection to this caching proxy and
+reuses this connection to fetch multiple top level pages and all em-
+bedded objects contained within them. Note that unlike the URL
+rewriting mechanism, with DNS rewriting, DNS lookups are made
+for the domain names of the embedded URLs, but these are made
+
+only once and are cached and reused.
+
+When DNS responses are rewritten, a question arises as to which
+DNS responses should be rewritten. DNS requests do not carry
+TCP port numbers and hence it is not possible to identify DNS
+requests that correspond to HTTP requests from those that corre-
+spond to other applications such as FTP and telnet. We suggest
+that the DNS rewriting proxy consult a pre-conﬁgured list of do-
+main names (similar in concept to lists used for applications such
+as content ﬁltering [24]) to decide which DNS responses should be
+rewritten. Only if a domain name is found in this list will the cor-
+responding DNS response be rewritten. In addition DNS responses
+for any domain name that starts with a “www” may also be rewrit-
+ten.
+
+,3(cid:29)(cid:3)(cid:20)(cid:19)(cid:17)(cid:19)(cid:17)(cid:19)(cid:17)(cid:20)(cid:21)
+(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)(cid:16)
+*(7(cid:3)(cid:18)LQGH[(cid:17)KWPO(cid:3)
++773(cid:18)(cid:20)(cid:17)(cid:20)
++RVW(cid:29)(cid:3)ZZZ(cid:17)IRR(cid:17)FRP
+(cid:11)(cid:24)(cid:12)
+(cid:11)(cid:20)(cid:12)
+1DPH(cid:29)(cid:3)ZZZ(cid:17)IRR(cid:17)FRP
+(cid:11)(cid:23)(cid:12)
+,3(cid:29)(cid:3)"""
+1DPH(cid:29)(cid:3)ZZZ(cid:17)IRR(cid:17)FRP
+,3(cid:29)(cid:3)(cid:20)(cid:19)(cid:17)(cid:19)(cid:17)(cid:19)(cid:17)(cid:20)(cid:21)
+77/(cid:29)(cid:3)(cid:20)(cid:3)GD\
+,3(cid:29)(cid:3)(cid:20)(cid:28)(cid:22)(cid:17)(cid:20)(cid:21)(cid:22)(cid:17)(cid:21)(cid:24)(cid:17)(cid:20)(cid:19)
+77/(cid:29)(cid:3)(cid:20)(cid:19)(cid:3)VHF
+
+(cid:11)(cid:25)(cid:12)
+
+5HZULWLQJ(cid:3)
+
+’16(cid:3)
+3UR[\
+
+ZZZ(cid:17)IRR(cid:17)FRP
+(cid:20)(cid:28)(cid:22)(cid:17)(cid:20)(cid:21)(cid:22)(cid:17)(cid:21)(cid:24)(cid:17)(cid:20)(cid:19)
+
+1DPH(cid:29)(cid:3)ZZZ(cid:17)IRR(cid:17)FRP
+,3(cid:29)(cid:3)"""
+
+&DFKLQJ(cid:3)
+3UR[\
+(cid:20)(cid:19)(cid:17)(cid:19)(cid:17)(cid:19)(cid:17)(cid:20)(cid:21)
+
+(cid:11)(cid:28)(cid:12)
+(cid:11)(cid:26)(cid:12)
+(cid:11)(cid:27)(cid:12)
+1DPH(cid:29)(cid:3)ZZZ(cid:17)IRR(cid:17)FRP
+,3(cid:29)(cid:3)(cid:20)(cid:28)(cid:22)(cid:17)(cid:20)(cid:21)(cid:22)(cid:17)(cid:21)(cid:24)(cid:17)(cid:20)(cid:19)
+77/(cid:29)(cid:3)(cid:20)(cid:19)(cid:3)VHF
+1DPH(cid:29)(cid:3)ZZZ(cid:17)IRR(cid:17)FRP
+,3(cid:29)(cid:3)"""
+
+(cid:11)(cid:21)(cid:12)
+(cid:11)(cid:22)(cid:12)
+1DPH(cid:29)(cid:3)ZZZ(cid:17)IRR(cid:17)FRP
+,3(cid:29)(cid:3)(cid:20)(cid:28)(cid:22)(cid:17)(cid:20)(cid:21)(cid:22)(cid:17)(cid:21)(cid:24)(cid:17)(cid:20)(cid:19)
+77/(cid:29)(cid:3)(cid:20)(cid:19)(cid:3)VHF
+
+’16(cid:3)6HUYHU
+
+Figure 3: Example of DNS rewriting.
+
+Figure 3 illustrates the DNS rewriting process where the browser
+
+retrieves http://www.foo.com/index.html. The browser makes a DNS
+request to the DNS server to resolve www.foo.com. The DNS
+server responds with the IP address 193.123.25.10 with a TTL of
+10 seconds. The DNS rewriting proxy intercepts this response
+and adds the IP address 10.0.0.12 (which is the IP address of the
+caching proxy) and sets the TTL for this entry to be 1 day. The
+original IP address is left as is. When the browser receives this re-
+sponse, it makes a request to 10.0.0.12 to fetch /index.html. The
+Host header in the HTTP request contains the original domain
+name www.foo.com. The caching proxy will connect to www.foo.
+com to retrieve /index.html and send it to the client or serve the
+object to the client if it is available locally. As shown in the ﬁgure,
+when the caching proxy makes a DNS request to the DNS server to
+resolve the domain name, the DNS response does not go through
+the DNS rewriting proxy and is not rewritten. Only DNS requests
+from the MN will lead to DNS responses being rewritten to add the
+IP address 10.0.0.12 and so the MN will fetch all objects through
+the caching proxy and can use a persistent connection (or a few
+connections) to the caching proxy to fetch all the objects.
+3.3 Comparison of Different Techniques
+
+Table 1 compares the two ﬂavors of session level optimization
+techniques (URL Rewriting and DNS Rewriting) with Explicit Proxy
+and Content Bundling techniques discussed earlier. The two major
+issues that favor URL rewriting and DNS rewriting over the other
+two techniques are the ﬁrst two shown in the table.
+
+4. EXPERIMENTAL RESULTS
+
+124Free from browser
+conﬁguration
+Client-side compo-
+nent not required
+Works with legacy
+caching proxies
+
+Explicit URL DNS
+Proxy
+
+Content
+RW RW Bundling
+Yes
+
+No
+
+Yes
+
+No
+
+Yes
+
+Yes
+
+Yes
+
+Yes
+
+Yes
+
+Yes
+
+No
+
+No
+
+Table 1: Comparison of different techniques.
+
+We implemented prototypes of the proposed session level op-
+timization techniques in Linux and conducted some controlled ex-
+periments to measure the quantitative beneﬁts of the proposed tech-
+niques. In this section we present the experimental setup and the
+summary of the results obtained from the experiments we con-
+ducted.
+4.1 Experimental setup
+
+The experimental setup we used is shown in Figure 4. There are
+
+six components to the experimental conﬁguration.
+
+6TXLG(cid:3)
+&DFKLQJ
+3UR[\
+
+$SDFKH(cid:3):HE(cid:3)6HUYHU
+(cid:11)9LUWXDO(cid:3)+RVWLQJ(cid:12)
+
+Internet
+
+’16(cid:3)
+6HUYHU
+
+3(3
+
+(cid:11)’16B5:(cid:15)
+85/B5:(cid:12)
+
+:L’6((cid:3)
+(cid:11)(cid:20)[577(cid:12)
+
+Transparent 
+redirection
+
+&OLHQW(cid:3)0RELOH(cid:3)1RGH
+(cid:11)0R]LOOD(cid:3)%URZVHU(cid:12)
+
+Figure 4: Experimental setup.
+
+(1) Performance Enhancing Proxy (PEP): We built the DNS
+rewriting proxy and the URL rewriting proxy on Linux. Both of
+them are co-located in a machine. We use the term Performance
+Enhancing Proxy to refer to these proxies. Of course, both prox-
+ies will not be active at the same time; experiments with the DNS
+rewriting proxy and URL rewriting proxy are performed indepen-
+dently.
+
+(2) Squid Caching Proxy: We used the Squid Proxy as the caching
+proxy.
+In the case of URL rewriting, the embedded URLs are
+rewritten by PEP to point to this proxy. Similarly in the case of
+DNS rewriting, the DNS responses are rewritten by PEP to point to
+this proxy.
+
+(3) Apache Web Server: To perform the experiments with spe-
+ciﬁc web pages in a controlled environment, the top level pages
+and the embedded objects in them from the web sites were copied
+to a local machine running apache web server. To run one set of
+experiments, the top level pages from the top 100 sites were copied
+(as determined by www.hot100.com). To run another set of exper-
+iments, the top level pages from Yahoo, CNN and Britannica were
+
+copied. The statistics for these sites are:
+
+(cid:15) Yahoo (www.yahoo.com): It has 16 embedded objects hosted
+in 3 different domains. The size of the page is 74 KB. This
+constitutes a typical web site with small number of domains.
+
+(cid:15) CNN (www.cnn.com): It has 58 embedded objects hosted in
+6 different domains. The size of the page is 197 KB. This
+constitutes a typical web site with medium number of do-
+mains.
+
+(cid:15) Britannica (www.britannica.com): It has 32 embedded ob-
+jects hosted in 15 different domains. The size of the page is
+178 KB. This constitutes a typical web site with large num-
+ber of domains.
+
+In order to focus speciﬁcally on the wireless link delay character-
+istics, we downloaded and hosted all necessary objects on this web
+server located within our experimental setup. We also hosted our
+own DNS server with all necessary records to reproduce the exact
+setup of the target Web pages. The Apache Web Server was made to
+host the above three top-level domains as well as the domains that
+host the embedded objects contained within these top-level pages.
+The virtual hosting feature of the web server was used to accom-
+plish this conﬁguration. Each virtual host is assigned a different
+virtual IP address on this web server. The Squid Proxy retrieves the
+top-level pages as well as the embedded objects contained within
+these pages from this web server rather than from origin servers on
+the Internet.
+
+(4) DNS Server: This is the DNS server to which DNS requests
+from both the browser and the Squid Proxy are made. When a
+request to fetch a top-level page is made, the DNS server is made
+to return the (virtual) IP address of the web server in response to
+requests to resolve these domain names. The DNS response from
+this server to the browser (but not the response to the Squid Proxy)
+is intercepted by the DNS rewriting proxy and rewritten to add the
+IP address of the Squid Proxy.
+
+(5) Wireless Data Service Emulator (WiDSE): WiDSE [17] is a
+software emulator developed by Lucent Technologies to very ac-
+curately emulate a CDMA2000-1xRTT [1] airlink. The emulation
+environment supports multiple mobile users that connect to the em-
+ulator using Ethernet and uses data captured over Ethernet. It al-
+lows for error rates in fundamental and supplemental channels in
+both forward and reverse directions to be conﬁgured. It also allows
+for Radio Link Protocol (RLP) [2] retransmissions to be controlled.
+Further, base station scheduling is emulated. The WiDSE runs on a
+Linux PC and connects two LANs, one of which is the mobile LAN
+(the mobile users on the wireless link) and the other is the network
+LAN (wireline network). Ethernet packets from/to the mobile LAN
+to/from the network LAN are captured at the WiDSE machine and
+the entire protocol process from the mobile node to the PDSN (the
+Packet Data Service Node in a CDMA2000 network which is the
+gateway between the radio network and the IP network) is emu-
+lated. More details on WiDSE are beyond the scope of this paper.
+We use a different parameter setup on WiDSE to emulate different
+wireless link and background trafﬁc load behaviors.
+
+(6) Client Mobile Node: We use a custom instrumented Mozilla
+browser from the client to conduct the experiments. We use this
+particular browser for the availability of its source code. We instru-
+mented the browser to measure and print out the relevant statistics
+(e.g., number of TCP connections and DNS requests made, page
+download time, etc.). The browser supports persistent connections
+but not request pipelining1.
+1We experimented with other popular browsers like Internet Ex-
+
+125In a service provider deployment, HTTP sessions and DNS re-
+quests and responses from the client could always go through the
+PEP (i.e., when PEP is co-located within PDSN) or could be trans-
+parently redirected to the PEP using techniques like Layer 4 switch-
+ing [19] (i.e., when PEP is a separate network element). Note that
+secure HTTP sessions (which use port 443) are not redirected to the
+PEP cache and remain unaffected. With this setup, the web page
+download is as follows:
+
+URL rewriting: For this set of experiments, the URL rewrit-
+ing proxy of the PEP is activated. DNS requests for the domain
+names of the top level pages from the browser are responded to
+by the DNS server with the IP address of the Apache Web Server.
+The browser then makes HTTP connections to this web server to
+fetch these top level pages and these requests are transparently in-
+tercepted by the PEP. PEP forwards these requests to the Squid
+Proxy. The Squid Proxy delivers the top-level pages (after fetching
+them from the Web server if they are not locally cached) to the PEP
+which then rewrites the embedded URLs with the IP address of the
+Squid Proxy. The browser then fetches all the embedded objects
+from the Squid Proxy by opening one or a few TCP connections
+to it thereby emulating an explicitly conﬁgured proxy (these re-
+quests and responses transparently pass through the PEP as well).
+No more DNS requests are made over the wireless link. Of course,
+the Squid Proxy, if it does not have the requested object, will re-
+trieve it from the web server and issue the required DNS request(s)
+to the DNS server.
+
+DNS rewriting: For this set of experiments, the DNS rewrit-
+ing proxy of the PEP is activated. DNS requests for the top level
+pages are made from the browser to the DNS server (transparently)
+through the PEP. The DNS responses are intercepted and rewrit-
+ten by the PEP to include the IP address of the Squid Proxy. The
+browser then makes a TCP connection to the Squid Proxy to fetch
+the top level pages (these requests and responses transparently pass
+through the PEP). Following that the browser makes DNS requests
+to resolve the domain names of the embedded objects, again (trans-
+parently) through the PEP. The responses to these requests are also
+rewritten by the PEP to include the IP address of the Squid Proxy.
+The browser then fetches the embedded objects from the Squid
+Proxy over the same TCP connection(s) it had opened earlier to
+the Squid Proxy.
+
+One point to note here is that with URL rewriting, DNS requests
+are made from the browser over the wireless link to resolve only the
+top level domain names. With DNS rewriting, DNS requests for
+the domain names that host the embedded objects are made once
+over the wireless link as well, but because the TTL for the DNS re-
+sponses is made large, the DNS responses are cached at the browser
+for a long period of time and further DNS requests are minimized.
+Also note that the total number DNS requests made to the DNS
+server remains the same. But with session level optimization most
+of the request-response is pushed to the wireline network, which
+reduces the delay observed over the wireless link.
+
+For clarity, in the description above, we describe the PEP and
+the Squid Proxy as two separate devices. In our experiments, we
+co-located the PEP and the Squid cache in the same device.
+
+4.2 Results
+
+With the above experimental setup, we measured three different
+performance metrics with and without session level optimization
+techniques. The results from these experiments are detailed below.
+
+plorer and Netscape, none of which seem to support request
+pipelining.
+
+4.2.1 Number of TCP Connections and DNS Re-
+
+quests
+
+For this set of experiments, we copied the top level pages of the
+top 100 URLs (as determined by www.hot100.com) as well as the
+embedded objects on these pages and conﬁgured the web server in
+our setup to deliver these objects. The browser was instrumented
+to sequentially request this set of top 100 pages multiple times (20
+in our experiment). Each time the set of pages was retrieved, we
+measured the total number of TCP connections established and the
+total DNS requests made. The results averaged over the 20 runs
+with and without session level optimizations are shown in Figure 5.
+
+Top 100 URLs
+
+TCP Connections
+DNS Requests
+
+ 
+
+ 
+)
+r
+o
+(
+ 
+n
+n
+o
+C
+P
+C
+T
+ 
+f
+o
+ 
+r
+e
+b
+m
+u
+N
+
+s
+t
+s
+e
+u
+q
+e
+R
+S
+N
+D
+
+ 
+
+1200
+
+1000
+
+800
+
+600
+
+400
+
+200
+
+0
+
+DNSRW
+
+URLRW
+
+NULL
+
+Session Level Optimization Technique
+
+Figure 5: Number of TCP connections and DNS requests made
+with and without session level optimizations.
+
+Consider the number of TCP connections without session level
+optimization (referred to as NULL). The number of TCP connec-
+tions made is around 1110, which translates to an average of 11
+connections per top level web page. During these experiments, the
+browser and the server were conﬁgured to keep persistent connec-
+tions. However, since the embedded objects were hosted on dif-
+ferent domains, the browser still had to make multiple connections
+to fetch a top level page. With URL rewriting, the browser makes
+individual TCP connections to fetch the 100 top level pages; thus at
+least 100 TCP connections will be made to the web server (which
+are actually transparently redirected to the caching proxy). How-
+ever, on top of this, a little more than 100 extra TCP connections
+are made to fetch the embedded objects directly from the caching
+proxy. With DNS rewriting, the results are quite similar. Now, the
+100 top level pages as well as the embedded objects are all retrieved
+directly from the caching proxy. However, due to the need for par-
+allelism, a little more than 200 connections are used. Of course,
+if the requests had been completely serialized, only one extra TCP
+connection (which is now explicitly to the caching proxy) should
+be needed. But browsers tend to open extra connections for paral-
+lelism especially if an existing TCP connection is already in use.
+This is the reason for the extra connections.
+
+The number of DNS requests without session level optimizations
+is around 300. This translates to an average of 3 different domain
+names per web page. With DNS rewriting, the number of DNS
+requests is about the same as the number of DNS requests for the
+NULL case since all domain names need to be resolved. With URL
+rewriting, the number of DNS requests is close to the number of top
+level pages, i.e. 100, and much lower than for DNS rewriting or for
+the NULL case. This is because with URL rewriting the browser
+performs DNS requests only for the top-level pages. It does not
+
+126perform any request for the embedded objects since all embedded
+objects are fetched from the same source (i.e. the caching proxy IP
+address).
+
+Observe from the ﬁgure that both the number of TCP connec-
+tions and the number of DNS requests are reduced with session
+level optimization. The reduction is more signiﬁcant in the case of
+TCP connections.
+
+4.2.2 Response Time
+
+For this experiment, the Mozilla browser was instrumented to
+compute the time between the sending of the request for the top
+level page and the complete display of the page (including all em-
+bedded objects). We refer to this as the user perceived response
+time for the page. We measured this response time at the browser
+to download three popular top level pages (Yahoo!, CNN and Bri-
+tannica) and the embedded objects contained in them. Each of these
+pages has different characteristics regarding the number of embed-
+ded objects on the page, the number of distinct domains that host
+the embedded objects, and the total size of the page.
+
+The WiDSE emulator can be conﬁgured to provide different cell
+characteristics and background trafﬁc load by tuning the forward
+and reverse error rates on the fundamental and supplemental chan-
+nels, and the number of retransmissions on the radio-link. We con-
+ﬁgured these parameters to emulate two cells with different per
+user throughput and delay. As explained earlier, the maximum FTP
+throughput that we observed in an unloaded cell is in the range of
+100 (cid:0) 120 Kbps. Using this as a yardstick and based on our own
+measurements in a live CDMA2000-1xRTT network, an average
+cell was conﬁgured to have an average per user FTP bandwidth of
+around 78 Kbps and an average round-trip time from the browser
+to the web server (within our controlled environment) of 400 msec.
+A congested cell was conﬁgured to have an average per user FTP
+bandwidth of around 56 Kbps and an average round-trip time from
+the browser to the web server of 600 msec. Note that the congested
+cell represents a scenario where the number of background users in-
+creases signiﬁcantly, emulating the peak hour characteristics seen
+by a single user in a deployed cell.
+
+The results are shown in Figure 6. The response times were
+measured and averaged over 20 downloads of each of the top level
+pages and the corresponding embedded objects. In both cell types,
+response times for CNN and Britannica are much higher than that
+of Yahoo!. This is because Yahoo! has lot fewer domain names
+and embedded objects than the other two. Among CNN and Bri-
+tannica, CNN has more embedded objects but fewer domains. The
+time required for making DNS requests balances out with the time
+required to download the embedded objects. This results in similar
+response time for them. In all cases, the response time with session
+level optimization is much smaller than without the optimization.
+A mean decrease of around 30% is seen in the case of an average
+cell and a decrease of around 50% is seen in the case of a congested
+cell. The standard deviation was less than 10% for the average cell
+and less than 20% for the congested cell. This decrease is an artifact
+of saving several RTTs during the web page download. This is why
+the decrease is much more prominent in the case of a congested cell
+which has a higher RTT across the wireless link.
+
+4.2.3 Throughput
+
+We calculated the throughput for HTTP downloads and com-
+
+pared them with that for FTP. The results are shown in Figure 7.
+
+Firstly, from Figure 7 (a) observe that the achieved through-
+put for all the three downloaded web sites was around 35-50%
+higher with both URL rewriting and DNS rewriting compared to
+the NULL case. Secondly, when we compare the HTTP download
+
+throughputs with FTP, we ﬁnd that Yahoo! achieves a through-
+put that is closest to the FTP throughput. The reason for this is
+that in our experiments, although both the browser and server use
+persistent connections, pipelining is not enabled (not supported by
+the browser). Because of this, although multiple objects are down-
+loaded through the same TCP connection, an object has to be fully
+downloaded before a request for another object is sent on the same
+connection. This introduces a RTT delay during which the connec-
+tion is idle. With Yahoo!, this effect is minimal because the number
+of embedded URLs in the top level page for Yahoo! are not very
+many and hence the number of such idle times are small. The other
+two web sites have many more embedded objects and hence this
+effect is more pronounced.
+
+In order to justify the above conjecture, we estimated the through-
+put that could have been achieved with CNN if we had request
+pipelining. At the browser, we observed an average of 4 simulta-
+neous TCP connections to download embedded objects. Therefore,
+each persistent TCP connection is used to download roughly 15 ob-
+jects. This results in each connection being idle for about 14 RTTs,
+or 14 x 400 msec = 5.6 sec. When we subtract the idle time from
+the observed response time and compute the throughput, it turns out
+to be around 73 Kbps, which is very close to the FTP throughput.
+The results with a congested cell are even better. From Fig-
+ure 7 (b) observe that the throughput achieved using URL rewrit-
+ing and DNS rewriting is more than double compared to the NULL
+case. Further, with URL rewriting, the throughput for Yahoo! is
+almost the same as FTP throughput. The throughputs for the other
+two sites are further away from the FTP throughput for the same
+reasons as above.
+
+5. EFFECT OF USER MOBILITY
+
+We now consider the effect of mobility on the URL rewriting
+and DNS rewriting techniques under different scenarios. For this
+discussion, assume that the PEP and the Caching Proxy are co-
+located (as it would normally be the case in a real deployment).
+We refer to them as PEP since there is no ambiguity. Also recall
+that HTTP requests are transparently intercepted by the PEP, i.e., a
+Layer 4 switch transparently redirects all HTTP requests (i.e., port
+80) to the PEP.
+
+To study the impact of mobility we consider a mobile user mov-
+ing from its current region to a new region, where “region” refers
+to an area served by a single PEP infrastructure (Layer 4 switch
+plus a PEP or a farm of PEPs). Such a deﬁnition is independent
+of whether mobility takes place within a single service provider or
+between different service providers. When a user moves from the
+current region with PEP service to a new region with PEP service,
+this means the user requests in the new region are serviced by a PEP
+infrastructure that is different from the one in the current region.
+
+There are three interesting scenarios to consider: (A) PEP ser-
+vice is not available in the current region but is available in the new
+region, (B) PEP service is available both in the current and new
+regions and, (C) PEP service is available in the current region, but
+not in the new region. For these scenarios we address the following
+issues:
+
+(cid:15) In the case of URL rewriting, what is the effect of rewriting
+the links to embedded objects in a top-level page with the
+IP address of a speciﬁc cache? When a user either moves
+from one region to another in the middle of a page download,
+or reloads the top-level page from the browser cache after
+having moved, what if this cache is inaccessible? Will the
+retrieval of embedded objects fail in this case?
+
+127Response Time. Average Cell
+
+(RTT = 400 msec)
+
+Response Time. Congested Cell
+
+(RTT = 600 msec)
+
+)
+c
+e
+s
+(
+ 
+
+i
+
+ 
+
+e
+m
+T
+e
+s
+n
+o
+p
+s
+e
+R
+
+45
+40
+35
+30
+25
+20
+15
+10
+5
+0
+
+34%
+
+30%
+
+33%
+
+32%
+
+26%
+
+26%
+
+CNN
+Yahoo
+Britannica
+
+DNSRW
+
+URLRW
+
+NULL
+
+Session Level Optimization Technique
+
+(a)
+
+)
+c
+e
+s
+(
+ 
+
+i
+
+ 
+
+e
+m
+T
+e
+s
+n
+o
+p
+s
+e
+R
+
+70
+
+60
+
+50
+
+40
+
+30
+
+20
+
+10
+
+0
+
+55%
+
+49%
+
+50%
+
+53%
+
+48%
+
+55%
+
+DNSRW
+
+URLRW
+
+NULL
+
+Session Level Optimization Technique
+
+(b)
+
+CNN
+Yahoo
+Britannica
+
+Figure 6: Response time in different types of cells. The numbers on the bars show the percentage decrease compared to the NULL
+case.
+
+)
+s
+p
+b
+K
+
+(
+ 
+t
+u
+p
+h
+g
+u
+o
+r
+h
+T
+
+80
+
+70
+
+60
+
+50
+
+40
+
+30
+
+20
+
+10
+
+0
+
+Throughput. Average Cell
+(FTP Throughput = 78 Kbps)
+
+36%
+
+51%
+
+36%
+
+50%
+
+44%
+
+48%
+
+Throughput. Congested Cell
+(FTP Throughput = 56 Kbps)
+
+124%
+
+93%
+
+98%
+
+126%
+
+101%
+
+117%
+
+CNN
+Yahoo
+Britannica
+
+CNN
+Yahoo
+Britannica
+
+)
+s
+p
+b
+K
+
+(
+ 
+t
+u
+p
+h
+g
+u
+o
+r
+h
+T
+
+60
+
+50
+
+40
+
+30
+
+20
+
+10
+
+0
+
+DNSRW
+
+URLRW
+
+NULL
+
+Session Level Optimization Technique
+
+(a)
+
+DNSRW
+
+URLRW
+
+NULL
+
+Session Level Optimization Technique
+
+(b)
+
+Figure 7: Throughput in different types of cells. The numbers on the bars show the percentage decrease compared to the NULL
+case.
+
+(cid:15) In the case of DNS rewriting, what is the effect of DNS
+caching at the client? Given that the IP address of a speciﬁc
+cache is returned to the client in response to domain name re-
+quests (both for top-level pages and embedded objects) what
+if the user moves and this cache is inaccessible? Because of
+DNS caching, the client will still try to fetch objects from
+this cache. Will these requests fail?
+
+As we discuss next, both URL and DNS rewriting handle user mo-
+bility in a graceful manner. We point out there relative advantages
+and disadvantages under each scenario.
+5.1 PEP service not available in the current
+
+region but available in the new region
+
+Under this scenario only new HTTP session requests (TCP SYNs)
+are serviced by the PEP infrastructure in the new region while ex-
+isting HTTP sessions initiated in the current region go directly to
+the origin server. This is done by the Layer 4 switch to redirect
+HTTP trafﬁc to the PEP only if a TCP connection state already ex-
+ists for a packet. Thus existing TCP connections from the current
+region are used to complete all unﬁnished downloads from the ori-
+gin server. New connections in the new region beneﬁt from session
+
+level optimizations.
+
+The impact on the efﬁciency of the browser cache depends on the
+actual session-level optimization used. While in the current region,
+the browser cache indexes objects based on their domain names as
+the key (e.g., www.foo.com/image.gif). With URL rewriting in the
+new region, if the client refreshes a top-level page 2 the same em-
+bedded objects can now be referred to with a different URL (e.g.,
+10.0.0.12/www.foo.com/image.gif). This will cause the browser
+to fetch some embedded objects even if they are cached locally,
+though under a different name.
+
+There is no impact on the browser cache with DNS rewriting.
+Since DNS rewriting only changes the mapping between a given
+domain name and its IP address, and does not require any changes
+to the embedded URLs, the browser cache does not get affected as
+the user moves and DNS rewriting becomes active.
+5.2 PEP service available both in the current
+
+and new regions
+
+In this scenario the service remains uninterrupted both with URL
+
+2This could happen if the top-level page has expired and need to be
+refreshed, for example in case of a dynamic top-level page.
+
+128rewriting and DNS rewriting. We discuss these issues below in
+more detail.
+
+5.2.1 URL rewriting
+
+As the user moves, new connections for web pages get serviced
+by the new region. If the user moves from the current region to
+the new region in the middle of an object download, then two cases
+arise: (i) If the current PEP is accessible from the new region, then
+the existing TCP connections will still be serviced by the current
+PEP while new connections will be serviced by the new PEP. This
+situation is similar to Scenario A. (ii) If the PEP in the current re-
+gion is not reachable from the new region, then the new PEP will
+reset the TCP connection and the browser will automatically open
+a new one to fetch the object.
+
+The impact on browser caching in this scenario is minimal. Sup-
+pose the current PEP has rewritten the embedded object URLs with
+an IP address preﬁx of 10.0.0.12, and so the browser cache contains
+objects with the same preﬁx (e.g., 10.0.0.12/www.foo.com/image.gif).
+If the client now refreshes the top-level page in the new region
+(due to the same argument as in the previous section), two cases
+can arise depending on the IP address preﬁx used by the new PEP.
+Usage of the same IP address (e.g., 10.0.0.12) results in browser
+cache hit. If the IP addresses are different (e.g., 10.0.0.1 is used
+by the new PEP) there is a browser cache miss for the object (e.g.,
+10.0.0.1/www.foo.com/image.gif), and the object is fetched even
+though it exists in the cache with a different key.
+
+Usage of the same IP address technically poses no problem. Con-
+sider Figure 2 where the links to embedded objects are rewritten to
+point to IP address 10.0.0.12, which is the same as the caching
+proxy. However, note that the IP address used to rewrite embed-
+ded object URLs does not have to match the caching proxy’s IP
+address. As a matter of fact, it could be any valid IP address. When
+HTTP requests are made to the rewritten IP address, they are trans-
+parently redirected to the PEP based only on the destination TCP
+port number and not on the IP address. Therefore for the scheme to
+work, a PEP can use a (virtual) IP address of its choice to rewrite
+top-level pages. However, to improve the hit rate in the browser
+cache, it is recommended that the same IP address is used by all the
+PEPs. This requires pre-conﬁguration of all PEPs to use the same
+IP address to rewrite embedded object URLs.
+
+5.2.2 DNS rewriting
+
+The above discussion applies to DNS rewriting as well. In Fig-
+
+ure 3, it is shown that in response to a DNS request for www.foo.com,
+the IP address 10.0.0.12 is returned to the client. However, any
+other IP address could have been used. Assume that the same IP ad-
+dress is used by all PEPs to perform DNS rewriting (e.g. 10.0.0.12).
+DNS requests for both top-level pages and embedded objects within
+www.foo.com will return the same IP address. When the browser
+makes requests to 10.0.0.12 to fetch the top-level page and the em-
+bedded objects, these requests will be transparently redirected to
+the PEP. When the client moves to a new region, new DNS re-
+sponses will be rewritten with the same IP address 10.0.0.12. More-
+over, requests for domain names previously accessed will again be
+sent to 10.0.0.12. These requests will now be redirected transpar-
+ently to a new PEP in the new region; thus the mobile client will not
+perceive any service disruption. If the client moves in the middle
+of an object download, the new PEP will reset the connection and
+the browser will automatically open a new connection to fetch the
+missing objects through the new PEP.
+
+The effect of DNS rewrite on browser cache is same as in Sce-
+
+nario A and is not discussed further.
+
+5.3 PEP service available in the current region
+
+but not available in the new region
+
+In this scenario, a user moves from a region where PEP service is
+available to a region where PEP service is unavailable (for example,
+from an ISP who provides PEP service to another who does not).
+Let us consider the effect of both URL rewriting and DNS rewriting
+on embedded object retrieval in this scenario.
+
+5.3.1 URL rewriting
+
+Consider the situation where a user moves from a region with
+PEP service to a region without PEP service in the middle of a
+page download. Assume that the rewritten top-level page had been
+downloaded and the embedded objects are being downloaded. The
+requests to embedded objects from the new region will fail as the
+browser will try to fetch them from a cache IP address (say, 10.0.0.
+12). As the new region is unaware of the PEP service, there is no
+transparent redirection to a cache, and requests to this (virtual) IP
+address will fail. A similar situation occurs when a rewritten top-
+level page is retrieved from the browser cache after the user moves
+to a new region with no PEP service. The browser cache will try
+to fetch the embedded objects that have been rewritten using the
+10.0.0.12 IP address, and unless they are locally cached as well,
+these requests will fail. If the top-level page itself is retrieved from
+the network after the mobile node has moved to the new region,
+all the operations will progress correctly; the top-level page and
+the embedded objects will now be fetched from the origin servers.
+However, similarly to Scenario A, the browser’s cache efﬁciency
+will be reduced since existing cached objects are now referred un-
+der a different name.
+
+One possible solution to prevent requests from failing when the
+browser cache tries to fetch objects with previously rewritten URLs
+(e.g. 10.0.0.12), is to pick a public and globally routable virtual IP
+address (e.g. 192.11.210.2) that is used by each PEP to rewrite em-
+bedded object URLs. This IP address would represent one or more
+caches in the current region’s network that are globally reachable
+from any other region.
+
+5.3.2 DNS rewriting
+
+DNS rewriting is more resilient to this situation because of the
+following reason. Consider the situation where a user moves in
+the middle of a page download. The requests to retrieve embed-
+ded objects in the new region will either lead to a DNS request, in
+which case there will be no DNS rewriting and the objects will be
+fetched from the origin server, or a DNS entry will be found in the
+local DNS cache and the browser will make a request to the virtual
+IP address used by the PEPs. If the virtual IP address is globally
+routable and represents a globally reachable set of PEPs, then the
+client will be able to fetch the content without any problem. How-
+ever, if the IP address is not reachable from the new region, then the
+initial request will fail, as it will be made to non-reachable PEP IP
+address. However, as described in Section 3.2, DNS rewriting also
+includes the IP address of the origin server as a secondary DNS
+entry. This allows the client to revert to the IP address of the ori-
+gin server and fetch the content without suffering any disruption.
+To validate this scenario we studied the behavior of the most popu-
+lar browsers under such a situation. We found that upon failure of a
+given DNS record IP address, the browser will make requests to the
+subsequent IP addresses in the list until one succeeds. Because of
+this feature, the browser will make a request to the next IP address
+in the list which will be the IP address of an origin server.
+
+To summarize, both URL and DNS rewriting can handle mobil-
+ity very gracefully when a user moves in regions with PEP service,
+avoiding any service disruption and maintaining the efﬁciency of
+
+129the browser cache. When a user moves between regions where one
+has PEP service and the other does not, DNS rewriting can han-
+dle mobility in a very elegant manner, with no service disruption or
+cache impact. However, URL rewriting may lead to higher browser
+cache miss. This is a minor problem and can be resolved with some
+of the solutions mentioned above. In case of deployment, we be-
+lieve that the choice of a particular session-level optimization tech-
+nique will be greatly inﬂuenced by the device that would implement
+the scheme. For example, a router or GGSN/PDSN may be better
+suited to implement DNS rewriting since it does not parse HTML
+pages, while a caching proxy may be better suited to implement
+URL rewriting.
+
+6. CONCLUSIONS
+
+In this paper, we presented two session level optimization tech-
+niques, namely URL and DNS rewriting, to enhance the perfor-
+mance of HTTP downloads over wireless links. Two major issues
+affect this performance and both of them are dependent on the large
+and variable round-trip time over the wireless link. One is the TCP
+setup delay due to multiple connections being initiated from the
+browser over the wireless link to different servers to download a
+single web page (and the embedded objects contained within it).
+The other is the DNS lookup delay due to multiple DNS lookups
+being performed over the wireless link. The techniques presented
+in this paper overcome these problems by (a) minimizing the num-
+ber of DNS lookups over the wireless link and (b) minimizing the
+number of TCP connections opened by the browser. These tech-
+niques do not require any client-side software and can be deployed
+transparently on a service provider network. Experimental results
+based on a prototype implementation of the techniques show a 30-
+50% decrease in end-to-end user perceived latency and 50-100%
+increase in data throughput across wireless links for HTTP ses-
+sions.
+
+7. REFERENCES
+[1] T. G. P. P. 2. 3GPP2 — Developing the Next Generation of
+
+CDMA2000 Wireless Communications.
+http://www.3gpp2.org/.
+
+[2] 3rd Generation Partnership Project 2. Data Service Option
+for Spread Spectrum Systems: Radio Link Protocol Type 3.
+http://www.3gpp2.org/Public html/specs/C.S0017-0-
+2.10 v2.0.pdf, Aug. 2000. 3GPP2 C.S0017-0-2.10
+v2.0.
+
+[3] A. Bakre and B. Badrinath. Handoff and System Support for
+
+Indirect TCP/IP. In Proc. of Second Usenix Symposium on
+Mobile and Location-Independent Computing, Apr. 1995.
+
+[4] H. Balakrishnan, S. Seshan, E. Amir, and R. H. Katz.
+
+Improving TCP/IP Performance over Wireless Networks. In
+Proc. of ACM Mobicom, Nov. 1995.
+
+[5] P. Bender, P. Black, M. Grob, R. Padovani,
+
+N. Sindhushayana, and A. Viterbi. CDMA/HDR: A
+Bandwidth-Efﬁcient High-Speed Wireless Data Service for
+Nomadic Users. IEEE Communications Magazine, July
+2000.
+
+[6] P. Bhagwat, P. Bhattacharya, A. Krishna, and S. Tripathi.
+
+Enhancing Throughput over Wireless LANs using Channel
+State Dependent Packet Scheduling. In Proc. of IEEE
+Infocom, Mar. 1996.
+
+[7] K. Brown and S. Singh. M-TCP: TCP for Mobile Cellular
+Networks. ACM Computer Communications Review, 27(5),
+1997.
+
+[8] R. Chakravorty, A. Clark, and I. Pratt. Gprsweb: Optimizing
+the web for gprs links. In ACM/USENIX First International
+Conference on Mobile Systems, Applications and Services,
+2003.
+
+[9] R. Chakravorty, S. Katti, J. Crowcroft, and I. Pratt. Flow
+aggregation for enhanced tcp over wide-area wireless. In
+IEEE INFOCOM, 2003.
+
+[10] M. Chan and R. Ramjee. TCP/IP Performance over 3G
+
+Wireless Links with Rate and Delay Variation. In Proc. of
+ACM Mobicom, Sept. 2002.
+
+[11] P. Communication. With Inktomi and Cisco. 2002.
+[12] A. Fox, S. Gribble, Y. Chawathe, and E. Brewer. Adapting to
+
+network and client variation using active proxies: Lessons
+and perspectives. IEEE Personal Communications, 5(4),
+August 1998.
+
+[13] G. Holland and N. Vaidya. Analysis of TCP Performance
+
+over Mobile Ad Hoc Networks. In Proc. of ACM Mobicom,
+Aug. 1999.
+
+[14] B. Inc. The Macara Optimization Service Node.
+http://www.bytemobile.com/html/products.html.
+
+[15] F. S. Inc. The Venturi Server.
+
+http://www.fourelle.com/pdfs/Venturi V2.1 Brochure.pdf.
+
+[16] J. Jung, E. Sit, H. Balakrishnan, and R. Morris. Dns
+
+performance and the effectiveness of caching. IEEE/ACM
+Transactions on Networking, 10(5), October 2002.
+
+[17] G. Li, M. Lu, M. Meyers, and P. Feder. Wireless Data
+
+Service Emulator (WiDSE): A Real-time Look and Feel
+Emulator for Wireless Packet Data Systems. Technical
+memorandum, Lucent Technologies, Mar. 2002.
+
+[18] M. Liljeberg, H. Helin, Kojo, and K. Raatikainen. Enhanced
+services for world-wide web in mobile wan environment. In
+ImageCom, 1996.
+
+[19] T. R. N. Networks. Layer N Switching.
+
+http://www.nortelnetworks.com /solutions/ﬁnancial
+/collateral/may99 layer4 v3.pdf.
+
+[20] S. Paul, E. Ayanoglu, T. LaPorta, K. Chen, K. Sabnani, and
+R. Gitlin. An Asymmetric Link-Layer Protocol for Digital
+Cellular Communications. In Proc. of IEEE Infocom, Apr.
+1995.
+
+[21] M. Rabinovich, Z. Xiao, F. Douglis, and C. Kalmanek.
+
+Moving edge side includes to the real edge – the clients. In
+4th USENIX Symposium on Internet Technologies and
+Systems, 2003.
+
+[22] A. Shaikh, R. Tewari, and M. Agrawal. On the Effectiveness
+
+of DNS-based Server Selection. In Proc. of the IEEE
+Infocom, Apr. 2001.
+
+[23] P. Sinha, N. Venkitaraman, R. Shivakumar, and
+
+V. Bharghavan. WTCP: A Reliable Transport Protocol for
+Wireless Wide-Area Networks. Wireless Networks, 8(2-3),
+2002.
+
+[24] B. C. Systems. Content Filtering with Blue Coat Systems.
+http://www.bluecoat.com/solutions/content ﬁltering.html.
+
+[25] A. Technologies. EdgeSuite.
+
+http://www.akamai.com/en/html/services/edgesuite.html.
+
+130

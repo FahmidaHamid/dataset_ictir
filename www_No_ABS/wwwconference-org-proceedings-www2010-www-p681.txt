@@ -1,0 +1,564 @@
+The Web abounds with dyadic data that keeps increasing by every single second.
+In general, dyadic data are the measurements on dyads, which are pairs of two elements coming from two sets [13, 21].
+For instance, the most well-known Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+Distribution of these papers is limited to classroom use, and personal use by others.
+dyadic data on the Web is the term-by-document representation of the Web corpus, where the measurement on a dyad (term, document) can be the count of how many times the term appears in the document, or some transformed value such as the TF-IDF score.
+The list of dyadic data on the Web keeps growing, especially with the booming of social media.
+Because dyadic data contains rich information about the interactions between the two participating sets, its usefulness for practical applications has been repeatedly reported in previous work.
+For instance, in Web search, the (query, clicked URL) data is probably the most exploited source for query clustering [12], query suggestions [3] and improving search relevance [2].
+In Internet monetization, the (bid keyword, ad) dyads with measurements on impressions and clicks constitute a valuable source for estimating click-through rate (CTR) and optimizing ad placement [9].
+Finally, the booming social media generate a lot of useful dyadic data, e.g., tags on  ickr images, users and their joined communities, etc..
+Previous work has shown that these data can be e ectively leveraged for improved image retrieval [31] and community recommendation [8].
+In general, Web dyadic data shares the following characteristics.
+  High-dimensional: The two involved sets are usually very huge, e.g., the set of distinct terms and all Web documents for the (term, document) dyadic data.
+  Sparse: Measurements are sparse relative to the all possible dyads.
+For example, a term does not appear in all the documents and not all URLs are clicked for a given query.
+  Nonnegative: Most measurements on Web dyadic data are based on event observations (e.g., impressions and clicks), which are positive if observed and 0 otherwise.
+  Dynamic: Web dyadic data keeps growing every single second, in terms of both the observed dyads and the dimensionality, e.g., new users join the social network and tag things they are interested all the time.
+While exploiting the rich information of Web dyadic data, we must face a grand challenge it poses at the same time: with the explosion of Web data?
+This paper gives an a rmative answer to this question regarding the nonnegative matrix factorization (NMF), which is a handy tool in analyzing dyadic data.
+For the convenience of rigorous analysis within a formal framework, dyadic data is usually modeled as matrices such that techniques proposed for one dyadic dataset will appeal to other forms of dyadic data.
+For instance, Latent Semantic Indexing (LSI) [15] and co-clustering [16] that are originally proposed for (term, document) dyadic data have found their ways into bioinformatics [20, 18].
+Matrix factorization is a commonly used approach to understanding the latent structure of the observed matrix for various applications (e.g., see [4, 40, 26]).
+There are many forms of matrix factorization, and [39] o ers a uni ed view of several important factorizations including Singular Value Decomposition (SVD) and NMF.
+We in this paper choose to scale up NMF because it respects the nonnegativity that is inherent in most Web dyadic data.
+Previous work has shown that by respecting the nonnegativity, the factorization results will be easier to interpret while being comparable to, or better than, other techniques like SVD on e ectiveness (e.g., [43, 38, 28]).
+We are not the  rst to scale up matrix factorization on noticing the data explosion.
+Many researchers have tried to scale up di erent factorizations including NMF (e.g., [1,
+ generally assume that the data can be held in memory (or e ciently read from disk), and have reported on successes on factorizing tens of thousands by tens of thousands matrices with millions of nonzero values.
+While these studies aim at  large scale,  the target of this study is the  Web scale,  which can be informally interpreted as at least millions-by-millions matrices with billions of observations.
+To analyze Web-scale data, we can no longer assume the data can be held on a single powerful desktop.
+We therefore propose to scale up NMF through parallelism on distributed computer clusters with thousands of machines.
+Because of the wide utility of NMF, we are not the  rst one trying to parallelize NMF either.
+Previous work has successfully parallelized NMF for multi-core machines through multi-threading [23, 36].
+They propose to partition matrices in a way that takes advantage of the lightweight data sharing on multi-core machines.
+Unfortunately, these algorithms do not transfer to distributed clusters because data sharing is no longer lightweight in clusters (details in Section 3.1).
+In order to maximize the parallelism and data locality, we choose to partition matrices in the opposite direction to the previous work, and successfully parallelize NMF on thousands of machines in a distributed cluster.
+In contrast to previous work on parallel NMF, our algorithm is termed distributed NMF.
+In summary, this paper makes the following contributions   By observing a variety of Web dyadic data that conforms to di erent probabilistic distributions, we put forward a probabilistic NMF framework, which not only encompasses the two classic NMFs [28, 29] but also presents the Exponential NMF (ENMF) for modeling Web lifetime dyadic data (e.g., the dwell time of users on browsed pages).
+  A bigger contribution, as we deem, is the success of scaling up NMF to (potentially) arbitrarily large matrices on MapReduce [14] clusters.
+We show that by carefully partitioning the data and arranging the computations to maximize data locality and parallelism, factorizing tens of millions by hundreds of million matrices with billions of nonzero values can be accomplished within tens of hours.
+This is several-orders-of-magnitude larger than the largest factorization reported in literature, which essentially assures real-world applications of NMFs on scalability.
+  Finally, a set of systematic experiments on both simulated and real-world data are performed to demonstrate the desired scalability and the usefulness of NMF.
+While this paper focuses on scaling up NMF on MapRe-duce cluster, the same scaling-up scheme can be easily ported to MPI [34] clusters.
+Our preference of MapReduce clusters to MPI clusters merely comes from the fact that the MapRe-duce programming paradigm is often, if not always, implemented on the same cluster where Web data is collected.
+It is generally more convenient to run an algorithm where data is stored.
+The rest of this paper is organized as follows.
+Section 2 lays out the probabilistic NMF framework and elucidates the Exponential NMF with details.
+Section 3 is devoted to describing how to scale up NMF on MapReduce clusters.
+We report on the experimental evaluation in Section 4, and discuss related work in Section 5.
+Finally, Section 6 concludes this study with brief discussion on future work.
+We use regular uppercase letters to denote matrices and boldface lowercase letters to denote vectors.
+For example,     +  is a -by- nonnegative real matrix, whose element (, ) is denoted by ,.
+We use  to denote the set of indices of nonzero values in , i.e.,  = {(, ) , > 0}, and similarly de ne  = { , > 0} and  = { , >
+ Definition 1 (Nonnegative Matrix Factorization).
+Given     +  and a positive integer  <= {, },  nd     +  and     +  such that a divergence function (  ) is minimized, where  =   is the reconstructed matrix from the factorization.
+A probabilistic interpretation of NMF is to take , as an observation from a distribution whose mean is parame-terized by ,.
+In the following, we brie y review the two most popular NMFs in this framework (Section 2.1), and discuss the case using the Exponential distribution for Web lifetime data in Section 2.2.
+When we take ,   (,, 2), maximizing the likelihood of observing  w.r.t.
+ and  under the i.i.d.
+assumption
+ (,)
+  2 {  (,   ,)2
+ } is equivalent to minimizing ( ) =   (,) (,   ,)2 =       2, (a) Gaussian NMF (GNMF) (b) Poisson NMF (PNMF) (c) Exponential NMF (ENMF) ,   (,, 2)    .
+         (1)    .
+       (2)    .
+  ,   (,)    .
+         1        (3) (4)
+    .
+    [./( )2]   [1./ ] [./( )2]  [1./ ]  (5) (6)    .
+  Note:     + , , = 1 which is the Euclidean distance that leads to the most popular form of NMF [29].
+We call it the Gaussian NMF or GNMF in short.
+Similarly, when the Poisson distribution is used to model count data (e.g., click counts), i.e., maximizing the likelihood of observing  w.r.t.
+ and 
+ (,) becomes to minimizing
+ , {  , , } ,   ( , ), then maximizing the likelihood of observing 
+ (,) { ,} (,), ,!
+becomes to minimizing ( ) =   (,) (,   , (,)), which is the generalized KL-divergence as used in [28].
+The resulting NMF is called Poisson NMF or PNMF in short.
+Lee and Seung present a multiplicative algorithm that it-eratively  nd the solution  and  for both GNMF and PNMF [28, 29].
+The update formulae are reproduced in Table 1(a) and Table 1(b), respectively.
+Throughout this paper, we use  .  and  ./  (or equivalently  ) to denote the element-wise matrix multiplication and division.
+Besides count and Gaussian data, another important kind of measurements on dyads is the lifetime data.
+A good example of lifetime data in the Web context is the dwell time of a user on a webpage: the time until the user navigates away from the page.
+Proper modeling of the dwell time can help improving Web relevance and  ghting Web spams [32].
+Lifetime is usually modeled by the Weibull distribution  ( , ) =    1  /.
+But because its mean () = 1/  (1 + 1  ) involves two parameters and hence cannot be parameterized by a single value ,, we instead consider the Exponential distribution, which is a special case of Weibull with  = 1 and () = .
+The previous work on BrowseRank [32] also adopts the same simpli cation while achieving reasonable results.
+Speci cally, when , is assumed to come from an Exponential distribution with  = ,, i.e.,
+ (  ) =   (,) ((,) + ).
+, , We use gradient-descent algorithm to  nd the solution.
+Some matrix calculus reveals that the gradient of ( ) w.r.t.
+ is ( ).2 ], which leads to the following update formula =   [
+          
+     + .
+    [ ( )2   and  > 0 is the step-size.
+When  takes   [1./ ] , we obtain the multiplicative updating rule for the Exponential NMF (ENMF in short) as   (7) ],     .
+    [./( )2]   [1./ ] (8) which, together with the formula for  , is summarized in Table 1(c) for comparison with GNMF and PNMF.
+The proof of convergence using Eqns.
+5 and 6 is similar to that for GNMF in [29], and it is skipped here due to limited space.
+MapReduce [14] is a programming model and associated infrastructure that provide automatic and reliable paral-lelization once a computation task is expressed as a series of Map and Reduce operations.
+Speci cally, the Map function reads a <key, value> pair, and emits one or many intermediate <key, value> pairs.
+The MapReduce infrastructure then groups together all values with the same intermediate key, and constructs a <key, ValueList> pair with ValueList containing all values associated with the same key.
+The Reduce function takes a <key, ValueList> pair and emits one or many new <key, value> pairs.
+As both Map and Reduce operate on <key, value> pairs, a series of mapper and reducers are usually streamlined for complicated tasks.
+With the MapReduce infrastructure, a user can fully focus on the logic of mappers and reducers, and lets the infrastructure deal with messy issues about distributed computing.
+Open-source implementations of MapReduce infrastructure are readily available such as the Apache Hadoop project.
+(b) Distributed NMF Figure 1: Di erent Partition Schemas for NMF Even with the updating formulae laid out in Table 1, it is still a nontrivial task to distribute NMF on MapReduce clusters.
+In the  rst place, the giant matrices ,  and  need to be carefully partitioned so that each partition can be e ciently shu ed across machines when needed.
+In the second place, we must arrange the computation properly such that most computation can be carried out locally and in parallel.
+In the following, we  rst discuss how to partition the matrices in Section 3.1, and then explain how to scale up GNMF on MapReduce in Section 3.2.
+We  nally illustrate how to adapt the scaling-up scheme for GNMF to PNMF and ENMF in Section 3.3.
+Because the updating formulae are symmetric between  and , we will limit our discussion to the update of .
+Because matrix  is sparse, it is naturally represented as (, , ,) tuples that are spread across machines.
+For dense matrices  and , how to partition them will signi cantly a ect the  nal scalability.
+Previous work on parallel NMF [23, 36] chooses to partition  and  along the long dimension as illustrated in Figure 1(a).
+This is a sensible choice because it conforms to the conventional thinking of matrix multiplication in the context of computing    and    (Eqn 1).
+By partitioning  and  along the long dimension and assuming  is in the shared memory, di erent threads can compute corresponding rows of    on di erent cores.
+Similarly, as all columns of  are held in the shared memory,    can be also calculated in parallel.
+Unfortunately, partitioning  and  along the long dimension does not prevail for distributed NMF.
+First, each column of  can be simply too large to be manipulated in memory, and it is also too big to be passed around across machines.
+Second, partitioning along the long dimension unnecessarily limits the maximum parallelism to the factorization dimensionality  as there are only  columns in  .
+Finally, when partitioning  along the long dimension,    and    can no longer be computed in parallel because we can no longer assume  and all columns of  can be accessible with low overhead.
+To address these limitations, we propose to partition  and  along the short dimension as illustrated in Figure 1(b).
+As will be seen in the rest of this section, this way of partitioning not only enables the parallel computation of both    and    but also maximizes the data locality to minimize the communication cost.
+To be precise, this partition renders the following view of  and   =     w1 w2 ...
+wm     and  = h1h2 .
+.
+.
+hn , (9) where wi s (1      ) and hj s (1      ) are -dimensional row and column vectors, respectively.
+Consequently,  and  are stored as sets of < , w > and < , h > key-value pairs.
+The updating formula for  (Eqn.
+1) is composed of three components:  =   ,  =    , and    .
+  ./ , where  and  are auxiliary matrices for notation convenience.
+The three components are discussed in the following three subsections, and Figure 2 depicts the entire  owchart of updating  on MapReduce clusters.
+Let x denote the th column of , then x =   =1 ,w  =     ,w  .
+It indicates that x is a linear combination of {w  } over the nonzero cells on the th column of , which can be implemented by the the following two sets of MapReduce operations.
+  Map-I: Map < , , , > and < , w > on  such that tuples with the same  are shu ed to the same machine in the form of < , {w, (, ,)     } >.
+  Reduce-I: Take < ,{w, (, , )     } > and emit < , ,w  > for each    .
+  Map-II: Map < , ,w  > on  such that tuples with the same  are shu ed to the same machine in the form of < ,{, w   Reduce-II: Take < , {,w < , x >, where x =    ,w  }      >, and emit  }      >.
+ .
+The output from Reduce-II is the matrix .
+In fact, as one would have noticed, this scheme of using two MapReduce operations can be used to multiply any two giant matrices when one is sparse and the other narrow.
+Multiplying two giant and dense matrices is usually uncommon because the result will take too much storage.
+It is wise to compute  by  rst computing  =    and then  =  because it maximizes the parallelism while requiring fewer multiplications than  =   ( ).
+In fact, it is unrealistic to compute   because the result is a giant dense matrix that will easily overrun the storage.
+With the partition of  along the short dimension, calculation of    can be fully parallelized because    =   =1 w  w.
+It means that each machine can  rst compute w  w (a small     matrix) for all the w s it hosts, and then send them over for a global summation, as implemented by     on MapReduce   Map-III: Map < , w > to < 0, w dummy key value for data shu ing.
+ w}   Reduce-III: Take < 0, {w   =1 w  w, which is the    .
+ w > where 0 is a =1 >, and emit As summation is both associative and commutative, a combiner can be used to compute the partial sum of w  w on each machine and then passes the partial sum to the reducer to reduce network tra c.
+Now that  =    is calculated, computing  =  becomes as trivial as run through the following mapper with no data shu ed except copying the     matrix  to all the machines that host h  s (as indicated by the dotted line in Figure 2).
+  Map-IV: Map < , h > to < , y = h >.
+Updating    .
+  ./ is parallelized through the following MapReduce operation.
+  Map-V: Map < , h >, < , x > and < , y > on  such that tuples with the same  are shu ed to the same machine in the form of < , {h , x, y} >.
+  Reduce-V: Take < ,{h , x , y} > and emit < , h  >, where h  = h .
+  x./y .
+This  nishes the update of , and updating  can be carried out in the same fashion.
+In the following, we will examine how the above scaling-up scheme carries over to PNMF and ENMF.
+Since the updating formulae of PNMF and ENMF share the same structure as GNMF, the challenges in distributed PNMF and ENMF still lie on how to compute the nominator  and the denominator  .
+Once  and  are computed, the same Map-V and Reduce-V can be reused for the  nal update.
+Computing the nominator  =   [./( )] for PNMF is similar to GNMF because once  = ./[ ] is computed, it becomes  =  .
+Furthermore, since , = 0 if , = 0,  can be computed through two sets of MapRe-In computing  , we no longer need two more MapRe-duce operations: the  rst gets < , , , , h > and the second obtains < , , ,/(wh) >.
+duce operations because we have already joined  with  in the last step.
+We can instead output < , [,/wh ]w > from the last step and streamline the output directly to Map-II.
+Not only does this save some time, but it also reduces the network tra c.
+=1 w y =   The denominator  =   appears formidable because it seems to multiply two giant dense matrices.
+But since all elements of  is 1, all the columns of  are the same, i.e.,  ,     [1, ].
+So we only need to calculate any column y , possibly in parallel, and copy it to all the machines that host h s for the update of .
+Fortunately, calculating y is simply a sum of all rows of  , which can be done is a similar way as calculating    .
+In conclusion, distributed PNMF can be implemented on MapReduce.
+The computation of the nominator for ENMF is essentially the same as that for PNMF, and the same optimization to save one set of MapReduce operations applies as well.
+But unfortunately, its denominator presents a challenge because it explicitly asks for the giant dense matrix 1./( ).
+To circumvent that, we can approximate it by only keeping the cells corresponding to nonzero values of .
+Approximation is common (and necessary for some cases) in scaling up algorithms to Web scale on distributed clusters.
+For example, the parallel LDA [41] approximates the Gibbs sampling, which is essentially sequential, by parallel sampling in a batch mode, and it still achieves very good results as shown in [8].
+We will leave a full exploration of how to approximate ENMF on MapReduce and its applications to Web lifetime data to the future work.
+This section reports on the experimental evaluation based on GNMF because of its popularity in both literature and practice.
+In Section 4.1, we examine how the performance varies w.r.t.
+di erent factors using a dedicated sandbox cluster.
+Then we demonstrate the e ectiveness of NMF on website recommendation and its scalability on real data in Section 4.2.
+In order to collect detailed execution statistics and prevent the interference of other jobs on a shared computer cluster, we construct a dedicated Hadoop cluster that hosts up to 8 worker machines as our sandbox.
+These machines are not in the same con guration, but all have a Pentium 4 CPU with
+ than 150 GB free space.
+We wrote a random matrix generator, which generates a matrix     +  with sparsity  on given the parameters ,  and .
+By default,  = 217,  = 216,  = 2 7 and  = 23.
+We put these parameters in the exponentials of 2 in order to see how the performance varies when a factor doubles while covering a large parameter spectrum.
+We use  to denote the number of worker machines in the cluster, and it varies from 1 to 8.
+In the following, we  rst examine the computation breakdown among the three components in Section 4.1.1, then present how the performance varies w.r.t.
+,  and  in Section 4.1.2.
+Finally, we report on our experience on implementing NMF using a distributed matrix library in Section 4.1.3.
+This set of experiments is designed for a clear understanding of the algorithms but not for showcasing the scalability.
+All the reported time is for one iteration and it is in minute.
+Table 2 lists the computation cost of each component in terms of both the amount of shu ed data (in MB) and the elapse time, when  is varied on two matrices with sparsity 2 7 and 2 10.
+The  rst thing to notice is that  =    dominates the computation cost in terms of both shu ed data and elapse time.
+The reason is that its computation involves two sets of MapReduce operations as discussed in Section 3.2.1.
+Since  is usually larger than  and , we expect that the cost will signi cantly drop when  becomes sparser, and this is veri ed by the right half of Table 2.
+This is encouraging for practice because the sparsity of real-world data is usually much smaller than 2 7.
+Second, we see that  =     does not throttle the computation even though a single reducer is used to perform the sum.
+This is attributed to the high locality and parallelism in computing    as discussed in Section 3.2.2.
+Finally, we note that analyzing the performance of a distributed job is a nontrivial task.
+Even with a dedicated sandbox cluster, there are still many factors out of our control, such as data allocation and network communication.
+But nevertheless Table 2 provides valuable insights into the cost breakdown, which will help guide further optimization.
+For example, knowing  =    is the dominant factor, we would endeavor to save the set of MapReduce operations for distributed PNMF and ENMF as discussed in Section 3.3.
+Figure 3 plots how the performance varies w.r.t.
+the sparsity , the dimensionality , and the number of worker machines in cluster  .
+Figure 3(a) plots the elapse time vs. the number of nonzero cells in  when the sparsity goes from 2 8 to 2 4, which exhibits an expected linear relationship.
+Figure 3(b), on the other hand, reveals the linearity between the elapse time and the dimensionality .
+Speci -cally, it shows how the elapse time changes when  gradually quadruples from 8 to 512.
+The  gure shows that the slope for  = 2 10 is much smaller than that for  = 2 7.
+This means that although the elapse time increases linearly w.r.t.
+, the normalized slope is much smaller than 1, and the sparser the matrix  is, the smaller the slope will be.
+For example, when  goes from 8 to 512 (64X), the elapse time for  = 2 7 is 33X while that for  = 2 10 is merely
+
+ Finally, we examine how the number of worker machines a ects the performance.
+Figure 3(c) plots the speedup when more and more machines are enabled in the cluster.
+The ideal speedup is along the diagonal, which upper-bounds the practical speedup because of the Amdahl s Law.
+On the matrix with  = 2 7, the speedup is nearly 5 when 8 workers are enabled.
+The gap between the practical and the ideal speedup is due to many factors such as the overhead of shu ing data across machines and logistics on job balancing and check-pointing.
+Interestingly, we notice that when the matrix becomes sparser, the speedup actually drops.
+This suggests that the overhead actually outweighs real computation for these small datasets that can be processed with a single powerful machine; in other words, the cluster is not yet saturated.
+We also implemented GNMF based on a distributed matrix library, called Hama, which aims at serving as a  distributed scienti c package on Hadoop for massive matrix and graph data. 2 Since Hama implements a set of generic matrix operations, we could easily build the GNMF on top of it and successfully ran through some small examples.
+Unfortunately, the implementation failed when the matrix becomes 215   214, which is a 16th of our default data set, with error messages reporting  exhausted the java heap space.  2http://incubator.apache.org/hama/ on 10/25/2009 Sparsity  = 2 10 Component k = 8 k = 32 k = 128 k = 8 k = 32 k = 128 Shu e  Shu e  Shu e  Shu e  Shu e  Shu e   =     =      = .
+  ./
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Table 2: Computation Breakdowns with Di erent  and  ) s e t u n m i ( i e m
+ e s p a
+ l
+
+
+
+
+
+   = 2 4
+ t ) s e u n m i i ( e m
+ e s p a
+ l
+
+
+
+
+
+   = 2 5   = 2 6   = 2 8
+
+ N: Number of Nonzero Cells in A
+
+
+
+
+ x 10 (a) Elapse Time w.r.t.
+ Sparsity  =2 7 Sparsity  =2 10
+
+
+
+
+
+ k: Factorization Dimensionality (b) Elapse Time w.r.t.
+ p u d e e p
+
+
+
+
+
+
+
+
+
+
+ Sparsity  =2 7 Sparsity  =2 10 Ideal Speedup  
+
+
+
+ V: Number of Worker Machines in Cluster (c) Speedup w.r.t.
+ Figure 3: Performance w.r.t.
+,  and  A preliminary investigation reveals the following two factors that limit the scalability of Hama-based GNMF.
+First, since Hama aims at a generic matrix library, its implementation divides the matrices into blocks and invokes a Mapper and a Reducer for each block pair.
+This results in a huge number of MapReduce operations and consequently a lot of data is unnecessarily shu ed around.
+Second, Hama is built on top of a random-access data system, called HBase, which can be very costly when data becomes huge.
+This observation rea rms our belief that speci c design is needed to fully exploit the algorithm-speci c data access patterns for the optimal scalability.
+An important feature shipped in the recent Internet Explorer release is the  Suggested Site,  which recommends related sites according to the site the user is browsing, as shown in Figure 5.
+This feature can be implemented through NMF-based collaborative  ltering on user browsing logs.
+In this section, we investigate the e ectiveness of this approach (Section 4.2.1), with a particular focus on its scalability (Section 4.2.2), because a method that does not scale well will be of limited utility in practice.
+We sample from one-week s log data from a popular browser in the English (US) market.
+The log contains the browsed URLs for opted-in users.
+Each log entry contains an anonymized user id (UID) and a browsed URL, together with some meta-information such as the timestamp.
+As we are interested in recommending websites (instead of URLs), each URL is trimmed to the website level, e.g., http://www.cnn.com/ SPECIALS/2009/health.care/ is truncated to cnn.com.
+We record a UID-by-website count matrix involving 17.8 million distinct UIDs and 7.24 million distinct websites, and Figure 5: Snapshot of the IE8 Suggested Site apply the TF-IDF transformation as in common practice.
+The idea is to  rst factorize the matrix, and then recommend websites based on the reconstructed matrix from the factorization.
+For e ectiveness test, we take the top-1000 UIDs that have the largest number of associated websites, and this gives us 346,040 distinct (UID, website) pairs.
+To measure the e ectiveness, we randomly hold out a visited website for each UID, and mix it with another 99 un-visited sites.
+The 100 websites then constitute the test case for that UID.
+In the end, there are 1000 test cases, one for each UID.
+The goal is to check the rank of the holdout visited website among the 100 websites for each UID, and the overall e ectiveness is measured by the average rank across the 1000 test cases, the smaller the better.
+The same metric is used in a recent study of community recommendation [8].
+As expected, a random algorithm will end up with a score around 50.
+We run GNMF on the matrix with the holdout website for each UID marked as 0, and Figure 4 plots the e ectiveness w.r.t.
+the number of iterations for di erent  s.
+For compari-k n a
+ e g a r e v
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ NMF Iterations (a) k = 20 k n a
+ e g a r e v
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ NMF Iterations (b) k = 80 k n a
+ e g a r e v
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ NMF Iterations (c) k = 140 k n a
+ e g a r e v
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ NMF Iterations (d) k = 200 Figure 4: E ectiveness of GNMF on Website Recommendation (a) Execution w.r.t.
+Iterations (b) Execution w.r.t.
+ Total Iter.
+
+
+
+
+
+
+
+
+  Read Written
+
+
+
+
+
+
+
+
+
+
+
+ Shu e
+
+
+
+ k
+
+
+
+ 
+
+
+
+  Read Written
+
+
+
+
+
+
+
+
+
+
+
+ Shu e
+
+
+
+ (c) Execution w.r.t.
+Sampling Time Period m n Data
+ Size on Disk  1 week 2 weeks 3 weeks 4 weeks 5 weeks
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Execution  Read Written
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Shu e
+
+
+
+
+ Table 3: Scalability of Distributed GNMF on Real-world Data Sets son, recommendations based on SVD are also plotted in each  gure.
+As can be seen, both NMF and SVD are much more e ective than random recommendation.
+Secondly, SVD and NMF are comparable for this application (depending on the choice of ) in terms of e ectiveness.
+In the following, we examine how well GNMF scales to real-world data.
+Table 3 reports on the scalability of GNMF on real-world data sets, which are the same user browsing log but in a much larger scale.
+Five statistics are reported for each job: the elapse time , the sum of the elapse time on all machines in the cluster , the IO  Read  and  Write  and the amount of data shu ed across machines denoted by  Shu e.  The time is measured in minutes and data is in GB.
+ approximately characterizes the total computation load, and the amount of shu ed data re ects the communication cost.
+For example, the last row of Table 3(c) shows that by sampling from 5-weeks  log, we obtain a 51M-by-14.9M matrix with 1.219 billion nonzero values that takes
+
+ top of the matrix.
+The overall time spent on all machines for this job is 6551 minutes and 1334 GB data is shu ed across machines for this job.
+To be speci c, Table 3(a) shows how the algorithm scales w.r.t.
+iterations.
+On the one hand, it shows that the elapse time increases linearly with the number of iterations, but on the other hand, we note that the average time per iteration becomes smaller when more iterations are executed in one job.
+For example, running 6 iterations in one job takes much shorter time than running 6 jobs one iteration each.
+Quantitatively, if we normalize the elapse time by that of 1 iteration, and regress the normalized time to the number of iterations, we see that the resulting slope is 0.72.
+The slope of 0.72 actually comes from the cross-iteration optimizations that are enabled by our distributed algorithm.
+For example, when certain columns of  are updated, they can be immediately used to compute corresponding part of   and   for the update of  .
+As indicated by the slope of 0.72, the cross-iteration optimization can signi cantly improve the performance when multiple iterations are executed in one job.
+Table 3(b), on the other hand, shows the execution w.r.t.
+, when  varies from 10 to 100 with incremental of 30.
+The table shows the same linear relationship as observed in Figure 3(b).
+Finally, Table 3(c) lists how the algorithm scales with increasingly larger data sampled from increasingly longer time periods.
+As can be seen, the algorithm scales smoothly with the data, and it takes around 3 hours to run one iteration on a 51M-by-14.9M matrix containing 1.2 billion nonzero values.
+Considering the cross-iteration optimization and assuming that 20 iterations are enough as observed from Figure 4, the overall running time would be less than 60 hours.
+In other words, if we launch the job in Friday evening, the job would have already  nished by the time we step back into the o ce on Monday morning.
+In order to further push the limit and make sure no hidden issues will explode the algorithm, we test the distributed GNMF on a 43.9M-by-less than 7 hours to  nish one iteration.
+To the best of our knowledge, this is the largest factorization reported in literature, and it assures the scalability for practical usage.
+Parallel operations on matrices (e.g., multiplication, inversion, etc.)
+have been studied for decades because of the ubiquitousness of matrices in many areas, and mature libraries are readily available, e.g., PSBLAS [19].
+Because these general-purpose libraries are designed for multi-thread parallel computers, they cannot be easily ported to computer clusters that hold terabyte to petabyte data.
+Unlike on a parallel machine, data sharing and communication are no longer lightweight on distributed clusters.
+It was not until recently when data explodes with the booming of the Web that people began to look for scalable approaches to manipulating matrices that are too large to reside in memory, and the ongoing Hama project is a representative of this e ort.
+While it is exciting to target a general solution, we believe that dedicated design could better exploit the data locality and parallelism that would otherwise be ignored in a general solution, as we have demonstrated for the NMF case in Section 4.1.3.
+On the other hand, experience gleaned from scaling up di erent algorithms would help build a general library.
+For example, the two MapReduce-based scheme in computing    can be generalized for multiplying two giant matrices when one is dense but narrow and the other is big but sparse.
+Given the parallel library for matrices and the usefulness of NMF, it comes with no surprise to  nd parallel NMF [23,
+ to the characteristics of distributed clusters, we partition  and  in the opposite direction to that adopted in [23,
+ In general, this study reminds us that one needs to carefully reevaluate the parallelism scheme in order to port an algorithm to distributed clusters for Web-scale data.
+Distributed NMF is by no means the only data analysis algorithm that is ported to MapReduce clusters.
+The generality of MapReduce computation model lends itself easily to many interesting applications (e.g., see [7]).
+Das et al. distributed the probabilistic latent semantic indexing (which uses EM) on MapReduce, and showcased its e ectiveness in building up personalized news service [11].
+Nallapati et al. investigate how to perform variational EM for the application of learning text topics [33].
+While the E-step can be easily distributed, the M-step is still centralized, which could potentially become a bottleneck.
+To over the bottleneck, Kowalczyk and Vlassis proposed the Newscast EM which decentralizes the M-step through gossip-based communication model [27].
+Wolfe et al. also decentralized the M-step, and further showed that the decentralized M-step can further take advantages of the network topology for improved scalability [42].
+Because the general applicability of EM algorithm, success on distributed EM e ectively enables many real-world applications (e.g., [11, 8]).
+Recently, Chu et al. show that many popular machine learning algorithms, including locally weighted linear regression (LWLR), k-means, logistic regression (LR), naive Bayes (NB), SVM, ICA, PCA, gaussian discriminant analysis (GDA), Expectation maximization (EM), and backprop-agation (NN) can all be implemented within the MapReduce paradigm [10].
+Google, in response to the demand of analyzing huge amount of data in the Web era, has developed parallel SVM (PSVM) [6] and parallel LDA (PLDA) [41] on MapReduce clusters.
+Readers interested in a comprehensive review of large scale data analysis through parallelism are referred to their recent tutorial [5].
+The distributed NMF as developed in this paper adds to the arsenal of scalable tools in analyzing Web-scale dyadic data.
+There are numerous factorization techniques, and each of them has many extensions to include additional constraints like sparsity or orthogonality [39].
+We here choose to scale up NMF simply because of its respect to the nonnegativity that is intrinsic to the Web data and the numerous successes of NMF as reported in literature [30, 43, 38, 4, 40].
+Besides exploiting parallelism, many researchers have also tried to scale up factorization from algorithmic aspects (e.g., [44,
+ sands by tens of thousands matrices with millions of nonzero values.
+While these algorithms are not comparable to ours in terms of the data scales, their algorithmic design could be exploited to further boost the scalability on distributed clusters.
+Confronted with huge amount of Web dyadic data and lured by the usefulness of NMF, we were determined to scale up NMF.
+In this paper, we showed that by carefully partitioning the data and arranging the computation, factorizing million-by-million matrices with billions of nonzero values becomes feasible on distributed MapReduce clusters.
+There are many future work down the road.
+On the algorithmic side, the  rst priority is to regularize the factorization with additional constraints, such as sparsity [22] and orthogonality [17].
+While these additional constraints will lead to di erent updating formulae as shown in [22, 17], the multiplicative update structure is not altered, which renders incorporating these constraints possible, albeit nontrivial.
+On the application side, we will explore other applications that are enabled by distributed NMF beyond website recommendations.
+The authors would like to thank the following friends and colleagues for their help on algorithm design, literature survey, implementation and proofreading: Chris J.C. Burges, Chris Ding, Susan Domais, Paul Hsu, Emre K c man, Tao Li, Xiaolong Li, Ethan Tu, Lin Xiao and Xiaoxin Yin.
+The authors also appreciate the anonymous reviewers who not only o ered us detailed review comments but also insightful suggestions on future work.

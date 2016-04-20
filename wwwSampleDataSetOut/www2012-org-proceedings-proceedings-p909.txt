@@ -1,0 +1,1519 @@
+Learning Causality for News Events Prediction
+
+Technion–Israel Institute of
+
+Technion–Israel Institute of
+
+Technion–Israel Institute of
+
+Sagie Davidovich
+
+CS Department
+
+Shaul Markovitch
+
+CS Department
+
+Kira Radinsky
+CS Department
+
+Technology
+Haifa, Israel
+
+kirar@cs.technion.ac.il
+
+mesagie@gmail.com
+
+shaulm@cs.technion.ac.il
+
+Technology
+Haifa, Israel
+
+Technology
+Haifa, Israel
+
+ABSTRACT
+The problem we tackle in this work is, given a present news
+event, to generate a plausible future event that can be caused
+by the given event. We present a new methodology for mod-
+eling and predicting such future news events using machine
+learning and data mining techniques. Our Pundit algorithm
+generalizes examples of causality pairs to infer a causality
+predictor. To obtain precise labeled causality examples, we
+mine 150 years of news articles, and apply semantic nat-
+ural language modeling techniques to titles containing cer-
+tain predeﬁned causality patterns. For generalization, the
+model uses a vast amount of world knowledge ontologies
+mined from LinkedData, containing 200 datasets with ap-
+proximately 20 billion relations. Empirical evaluation on
+real news articles shows that our Pundit algorithm reaches
+a human-level performance.
+
+Categories and Subject Descriptors
+I.2.6 [Artiﬁcial Intelligence]: Knowledge acquisition; I.2.1
+[Artiﬁcial Intelligence]: Applications and Expert Sys-
+tems
+
+General Terms
+Algorithms, Experimentation
+
+Keywords
+News prediction, Future prediction, Web knowledge for fu-
+ture prediction
+
+1.
+
+INTRODUCTION
+
+When an agent, situated in a complex environment, plans
+its actions, it reasons about future changes to the environ-
+ment. Some of the changes are a result of its own actions,
+but many others are a result of various chains of events not
+necessarily related to the agent. The process of observing an
+event, and reasoning about future events potentially caused
+by it, is called causal reasoning.
+
+In the past, such complex environments were not acces-
+sible to computerized agents due to the limitation of their
+perceptive capabilities. The proliferation of the World Wide
+Web, however, changed all these. An intelligent agent can
+act in the virtual world of the Web, perceiving the state
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2012, April 16–20, 2012, Lyon, France.
+ACM 978-1-4503-1229-5/12/04.
+
+of the world through extensive sources of textual informa-
+tion, including Web pages, tweets, news reports, and online
+encyclopedias, and performing various tasks such as search-
+ing, organizing and generating information. To act intelli-
+gently in such a complex virtual environment, an agent must
+be able to perceive the current state, and reason about fu-
+ture states through causal reasoning. Such reasoning ability
+can be extremely helpful in conducting complex tasks such
+as identifying political unrest, detecting and tracking social
+trends, and generally support decision making by politicians,
+business people, and individual users.
+
+While many works have been devoted to extracting in-
+formation from text [3, 6], little has been done in the area
+of causality extraction [18, 19, 13, 12]. Furthermore, the
+algorithms developed for causality extraction are aimed at
+detection of causality pairs and cannot be used for causality
+prediction, i.e., given an event, generating new events that
+it can cause. The goal of the research presented in this pa-
+per is to provide algorithms that perform causal reasoning
+in textually represented unrestricted environments.
+
+Our Pundit system, given an event represented in natural
+language, predicts future events it can potentially cause. To
+achieve this, we train the system with examples of causality
+relations automatically extracted from the Web. We ﬁrst
+collect news reports from the last 150 years. We then use
+textual causality patterns (such as “X because Y”, “X causes
+Y”, etc.) to identify pairs of structured events that are sup-
+posedly related by causality (we do not rely on time cor-
+relation). The result is a semantically-structured causality
+graph of 300 million fact nodes connected by more than one
+billion edges. Our learning algorithm then uses large on-
+tologies to generalize over the causality pairs and to predict
+causality of unseen cases. To evaluate our methods we test
+it on a news archive from 2010, which was not used during
+training. The results are judged by human evaluators.
+
+To gain some intuition about the type of predictions the
+algorithm issues, we present here two examples. The algo-
+rithm, given the event “Magnitude 6.5 earthquake rocks the
+Solomon Islands”, predicted that “Tsunami-warning will be
+issued in the Paciﬁc Ocean”. It learnt this based on past ex-
+amples it was trained on, one of which was “Tsunami warn-
+ing issued for Indian Ocean” after “7.6 earthquake strikes
+island near India”. The predictive template inferred by Pun-
+dit was: if an earthquake occurs next to an Island, a tsunami
+warning will be issued for its nearest ocean. An additional
+example of a prediction issued by Pundit, is given the event
+“Cocaine found at Kennedy Space Center”, it outputted the
+following predictions: “few people will be arrested”, as the
+
+WWW 2012 – Session: Web MiningApril 16–20, 2012, Lyon, France909past event “police found cocaine in lab” caused the event “2
+people arrested”. Such predictions provide evidence for the
+system ability to reason under changing conditions and issue
+logical predictions.
+
+The contributions of this work are threefold: First, we
+present novel and scalable algorithms for generalizing causal-
+ity pairs to causality rules. Second, we provide a new method
+for using casualty rules for predicting new events. Finally,
+we perform an empirical study on realistic problems judged
+by human raters. We make the extracted causality informa-
+tion publicly available for further research in the ﬁeld 1.
+
+2. RELATED WORK
+
+We are not aware of any work that attempts to perform
+the task we face: receive arbitrary news event in natural
+language representation and predict events that it can cause.
+There are, however, several works that deal with related
+tasks. In computational linguistics, many studies deal with
+extraction of causality relations from text using causality
+patterns. These patterns are either manually crafted [18, 19,
+13, 12], or automatically generated using machine learning
+techniques [5, 36, 32, 33, 1, 24, 9].
+In textual entailment
+[14], the task is to identify texts that logically follow one
+another.
+
+Another related task in natural language processing is the
+task of temporal information extraction – predicting the
+temporal order of events or time expressions described in
+text. Most of those approaches [25, 27, 21, 8, 39, 41] learn
+classiﬁers that predict a temporal order of a pair of events
+based on predeﬁned pair’s features. Shahaf and Guestrin
+[35] essentially detect a whole causality chain – given two
+news articles, they provide a coherent small number of news
+items connecting them. Similarly, some works in topic track-
+ing [2], try to identify coherent story lines from news. More
+recently, some works [16, 16, 29] have explored the usage of
+large text mining techniques, applied on temporal corpus,
+such as news and books. These works focus mainly on how
+the culture develops, and what people’s expectations and
+memories are from those times.
+
+The above works, along with the works that deal with
+other entity and relation extraction [6] and common-sense
+knowledge acquisition from text [3, 34], tackle a task that
+is diﬀerent from ours. Their task involves identiﬁcation and
+extraction of causality relations, while ours involve predic-
+tion of events caused by a given event. Thus, our algorithm
+can generate events that were not observed before. More-
+over, in Section 5.2 we describe a module of our algorithm
+that obtains training examples based on methods similar to
+the above.
+
+We do not claim to create more precise information extrac-
+tion methods, but rather how to leverage all this knowledge
+to perform an important AI task – future event prediction.
+We present novel methods of combining world knowledge
+with event extraction methods to represent coherent events.
+We then present novel methods for rule extraction and gen-
+eralization using this knowledge.
+
+3. EVENT REPRESENTATION
+
+The basic element of our algorithm is an event. We lever-
+age elements from the work of Kim [20] and to design a rep-
+
+1http://www.technion.ac.il/ kirar/Datasets.html
+
+resentation scheme that allows us comparing events, gen-
+eralizing them and reasoning about them. Given a set of
+(physical or abstract) objects O, Kim deﬁned an event as
+a triplet [Oi, P, t] where Oi ⊆ O is a set of objects, P is
+a relation (or a property) over objects and t is a time in-
+terval. We propose a representation that further structures
+the event to have roles in addition to the property relation.
+Each event will be composed of a temporal action or state
+that the event’s objects exhibit (P ), one or more actors O1
+that conducted the action, one or more objects O2 on which
+the action was performed, one or more instruments O3 the
+action was conducted with, and one or more locations O4
+of the event. Formally, it is represented as an ordered set
+e = (cid:104)P, O1, . . . , O4, t(cid:105), where P is the action, Oi ⊆ O and
+t is a time-stamp. For example, the event “The U.S army
+destroyed a warehouse in Iraq with explosives”, which oc-
+curred on October 2004, is modeled as: Destroy (Action);
+U.S Army (Actor); warehouse (Object); explosives (Instru-
+ment); Iraq (Location); October 2004 (Time). Illustration
+of more such events can be see in Figure 5.
+
+The approaches in the literature for event representation
+can be divided to two groups: The ﬁrst approach describes
+an event in the sentence level by an intact text or individual
+terms [5, 36]. However, representing the events “U.S army
+bombs a warehouse in Iraq”, “Iraq attacks the U.S base” and
+“Terrorist base was attacked by the U.S marines in Kabul”
+using terms alone might yield that the ﬁrst two events more
+similar than the ﬁrst and last – as it lacks the understanding
+the actor of both events is a military group and that Kabul
+and Iraq are the locations of the events. The second ap-
+proach, describes events in a syntax-driven way, where each
+element is mapped to a noun phrase [12, 19, 13, 9]. In our
+example, this representation again will not ﬁnd the appro-
+priate similarity of the events, as in the syntax level both
+the second and third event are similar.
+
+Using these representations, it is hard to perform general-
+izations and comparison of events in a semantic or pragmatic
+way that takes into account all the elements composing an
+event. Our approach is semantic — it identiﬁes actors, ob-
+jects etc. This resembles the complex event representations
+presented in large knowledge ontolgies, such as Cyc [22].
+This mapping of the atomic elements of each event (e.g.,
+U.S Army) to semantic concepts (e.g., actor ) provides a fer-
+tile ground for canonic representation of events that are both
+comparable and generalizable.
+
+4. THE PREDICTION ALGORITHM
+
+In this section we present Pundit – a learning algorithm
+that outputs a predictor g, which, given a present event,
+can predict its possible eﬀects. During training, the learning
+algorithm generalizes over the given examples and produces
+an abstraction tree (AT) (Section 4.3). For each node in the
+AT, a prediction rule is generated based on the examples
+in the node (Section 4.4). In the prediction phase, the new
+event is matched to a node in the AT, and the associated
+rule is applied on it to produce the eﬀect event.
+4.1 Problem Deﬁnition
+Let Ev be the universe of all possible events. We deﬁne
+a prediction function f : 2Ev → 2Ev, that maps from a set
+of events to a set of future events (i.e., f (e).t > e.t). In this
+work, we focus on a subclass of this problem – functions of
+the form g : Ev → Ev. Our solution is based on learning
+
+WWW 2012 – Session: Web MiningApril 16–20, 2012, Lyon, France910this function from examples. Assume there is a causality
+function g unknown to us. Assume we are given a set of
+examples E = {(cid:104)e1, g(e1)(cid:105) , . . . ,(cid:104)en, g(en)(cid:105)}, our goal is to
+produce a hypothesis ˆg which is a good approximation of g.
+4.2 Generalizing Over Objects and Actions
+
+Our goal is to develop a learning algorithm that auto-
+matically induces a causality function based on examples of
+causality pairs. The inferred casualty function should be
+able to make its prediction for the given event, even if it was
+never observed before. For example, given the training ex-
+amples (cid:104)earthquake in Turkey, destruction(cid:105) and (cid:104)earthquake
+in Australia, destruction(cid:105), and a current new event of “earth-
+quake in Japan”, a reasonable prediction would be “destruc-
+tion”. To be able to handle such predictions, we must endow
+our learning algorithm with generalization capacity. For ex-
+ample, in the above scenario, the algorithm needs the ability
+to generalize Australia and Turkey to countries, and to infer
+that earthquakes in countries might cause destruction. This
+type of inference and the knowledge that Japan is also a
+country enables the algorithm to predict the eﬀects of new
+events based on patterns in the past.
+
+To generalize over a set of examples, each consisting of a
+pair of events, we perform generalization over the compo-
+nents of these events. There are two types of such compo-
+nents – objects and actions.
+
+To generalize over objects, we assume the availability of a
+semantic network Go = (V, E), where the nodes V = O are
+the objects in our universe, and the labels on the edges are
+relations such as isA, partOf and CapitalOf. In this work,
+we consider one of the largest semantic network available,
+the LinkedData ontology [4], which we describe in detail in
+Section 5.
+
+We deﬁne two objects to be similar if they relate to a third
+object in the same way. This relation can be a label or a
+sequence of labels in the semantic network. For example,
+Paris and London will be considered similar because both
+−−−−−−−−−→ to
+their nodes connect by the path
+the node Europe. More formally:
+
+Capital−of
+−−−−−−−−→ In−continent
+
+Definition 1. Let a, b ∈ V . A sequence of labels L =
+l1, . . . , lk is a generalization path of a, b, denoted by Gen-
+Path(a,b), if there exist two paths in G, (a, v1, l1), . . . (vk, vk+1, lk)
+and (b, w1, l1), . . . (wk, wk+1, lk), s.t. vk+1 = wk+1.
+
+During generalization of the events over-generalization should
+
+be avoided – e.g., given two similar events, one occurring in
+Paris and one in London we wish to produce the general-
+−−−−−−−−−→ Europe)
+ization “city in Europe” (
+rather than the most abstract generalization “city in a con-
+−−−−−−−−−→ IsA−−→ Continent). That is,
+tinent” (
+the minimal generalization of the objects.
+
+Capital−of
+−−−−−−−−→ In−continent
+
+Capital−of
+−−−−−−−−→ In−continent
+
+Definition 2. The minimal generalization path, de-
+noted by M GenP ath(a, b), is deﬁned as the shortest gener-
+alization path. We denote distGen(a, b) as the length of the
+M GenP ath(a, b).
+
+Path-based semantic distances, as the one above, were
+shown to be successful in many NLP applications. For ex-
+ample, a similiar distance was used to measure semantic
+relatedness of two words as a function of the length of the
+shortest path in a taxonomy (such as Wordnet or Wikipedia)
+
+Procedure Minimal Generalization Path(G)
+
+(1) Q ← new Queue
+(2) Foreach {(a, c, l), (b, c, l) ∈ E(G)|
+
+a, b, c ∈ V (AT ), l ∈ Lables}
+
+(2.1) M gen(a, b).Gen = c
+(2.2) M gen(a, b).P red = l
+(2.3) M gen(a, b).Expanded = f alse
+(2.4) Q.enqueu((a, b))
+(3.1) (a, b) ← Q.dequeu()
+(3.2) If M gen(a, b).Expanded (cid:54)= true:
+
+(3) While Q (cid:54)= ∅:
+
+M gen(a, b).Expanded = true
+(3.4) Foreach {(x, a, l), (y, b, l) ∈ E(AT )|
+x, y ∈ V (AT ), l ∈ Lables}
+
+(3.4.1) M gen(x, y).Gen = M gen(a, b).Gen
+(3.4.2) M gen(x, y).P red = M gen(a, b).P red||l
+(3.4.3) M gen(x, y).Expanded = f alse
+(3.4.4) Q.enqueu((x, y))
+
+(4)Return M gen
+
+Figure 1: Procedure for calculating the minimal Gener-
+alization path for all object pairs
+
+connecting the two nodes representing the words [31, 37].
+We build on this metric, and expand it to handle events,
+that are structured and can contain several objects from
+diﬀerent ontologies.
+
+To eﬃciently produce M GenP ath, we designed an algo-
+rithm (described in Figure 1), based on dynamic program-
+ming, that computes the M GenP ath for all object pairs in
+G. At stage 1 a queue that will hold all nodes with common
+generalization is initialized. At stage 2, the algorithm identi-
+ﬁes all nodes (a, b) that have a common node (c) connecting
+to them via the same type of edge (l). c can be thought of
+as a generalization of a and b. The M gen structure maps a
+pair of nodes to their generalization (M gen.Gen) and their
+generalization path (M Gen.P red). At stage 3, in a dynamic
+programming manner, the algorithm iterates over all nodes
+(a, b) in M gen, for which we found a minimal generalization
+in previous iterations, and ﬁnds two nodes – one (x) con-
+necting to a and one (y) connecting to b via the same type
+of edge l (stage 3.4). Thus, the minimal generalization of x
+and y is the minimal generalization of a and b, and the path
+is the M GenP ath of a, b with the addition of the edge type l.
+This update is performed in stages 3.4.1–3.4.4. Eventually,
+when no more nodes with minimal generalization can be ex-
+panded (i.e., cannot ﬁnd two nodes that connect to them via
+the same edge type), the algorithm stops and return M gen
+(stage 4).
+
+We also deﬁne a distance between actions using an ontol-
+ogy Gp, similarly to the way we deﬁned distance between ob-
+jects. Speciﬁcally, we use the VerbNet [17] ontology, which
+is one of the largest English verb lexicon. It has mapping
+to many other online resources, such as Wordnet [30]. The
+ontology is hierarchical and is based on a classiﬁcation of
+the verbs to the Levin classes [15]. Using this ontology we
+describe the connections between verbs. Figure 6 shows a
+node in this ontology that generalizes the actions “hit” and
+“kick”.
+
+WWW 2012 – Session: Web MiningApril 16–20, 2012, Lyon, France9114.3 Generalizing Events
+
+In order to provide signiﬁcant support for generalization,
+we wish to ﬁnd similar events that can be generalized to a
+single abstract event. In our example, we wish to infer that
+both (cid:104)earthquake in Turkey, destruction(cid:105) and (cid:104)earthquake
+in Australia, destruction(cid:105) are examples of the same group of
+events. Therefore, we wish to cluster the events in such a
+way that events, that have both similar causes and similar
+eﬀects, will be clustered together. As in all clustering meth-
+ods, a distance measure between the classiﬁcation objects
+(in our case, the events) should be deﬁned.
+4, tj(cid:105)
+be two events. In the previous subsection we deﬁned a dis-
+tance function between objects (and between actions). Here,
+we deﬁne the similarity of two events ei and ej to be the sum
+of distances between their objects and actions:
+
+4, ti(cid:105) and ej = (cid:104)P j, Oj
+
+Let ei = (cid:104)P i, Oi
+
+1, . . . , Oj
+
+1, . . . , Oi
+
+4(cid:88)
+
+k=1
+
+SIM (ei, ej) = distGp
+
+Gen(P i, P j) +
+
+distGo
+
+Gen(Oi
+
+k, Oj
+k)
+
+(1)
+
+Gen is the distance function distGen in the graph
+
+where, distG
+G.
+events (cid:104)ci, ei(cid:105) and (cid:104)cj, ej(cid:105) is deﬁned as:
+
+Likewise, a similarity between two pairs of cause-eﬀect
+
+(2)
+
+SIM ((cid:104)ci, ei(cid:105),(cid:104)cj, ej(cid:105)) = SIM (ci, cj) + SIM (ei, ej)
+Using the similarity measurement suggested above, the
+clustering process can be thought of as a grouping of the
+training examples in such a way that there is a low variance
+in their eﬀects (similar to information gain methods where
+examples are clustered by their class) and have a high sim-
+ilarity in their cause. We use the HAC hierarchical cluster-
+ing algorithm [11] as our clustering method. The algorithm
+starts by joining the closest event pairs together into a clus-
+ter, and keeps repeating the process by joining the closest
+two clusters together until all elements are linked together
+into a hierarchical graph of events which we call abstraction
+tree (AT).
+
+During the prediction phase, the input cause event will
+be matched to one of the created clusters. To allow this,
+we assign to each node in AT a representative cause event,
+that is the event closest to the centroid of the node’s cause
+events.
+4.4 Causality Prediction Rule Generation
+
+The last phase of the learning is the creation of rules that
+will allow us, given a cause event, to generate the predicted
+event. As the input cause event is matched against the node
+centroid, naively we could have returned the eﬀect event of
+the matched centroid. This, however, would not provide us
+with the desired result. Assume an event ei=”Earthquake
+hits Haiti“ occurred today, which is matched to a node rep-
+resented by the centroid: “Earthquake hits Turkey”, whose
+eﬀect is ”Red Cross help sent to Ankara“. Obviously, pre-
+dicting that Red Cross help will be sent to Ankara because
+of an earthquake in Haiti is not reasonable. We would like
+to be able to abstract the relation between the past cause
+and past eﬀect and learn a predicate clause that connects
+them, e.g. for ”Earthquake hits [Country Name]“ yield ”Red
+Cross help sent to [Capital of Country]“. During predic-
+tion, such a clause will be applied to the present input event
+ei producing its eﬀect with regard to ei. In our example,
+the logical predicate clause would be CapitalOf, as Capi-
+
+Procedure FindPath(curEntity, goalEntity, depth)
+
+If curEntity = goalEntity Return ∅
+Else
+
+If depth = 0 Return N U LL
+Else
+
+Foreach relation ∈ outEdges(curEntity)
+
+solution ← FindPath(relation(curEntity),
+If solution (cid:54)= N U LL
+
+goalEntity, depth − 1)
+
+Foreach existingSolution ∈ Solutions :
+
+Return Solutions(cid:83)
+
+(existingSolution||relation||solution)
+
+Return Solutions
+
+Procedure LearnPredicateClause((cid:104)P c, Oc
+(cid:104)P e, Oe
+j ∈ Oe, k ∈ {1 . . . depth}
+
+4, te(cid:105), depth)
+i ∈ Oc, Oe
+
+1, . . . , Oe
+Foreach Oc
+
+1, . . . , Oc
+
+4, tc(cid:105),
+
+Return Learn predicate Clause Inner(Oc
+
+i , Oe
+
+j , k)
+
+Figure 2: Procedure for inferring paths between two
+events in the causality graph
+
+talOf(Turkey)= Ankara. When applied on the current event
+ei: CapitalOf(Haiti) = Port-au-Prince, the output will now
+be ”Red Cross help sent to Port-au-Prince”. Notice that
+the application of the clauses can only be applied on certain
+types of objects – in our case, countries. The clauses can be
+of any length, e.g., the pair (cid:104)“suspect arrested in Brooklyn”,
+“Bloomberg declares emergency”(cid:105) produces the clause
+Mayor(BoroughOf(x)), as Brooklyn is a borough of New
+York, whose mayor is Bloomberg.
+
+We will now show how to learn such clauses for each node
+in the AT graph. Recall that the semantic network graph
+GO is an edge-labeled graph, where each edge is a triplet
+(cid:104)v1, v2, l(cid:105), where l is a predicate (e.g. “CapitalOf”). The
+rule-learning procedure is divided to two main steps: First,
+we ﬁnd an undirected path pi of length at most k in GO
+between any object of the cause event to any object of the
+eﬀect event. Note that we do not necessarily look for paths
+between two objects in the same role. In the above exam-
+ple, we found a path between the location of the cause event
+(Brooklyn) to the actor of the eﬀect event (Bloomberg). Sec-
+ond, we construct a clause using the labels of the path pi as
+the predicates. We call this the predicate projection of size
+k, pred = l1, . . . , lk from an event ei to an event ej. Dur-
+ing prediction, the projections will be applied to the new
+event e = (cid:104)P i, O1, . . . , O4, t(cid:105) by ﬁnding an undirected path
+in GO from Oi with the sequence of labels of pred. As k is
+unknown, the algorithm, for each training example (cid:104)ct, et(cid:105)
+in a node in AT, ﬁnds all possible predicate paths with in-
+creasing sizes of k from the objects of ct to the objects of et
+in the GO graph. Each such path is weighted by the num-
+ber of times it occurred in the node. The full procedure of
+predicate generation is described in Figure 2. The function
+LearnP redicateClause calls the inner function F indP ath
+for diﬀerent k sizes and diﬀerent objects from the given cause
+and eﬀect events. F indP ath is a recursive function trying to
+ﬁnd in a graph a path of length k between the two objects.
+It returns the labels of such path if found.
+
+WWW 2012 – Session: Web MiningApril 16–20, 2012, Lyon, France912Procedure Propagation(e = (cid:104)P i, O1, . . . , O4, t(cid:105))
+
+(1) Candidates ← {}
+(2) Q ← new Queue
+(3) Q.enqueu(G.root)
+(4) While Q (cid:54)= ∅:
+
+(4.1) cur ← Q.dequeu()
+(4.2) Foreach edge ∈ cur.OutEdges:
+
+Candidates ← Candidates(cid:83)
+
+If SIM (e, edge.Source) > SIM (e, edge.Destination):
+
+{(edge.Source, SIM (e, edge.Source))}
+
+Else :
+
+Q.enqueu(edge.Destination)
+
+(5) Return Candidates
+
+Figure 3: Procedure for locating candidates for pre-
+diction
+
+4.5 Prediction
+Given a trained model ˆg, it can be applied to a new event
+e = (cid:104)P i, O1, . . . , O4, t(cid:105) and to output its eﬀect. The process
+is divided into two main steps – propagation of the event
+in the AT retrieving all similar nodes that match the new
+event, and then the application of the node rule on the event
+to produce the eﬀect of the event.
+
+Given a new event, Pundit traverses the AT starting from
+the root. For each node in the search frontier, the algorithm
+computes the similarity (SIM (ei, ej)) of the input event to
+the centroid of each of the children on this node, and ex-
+pands those children with better similarity than their par-
+ent. At the end, the algorithm returns the set of all nodes
+in the search frontier, sorted by their similarity to the in-
+put event. Intuitively, we try ﬁnding the nodes which are
+the least general but still similar to the new event. The full
+algorithm is illustrated in Figure 3. The algorithm saves a
+set of possible matched results (Candidates), and a queue
+holding the search frontier (Q). In stage 4, the algorithm
+traverses the graph. In stage 4.2, for each edge, the algo-
+rithm tests whether the similarity of the new event e to the
+parent node (edge.Source) is higher than to the child node
+(edge.Destination). If the test succeeds, the parent node,
+with its similarity score, is added to the possible results. Af-
+ter all edges are exposed, the algorithm returns the possible
+results in stage 5. A visualization of the process can be seen
+in Figure 4.
+
+For each node retrieved in the previous stage, the node
+predicate projection, pred, is applied to the new event e =
+(cid:104)P i, O1, . . . , O4, t(cid:105) by ﬁnding an undirected path in GO from
+Oi with the labels of pred. This rule generates a possible
+eﬀect event based on the retrieved node.
+
+The projection results are all the objects in the vertex
+reached. Formally, pred can be applied if
+∃V0 : O ⊆ V0,∃V1 . . . Vk : (V0, V1, l1), . . . (Vk−1, Vk, lk) ∈
+Edges(GO). The projection results are all the objects o ∈
+Vk. The projections results of all the nodes, are weighted by
+the similarity of the target cause to the node M Gen (for tie
+breaking).
+
+5. CAUSALITY MINING PROCESS: IMPLE-
+
+MENTATION DETAILS
+
+In the previous section we present a high-level algorithm
+that requires training examples T , knowledge about entities
+GO, and events’ action classes P . One of the main challenges
+
+Figure 4: An event of a bombing in Baghdad is re-
+ceived as input. The system searches for the least
+general cause event it has observed in the past. In
+our case it is a generalized cluster: ”bombing in
+city”. The rule at this node now will be applied
+on Baghdad bombing to generate the prediction.
+
+of this work was to build a scalable system to obtain those
+requirements.
+
+We present a system that mines news sources to extract
+events, constructs their canonical semantic model, and builds
+a causality graph on top of those events. The system crawled,
+for more than 4 months, several dynamic information sources.
+The largest information source was the New-York-Times
+archive, on which optical character recognition (OCR) was
+performed. The overall gathered data spans more than 150
+consecutive years (1851 − 2009).
+
+For generalization of the objects, the system automati-
+cally reads web content and extracts world knowledge. The
+knowledge was mined from structured and semi-structured
+publicly available information repository. The generation of
+the causality graph was distributed over 20 machines, using
+a Map-Reduce framework. This process eﬃciently unites
+diﬀerent sources, extracts events, and disambiguates enti-
+ties. The resulting causality graph is composed of over 300
+million entity nodes, one billion static edges (connecting the
+diﬀerent objects encountered in the events) and over 7 mil-
+lion causality edges (connecting events that were found by
+Pundit to cause each other). Each rule in the AT was gen-
+erated based on an average of 3 instances with standard
+deviation of 2.
+
+On top of the causality graph, a search and indexing in-
+frastructure was built to enable search over millions of docu-
+ments. This index allows a fast walk on the graph of events,
+enabling eﬃcient inference capabilities during the reusing
+phase of the algorithm.
+5.1 World Knowledge Mining
+
+In this work we leverage the knowledge from several well-
+known ontologies to build the entity graph Go. Our graph
+is composed of concepts from Wikipedia, ConceptNet [26],
+WordNet [30], Yago [38], and OpenCyc. The relations be-
+tween the concepts (e.g., CapitalOf) are obtained from the
+LinkedData cloud project [4], where concepts are interlinked
+using human editors. The billion labeled edges of the graph
+
+“Baghdad bombing” 0.2 0.3 0.7 0.8 0.75 0.65 “bombing” “military” “military communication” “bombing in  city” “bombing in Kabul” “bombing in  worship area” 0.2 WWW 2012 – Session: Web MiningApril 16–20, 2012, Lyon, France913Go are the predicates of those ontologies. Our system creates
+the entity graph by collecting the above content, processing
+feeds, and processing formatted data sets (e.g. Wikipedia).
+Our crawler then archives those documents in raw format,
+and transforms them into RDF format, using the interlink-
+ing information of LinkedData. We use SPARQL queries as
+a way of searching over the knowledge graph we create.
+5.2 Causality Events Mining and Extraction
+Our supervised learning algorithm requires many learn-
+ing examples to be able to generalize well. As the amount
+of temporal data is extremely large, spanning over millions
+of articles, the goal of getting human annotated examples
+becomes impossible. We therefore provide an automatic
+procedure to extract labeled examples for learning causal-
+ity from dynamic content. Speciﬁcally in this work, we
+used the New-York-Times archives for the years 1851−2009,
+WikiNews and BBC – over 14 million articles in total (see
+data statistics in Table 1). As we perform analysis on news
+titles alone, which are quite structured, the accuracy of this
+stage (performed on a representative subset of the data) is
+78% (see Section 6.2.2). The system mines unstructured
+natural language text found in those titles, and searches for
+causal grammatical patterns. We construct those patterns
+using causality connectors as described in [40, 23]. Those
+connectors are divided to three groups:
+
+1. Causal Connectives: in this set of connectors we used
+
+the words: because, as, and after as the connectors.
+
+2. Causal prepositions: in this set of connectors we used
+
+the words: due to, and because of.
+
+3. Periphrastic causative verbs: in this set of connectors
+
+we used the words: cause, and lead to.
+
+We constructed a set of rules for extracting a causality pair.
+Each rule is structured as: (cid:104)Pattern, Constraint, Priority(cid:105),
+where Pattern is a regular expression containing a causality
+connector, Constraint is a syntactic constraint on the sen-
+tence on which the pattern can be applied, and Priority is
+the priority of the rule if several rules can be matched. For
+example, for the causality connector “after”, the pattern “Af-
+ter [sentence1], [sentence2]” is used, with the constraint that
+[sentence1] cannot start with a number. This pattern can
+match the sentence “after Afghan vote, complaints of fraud
+surface” but will not match the sentence “after 10 years in
+lansing, state lawmaker Tom George returns”. An additional
+pattern example is “[sentence1] as [sentence2]” with the con-
+straint of [sentence2] having a verb. Using the constraint,
+the pattern can match the sentence “Nokia to cut jobs as it
+tries to catch up to rivals” is matched, but not the sentence
+“civil rights photographer unmasked as informer”. The re-
+sult of a rule application is a pair of sentences – one tagged
+as a cause, and one tagged as an eﬀect.
+
+Given a natural-language sentence (extracted form an ar-
+ticle title), representing an event (either during learning
+or prediction), the following procedure transforms it into
+a structured event:
+
+1. Root forms of inﬂected words are extracted using a
+
+morphological analyzer derived from WordNet [30] stem-
+mer. For example, in the article title from 10/02/2010:
+“U.S. attacks kill 17 militants in Pakistan”, the words
+“attacks”, “killed” and “militants” are transformed to
+“attack”, “kill” and “militant” respectively.
+
+Data Source
+New-York-Times
+BBC
+WikiNews
+
+Number of Titles Extracted
+14,279,387
+120,445
+25,808
+
+Table 1: Data Summary.
+
+2. Part-Of-Speech tagging [28] is performed, and the verb
+is identiﬁed. The class of the verb is identiﬁed us-
+ing the VerbNet vocabulary [17], e.g., kill belongs to
+P =murder class.
+
+3. A syntactic template matching the verb is applied to
+extract the semantic relations and thus the roles of the
+words (see example in Figure 6). Those templates are
+based on VerbNet, which supplies for each verb class
+a set of syntactic templates. These templates match
+the syntax to the thematic roles of the entities in the
+sentence. We match the templates even if they are not
+continuous in the sentence tree. This allows the match
+of a sentence even where there is an auxiliary verb be-
+tween the subject and the main transitive verb. In our
+example, the template is “NP1 V NP2” which trans-
+forms NP1 to “Agent”, and NP2 to “Patient”. There-
+fore, we match U.S. attacks to be the Actor, and the
+militant to be the Patient .
+If no template can be
+matched, the sentence is transformed into a typed-
+dependency graph of grammatical relations [28]. In the
+example, U.S. attacks is identiﬁed as the subject of the
+sentence (candidate for Actor), militants as the object
+(candidate for Patient), and Pakistan as the preposi-
+tion (candidate for Location or Instrument, based on
+heuristics, e.g., locations lexicons). Using this analysis,
+we identify that the Location is Pakistan.
+
+4. Each word in Oi is mapped to a Wikipedia-based con-
+cept.
+If a word matches more than one concept, we
+perform disambiguation by computing the cosine sim-
+ilarity between the body of the news article and the
+body of the Wikipedia article associated with the con-
+cept: e.g., U.S was matched to several concepts, such
+as: United States, University of Salford, and Us (Brother
+Ali album). The most similar by content was United
+States Wikipedia concept.
+
+5. The time of the event t is the time of the publication
+
+of the article in the news, e.g., t =10/02/2010.
+
+In our example, the ﬁnal result is the event e = (cid:104)Murder-
+Class, United States Of America, Militant, NULL ,Pakistan,
+10/02/2010(cid:105) . The ﬁnal result of this stage is a causality
+graph composed of causality event pairs. Those events are
+structured as described in Section 3. We illustrate such a
+pair in Figure 5.
+
+6. EMPIRICAL EVALUATION
+
+A variety of experiments were conducted to test the per-
+
+formance and behavior of our algorithm.
+6.1 Methodology
+
+In this section we outline the methodology we used for our
+experiments. We provide two types of experiments – one
+evaluating the precision of the causality graph constructed,
+
+WWW 2012 – Session: Web MiningApril 16–20, 2012, Lyon, France914input to the predictor h is an event. To ﬁnd news titles
+that represent an event, we randomly sample n head-
+lines from the test data. For each headline a human is
+requested to decide whether the headline is an event
+which can cause other events. We denote the set of
+headlines labeled as event as E. We again randomly
+sample k titles from E. We denote this group as C.
+
+2. Algorithm event prediction – on each event title ci ∈
+C, Pundit performs event extraction from the headline,
+and produces an event ea
+i with the highest score of
+being caused by the event represented by ci. The result
+of this stage are the pairs: {(ci, ea
+
+i )|ci ∈ C}.
+
+3. Human event prediction – a human is asked what the
+event ci ∈ C might cause. The instructions given to
+the human were to read the given event and to provide
+their best understanding on what the possible event it
+can cause. They were allowed to use any resource and
+were not limited by time. Human result is denoted as
+eh
+i . The human is requested to provide the answer in a
+structured manner (as our algorithm produces). The
+result of this stage are the pairs: {(ci, eh
+
+i )|ci ∈ C}.
+
+4. Human evaluation of the results – Present m people
+with a triplet (ci, eh
+i , ea
+i ). We ask to evaluate the pre-
+i ) and the precision of (ci, ea
+cision of the pair: (ci, eh
+i ),
+on a scale of 0-4 (0 is a highly impossible prediction
+and 4 is a highly possible prediction).
+
+The accuracy evaluation is similar to the evaluation above,
+but in the third step we checked in the news (and other web
+resources) up to a year after the cause event, whether the
+predicted events appeared in the news. Raters were asked
+to supply conﬁdence for their evaluations (as some events,
+like funerals, are not always reported in the news). We con-
+sidered only conﬁdent and highly conﬁdent results in our
+evaluations.
+
+All Human evaluation was conducted using Amazon Me-
+chanical Turk (MTurk). We ﬁltered the raters using a captcha
+and ﬁltered out outliers. We performed the above mentioned
+experiments, with the values n = 1500, k = 50, m = 10.
+
+6.1.2 Extraction Evaluation
+As part of the analysis experiments of our algorithm, we
+provide evaluation of the information extraction techniques
+described in this work and used to train the system. Specif-
+ically, we provide two types of evaluation: event extraction
+evaluation and causality extraction evaluation. Event Ex-
+traction evaluation examines how well the event was ex-
+tracted. Users were asked to evaluate on a scale of 1-5 how
+well the Action, Actor, Object, Instrument, and Time were
+extracted, given the original news title. We performed this
+evaluation on a randomly sampled 1000 news title, for each
+title we assigned 5 MTurkers. We ﬁltered the raters using
+a captcha and ﬁltered out outliers. Similarly, Causality
+Extraction evaluation evaluates the plausibility of the
+causality relation between two textual events. This eval-
+uation indicates the precision of the causality templates we
+have crafted. MTurkers were shown two sentences the sys-
+tem believed had a cause and eﬀect relation, and they were
+asked to evaluate the plausibility of this relation on a scale
+of 1-5. We performed evaluation over 500 randomly sampled
+pairs, for each we assigned 5 MTurkers.
+
+Figure 5: A pair of events in the causality graph.
+The ﬁrst represents a cause event and the second
+represents the eﬀect event. Both extracted from the
+title published on 1/2/1987: 5 Afghan troops killed
+after US army bombs warehouse in Kabul.
+
+Class Hit-18.1
+
+Roles and Restrictions:
+Agent[int control] Patient[concrete] Instrument[concrete]
+Members: bang, bash, hit, kick, . . .
+Frames:
+Example
+
+Syntax
+
+Semantics
+cause(Agent, E)
+manner(during(E),
+directedmotion, Agent)
+!contact(during(E),
+
+Paula hit the ball Agent V Patient
+
+Agent, Patient)
+
+manner(end(E),forceful,
+
+Agent)
+
+contact(end(E), Agent,
+
+Patient)
+
+Figure 6: VerbNet Template.
+
+and the other evaluating the prediction accuracy of our sys-
+tem.
+
+6.1.1 Prediction Evaluation
+We implemented the algorithms described above and eval-
+uated their performance. The prediction algorithm was trained
+using news articles from the period 1851 − 2009. The web
+resources snapshots mentioned in Section 5 dated until 2009.
+The evaluation is performed on separate data – Wikinews
+articles from the year 2010. We refer to this data as the test
+data. As in many supervised learning problems the evalua-
+tion is performed using human-tagged data. We performed
+two evaluation procedure – one comparing the system abil-
+ity to predict (accuracy of prediction) and the plausibility
+of the predictions (to ensure that the predictions are not
+trivial and related to the cause event). The plausibility
+evaluation procedure is divided to the following steps:
+
+1. Event identiﬁcation – our algorithm assumes that the
+
+Event1 Weapon warehouse bombs US Army 1/2/1987 11:00AM +(2h) Kabul Missiles Location Action Time-frame Event2 Troops kill 1/2/1987 11:15AM +(3h) Action Time-frame US Army Time 5 Quantifier Afghan Attribute “US Army bombs a weapon warehouse in Kabul with missiles” “5 Afghan troops were killed” WWW 2012 – Session: Web MiningApril 16–20, 2012, Lyon, France915Highly
+Conﬁdent
+58%
+40%
+
+Conﬁdent
+
+49%
+38%
+
+Pundit
+Humans
+
+Table 2: Prediction accuracy for both human and
+algorithm predictions.
+
+[0-1)
+
+[1-2)
+
+[2-3)
+
+0
+0
+
+2
+3
+
+19
+24
+
+[3-4] Average
+Ranking
+3.08 ±0.19
+2.86 ±0.18
+
+29
+23
+
+Average
+Accuracy
+77%
+72%
+
+Table 3: Plausibility results. The histogram of the
+rankings of the users for both human and algorithm
+predictions.
+
+6.2 Results
+
+In this section we provide the results for the two types
+of evaluation: the prediction evaluation (both plausibility
+and prediction evaluation) and the evaluation of the training
+data we provide as input to the system.
+
+6.2.1 Prediction Evaluation
+Accuracy evaluation results are reported in Table 2.
+Although the performance of Pundit was higher, a paired
+t-test on the k paired scores yielded a non statistically sig-
+niﬁcant p-value (0.08). The results provide some evidence
+that the ability of the algorithm to predict future events is
+similar to that of the human ability to predict.
+
+The plausibility evaluation yielded that Pundit’s av-
+erage prediction precision is 3.08/4 (3 is a “possible pre-
+diction”), and the human prediction average precision is
+2.86 + −0.18/4. For each event, we average the results of
+the m rankers, producing an averaged score for the algo-
+rithm performance on the event, and an averaged score for
+the human prediction (see Table 3). We performed a paired
+t-test on the k paired scores. The advantage of the algo-
+rithm over the humans was found to be statistically signif-
+icant with p < 0.05. We can conclude now that the ability
+of the algorithm to produce plausible future events is better
+than the human ability to predict.
+
+6.2.2 Extraction Evaluation
+We have performed the experiments described in the method-
+
+ology section to provide insights on the training data qual-
+ity. The analysis of the quality indicated that the averaged
+precision of the extracted causality events is 3.11 out of
+4 (78%), where 3 means a possible causality relation, and 4
+means a highly possible causality relation. For comparison,
+other temporal rule extraction systems [8] reach precision
+of about 60%. For example, the casuality pair: ”pulling
+over a car” → ”2 New Jersey police oﬃcers shot”, got a very
+high casuality precision score, as this is a plausible cause-
+eﬀect relation. Although most causality extractions were
+with very high quality, the main reason for errors was that
+some events, though reported in the news and match the
+templates we have described, are reported as surprise to
+common sense casuality knowledge. For example, the fol-
+lowing relation: ”event the game heats up” → ”the Yanks
+stay cool”, was rated as a low casuality relation, and does
+not represent a plausible causality relation.
+
+Action Actor Object
+93%
+
+74%
+
+76%
+
+Instrument Location Time
+79%
+100%
+
+79%
+
+Table 4: Event extraction precision based on the
+causality patterns.
+
+Object
+
+Actor
+Matching Matching Matching
+84%
+
+Instrument Location
+Matching
+89%
+
+83%
+
+79%
+
+Table 5: Entity matching to ontology precision.
+
+For every extracted causality event, we have calculated
+the precision of the semantic extraction of the event struc-
+ture (Table 4). We conclude that the event extraction in this
+domain with the templates we have used has quite a high
+precision. For comparison, other works [7] for extracting en-
+tities for diﬀerent types of relations reach 42−53% precision.
+The main reason for such high precision is the use of domain-
+speciﬁc templates for high precision (with lower recall). We
+performed additional experiments to evaluate the matching
+of every entity from the above to the world-knowledge ontol-
+ogy based on semantic similarity. The results as summarized
+in Table 5.
+
+The recall of the entire process is 10%. Our goal in
+general was to reach a high precision set of rules, from which
+generalization can be performed. We do not claim to have
+reached the highest performance with regard to causality
+extraction, but merely present a modular methodology that
+later studies can build upon.
+
+We share the entire dataset of the extracted events on-
+
+line2.
+6.3 Discussion
+
+We present in this section qualitative analysis of the re-
+sults to have a better understanding of the algorithm strength
+and weaknesses. Given the event “Louisiana ﬂood” the algo-
+rithm predicted that [number] people will ﬂee. The predic-
+tion was based on the following past news articles: Residents
+of Florida ﬂee storm and Hiltons; 150000 ﬂee as hurricane
+nears north Carolina coast; a million ﬂee as huge storm hits
+Texas coast; Thousands in Texas ﬂee hurricane Ike; thou-
+sands ﬂee as storm whips coast of Florida; at least 1000 ﬂee
+ﬂooding in Florida. The past events were generalized to the
+causality pair of “[Weather hazards] at [States of the South-
+ern United States]” cause “[number] of people to ﬂee”. Dur-
+ing the prediction, the event “Louisiana ﬂood” was found
+most similar to the above generalized causality pair. The
+reusing classiﬁcation function, outputted that [number] peo-
+ple will ﬂee.
+
+As another example, given the event “6.1 magnitude af-
+tershock earthquake hits Haiti”, it outputted the following
+predictions: “[number] people will be dead”, “[number] peo-
+ple will be missing”, “[number] magnitude aftershock earth-
+quake will strike island near Haiti” and “earthquake will turn
+to United States Virgin Islands”. While the ﬁrst 3 predic-
+tions seem very reasonable, the fourth one is problematic.
+The rule the system learnt in this case is – natural disas-
+ters that hit countries next to a shore tend to aﬀect near by
+countries. In our case it predicted that the earthquake will
+aﬀect United States Virgin Islands, which are geographically
+
+2http://www.technion.ac.il/ kirar/Datasets.html
+
+WWW 2012 – Session: Web MiningApril 16–20, 2012, Lyon, France916ex-
+
+Event
+Al-Qaida demands hostage
+change
+Volcano erupts in Democratic Re-
+public of Congo
+7.0 magnitude earthquake strikes
+Haitian coast
+2 Palestinians reportedly shot dead
+by Israeli troops
+Professor
+killed in bombing
+Alleged drug kingpin arrested in
+Mexico
+UK bans Islamist group
+
+of Tehran University
+
+China
+world’s biggest exporter
+
+overtakes Germany
+
+as
+
+Human-predicted event
+Al-Qaida exchanges hostage
+
+Pundit-predicted event
+A country will refuse the demand
+
+Scientists in Republic of Congo investigate
+lava beds
+Tsunami in Haiti aﬀects coast
+
+Thousands of people ﬂee
+Congo
+Tsunami-warning is issued
+
+from
+
+Israeli citizens protest against Palestinian
+leaders
+Tehran students remember slain professor
+in memorial service
+Maﬁa kills people with guns in town
+
+War will be waged
+
+Professor funeral will be held
+
+Kingpin will be sent to prison
+
+Islamist group would adopt another name
+in the UK
+German oﬃcials suspend tariﬀs
+
+Group will grow
+
+Wheat price will fall
+
+Table 6: Human and algorithm predictions for events.
+
+close to Haiti. However, the prediction “earthquake will turn
+to United States Virgin Islands” is not very realistic as an
+earthquake cannot change its course. It was created based
+on a match with a past example of a tornado hitting a coun-
+try on a coast. The reason for that is the sparsity of the
+training. Both are natural disasters, and there were no neg-
+ative examples or enough positive examples to support this
+distinction. However, we still ﬁnd this example interesting,
+as it issues a prediction using spatial locality (United States
+Virgin Islands are [near] Haiti). Another example of the
+same problem is the prediction: (cid:104) lightning kills 5 people,
+lightening will be arrested(cid:105), which was predicted based on
+training examples in which people who killed other people
+got arrested. More examples, out of the 50 in the test, can
+be seen in Table 6.
+
+7. CONCLUSIONS
+
+Many works have been done in information extraction and
+ontology building. In this work, we discuss how to leverage
+such knowledge into a large scale AI problem of events pre-
+diction. We present a system that is trained to predict events
+that might happen in the future, using a causing event as
+input. Each event is represented as a tuple of one predi-
+cate and 4 general semantic roles. The event pairs used for
+training were extracted automatically from news titles using
+simple syntactic patterns. Generalization to unseen events is
+achieved by: 1) creating an abstraction tree (AT) that con-
+tains entities from observed events together with their sub-
+suming categories extracted from available online ontologies;
+2) ﬁnding predicate paths connecting entities from causing
+events to entities in the caused events, where the paths are
+again extracted from available ontologies.
+
+We discuss the many challenges of building such a system
+– starting from obtaining large enough dataset, the represen-
+tation of the knowledge, and the inference algorithms needed
+for such a task. We perform large-scale mining and apply
+natural language techniques to transform the raw data of
+over 150 years of history archives into a structured represen-
+tation of events, using a mined web-based object hierarchy
+and action classes. This shows the scalability of the pro-
+posed method, which is an important factor for any method
+that requires large amounts of data to work well. We also
+
+present that numerous resources, built by diﬀerent people
+for diﬀerent purposes (e.g. the diﬀerent ontologies), can in
+fact be merged via a concept-graph to build a system that
+can work well in practice.
+
+We perform large-scale learning over the large data corpus
+and present novel inference techniques. We consider both
+rule extraction and generalization. We propose novel meth-
+ods for rule generalization using existing ontologies, which
+we believe can be useful for many other related tasks.
+
+For future directions, we wish to investigate how to decay
+information about events in the system, as causality learnt
+in 1851 might be less relevant to the prediction in 2010.
+However, many common sense knowledge can still be used
+even if happened long time ago. Additional direction might
+include better event extraction, e.g., as proposed by Do et
+al. [10].
+
+Our experimental evaluation showed that the predictions
+of the Pundit algorithm are at least as good as those of
+humans. We believe that our work is one of the ﬁrst to
+harness the vast amount of information available on the web
+to perform prediction that is general purpose, knowledge
+based, and human like.
+
+8. REFERENCES
+[1] E. Agichtein and L. Gravano. Snowball: extracting
+
+relations from large plain-text collections. In Proc. of
+JCDL, pages 85–94, 2000.
+
+[2] Amr Ahmed, Qirong Ho, Jacob Eisenstein, Eric P.
+
+Xing, Alexander J. Smola, and Choon Hui Teo.
+Uniﬁed analysis of streaming news. In Proc. of WWW,
+2011.
+
+[3] M. Banko and O. Etzioni. The tradeoﬀs between open
+
+and traditional relation extraction. In Proc. of
+ACL-08: HLT, 2008.
+
+[4] C. Bizer, T. Heath, and T. Berners-Lee. Linked data –
+
+the story so far. IJSWIS, 2009.
+
+[5] E. Blanco, N. Castell, and D. Moldovan. Causal
+
+Relation Extraction. In Proc. of LREC, 2008.
+
+[6] A. Carlson, J. Betteridge, B. Kisiel, B. Settles,
+
+E.R. Hruschka Jr., and T.M. Mitchell. Toward an
+architecture for never-ending language learning. In
+Proc. of AAAI, 2010.
+
+WWW 2012 – Session: Web MiningApril 16–20, 2012, Lyon, France917[7] N. Chambers and D. Jurafsky. Template-Based
+
+Information Extraction without the Templates. In
+Proc. of ACL, 2011.
+
+[8] N. Chambers, S Wang, and D. Jurafsky. Classifying
+temporal relations between events. In Proc. of ACL
+(Poster), 2007.
+
+[9] K. Chan and W. Lam. Extracting causation knowledge
+
+from natural language texts. IJIS, 20:327–358, 05.
+
+[10] Q. Do, Y. Chan, and D. Roth. Minimally supervised
+
+event causality identiﬁcation. In EMNLP, 2011.
+[11] M. B. Eisen, P. T. Spellman, P. O. Brown, and
+
+D. Botstein. Cluster analysis and display of
+genome-wide expression patterns. PNAS,
+95:14863–14868, 1998.
+
+[12] D. Garcia. Coatis, an nlp system to locate expressions
+
+of actions connected by causality links. In Proc. of
+EKAW, 1997.
+
+[13] R. Girju and D. Moldovan. Text mining for causal
+
+relations. In Proc. of FLAIRS, pages 360–364, 2002.
+
+[24] D. Lin and P. Pantel. Dirt-discovery of inference rules
+
+from text. In Proc. of KDD, 2001.
+
+[25] X. Ling and D. Weld. Temporal information
+
+extraction. In Proc. of AAAI, 2010.
+
+[26] H. Liu and P. Singh. Conceptnet: A practical
+
+commonsense reasoning toolkit. BT Technology
+Journal, 22, 2004.
+
+[27] I. Mani, B. Schiﬀman, and J. Zhang. Inferring
+
+temporal ordering of events in news. In Proc. of
+HLT-NAACL 2003, 2003.
+
+[28] M. Marneﬀe, B. MacCartney, and C.D Manning.
+Generating typed dependency parses from phrase
+structure parses. In Proc. of LREC, 2006.
+
+[29] J. Michel, Y.K Shen, A. Aiden, A. Veres, M. Gray,
+
+Google Books Team, J. Pickett, D. Hoiberg,
+D. Clancy, P. Norvig, J. Orwant, S. Pinker, M. Nowak,
+and E. Aiden. Quantitative analysis of culture using
+millions of digitized books. Science, 331:176–182, 2011.
+
+[30] G. Miller. Wordnet: A lexical database for english.
+
+[14] O. Glickman, I. Dagan, and M. Koppel. A
+
+CACM, 38:39–41, 1995.
+
+probabilistic classiﬁcation approach for lexical textual
+entailment. In Proc. of AAAI, 2005.
+
+[15] M. Palmer H. Dang, K. Kipper and J. Rosenzweig.
+
+Investigating regular sense extensions based on
+intersective levin classes. In Proc. of Coling-ACL,
+1998.
+
+[31] H. Mili E. Bicknell Rada, R. and M. Blettner.
+
+Development and application of a metric to semantic
+nets. IEEE Transactions on Systems, Man and
+Cybernetics, 19(1):17–30, 1989.
+
+[32] E. Riloﬀ. Automatically Generating Extraction
+
+Patterns from Untagged Text. In Proc. of AAAI, 1996.
+
+[16] A. Jatowt and C.M Yeung. Extracting collective
+
+[33] E. Riloﬀ and R. Jones. Learning dictionaries for
+
+expectations about the future from large text
+collections. In Proc. of CIKM, 2011.
+
+information extraction by multi-level bootstrapping.
+In Proc. of AAAI, 1999.
+
+[17] N. Ryant K. Kipper, A. Korhonen and M. Palmer.
+
+[34] L. Schubert. Can we derive general world knowledge
+
+Extending verbnet with novel verb classes. In Proc. of
+LREC, 2006.
+
+[18] R. Kaplan and G. Berry-Rogghe. Knowledge-based
+
+acquisition of causal relationships in text. Knowledge
+Acquisition, 3:317–337, 1991.
+
+[19] C. Khoo, S. Chan, and Y. Niu. Extracting causal
+
+knowledge from a medical database using graphical
+patterns. In Proc. of ACL, pages 336–343, 2000.
+
+[20] J. Kim. Supervenience and mind. Selected
+
+Philosophical Essays, 1993.
+
+[21] M. Lapata and A. Lascarides. Learning
+
+sentence-internal temporal relations. JAIR, 27:85–117,
+2006.
+
+[22] Douglas B. Lenat and R. V. Guha. Building Large
+
+Knowledge-Based Systems: Representation and
+Inference in the Cyc Project. Addison-Wesley, 1990.
+
+[23] B. Levin and M. Rappaport Hovav. A preliminary
+
+analysis of causative verbs in english. Lingua,
+92:35–77, 1994.
+
+from texts? In Proc. of HLT 2002, 2002.
+
+[35] D. Shahaf and C. Guestrin. Connecting the dots
+
+between news articles. In Proc. of KDD, 2010.
+
+[36] A. Sil, F. Huang, and A. Yates. Extracting action and
+event semantics from web text. In Proc. of AAAI Fall
+Symposium on Commonsense Knowledge, 2010.
+
+[37] Michael Strube and Simone Paolo Ponzetto.
+
+Wikirelate! computing semantic relatedness using
+wikipedia. In Proc. of AAAI, 2006.
+
+[38] F. Suchanek, G Kasneci, and G. Weikum. Yago: a
+
+core of semantic knowledge. In Proc. of WWW, 2007.
+[39] M. Tatu and M. Srikanth. Experiments with reasoning
+
+for temporal relations between events. In Proc. of
+COLING, 2008.
+
+[40] P. Wolﬀ, G. Song, and D. Driscoll. Models of
+
+causation and causal verbs. In Proc. of ACL, 2002.
+
+[41] K. Yoshikawa, S. Riedel, M. Asahara, and
+
+Y. Matsumoto. Jointly identifying temporal relations
+with markov logic. In Proc. of ACL-IJCNLP, 2009.
+
+WWW 2012 – Session: Web MiningApril 16–20, 2012, Lyon, France918

@@ -1,0 +1,2058 @@
+Discovering Users’ Speciﬁc Geo Intention in Web Search
+
+Xing Yi
+
+CIIR Lab, Computer Science Department
+
+University of Massachusetts, Amherst, MA, USA
+
+yixing@cs.umass.edu
+
+Hema Raghavan and Chris Leggetter
+
+Yahoo! Labs
+
+4401 Great America Pky, Santa Clara, CA, USA
+
+{raghavan,cjl}@yahoo-inc.com
+
+ABSTRACT
+Discovering users’ speciﬁc and implicit geographic intention
+in web search can greatly help satisfy users’ information
+needs. We build a geo intent analysis system that uses
+minimal supervision to learn a model from large amounts
+of web-search logs for this discovery. We build a city lan-
+guage model, which is a probabilistic representation of the
+language surrounding the mention of a city in web queries.
+We use several features derived from these language models
+to: (1) identify users’ implicit geo intent and pinpoint the
+city corresponding to this intent, (2) determine whether the
+geo-intent is localized around the users’ current geographic
+location, (3) predict cities for queries that have a mention
+of an entity that is located in a speciﬁc place. Experimental
+results demonstrate the eﬀectiveness of using features de-
+rived from the city language model. We ﬁnd that (1) the
+system has over 90% precision and more than 74% accuracy
+for the task of detecting users’ implicit city level geo intent
+(2) the system achieves more than 96% accuracy in deter-
+mining whether implicit geo queries are local geo queries,
+neighbor region geo queries or none-of these (3) the city
+language model can eﬀectively retrieve cities in location-
+speciﬁc queries with high precision (88%) and recall (74%);
+human evaluation shows that the language model predicts
+city labels for location-speciﬁc queries with high accuracy
+(84.5%).
+
+Categories and Subject Descriptors: H.3.3 [Informa-
+tion Storage and Retrieval]: Search process, Query for-
+mulation
+
+General Terms: Algorithms, Experimentation
+
+Keywords: geographic search intent, geo intent, city lan-
+guage model, implicit search intent, local search intent
+
+1.
+
+INTRODUCTION
+
+Many times a user’s information need has some kind of
+geographic boundary associated with it. For example, when
+the user issues the query “manhattan coﬀee”, he probably
+wants information only about coﬀee shops in the Manhat-
+tan region of New York. Previous research has shown that a
+signiﬁcant portion (more than 13%) of web queries contain
+geographic (henceforth referred to as geo) information [9,
+16, 19]. There are many uses of identifying geo information
+in user queries for various retrieval tasks: we can person-
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2009, April 20–24, 2009, Madrid, Spain.
+ACM 978-1-60558-487-4/09/04.
+
+alize retrieval results based on the geo information in the
+query and improve a user’s search experience; we can also
+provide better advertisement matching and deliver more in-
+formation about local goods and services that users may be
+interested in. Many researchers have demonstrated how to
+improve retrieval performance for a query by incorporating
+related geo information [2, 20] when this information explic-
+itly appears in the query or is known beforehand. However,
+recent research has found that only about 50% of queries
+with geo intent, i.e., queries where the users expected the
+results to be contained within some geographic radius, had
+explicit location names [19]. For example, many users search
+for “pizza” expecting the search engine to detect their loca-
+tion and correspondingly present results in their neighbor-
+hood automatically. Therefore, identifying implicit geo in-
+tent and accurately discovering missing location information
+is important and necessary for using any retrieval model that
+leverages geo information. We expect that in handheld de-
+vices like cell-phones, the percentage of queries with implicit
+geo intent will be much higher.
+
+In our work, we develop techniques to discover geo in-
+tention even when explicit geo information is missing, and
+further explore diﬀerences between geo intent queries. To-
+wards this goal, we ﬁrst address the challenging task of dis-
+covering a user’s implicit geo intention at a ﬁne grained, i.e.,
+city/location level. Previous research has shown that a large
+portion (83.77%) of explicit geo queries contain city level in-
+formation[9], which implies that users often have a city level
+granularity in mind when issuing geo queries. We therefore
+believe that ﬁnding implicit city/location level information
+can greatly help satisfy users’ speciﬁc geo information needs,
+e.g. a user who searches for ‘macy’s parade hotel rooms’ can
+receive a variety of information about hotels in New York
+City.
+
+We then investigate diﬀerent localization capabilities be-
+tween geo intent queries. For example, some queries may
+imply users’ local geo information need, e.g.
+the queries
+‘pizza’ or ‘dentist’ typically imply that the user is looking
+for information in some limited radius around their current
+location, while other queries like ‘map’ or ‘hotel’ [9] may
+imply that the user is looking for information in a far oﬀ
+location from their current one, often say while planning a
+trip. If we can automatically detect a geo query where the
+location associated with the user intent is near that of the
+physical location of the user, the IP location (or GPS in-
+formation if the user is using a mobile phone) of the user
+issuing this query can be used for searching and ﬁltering
+so that more locally relevant information is delivered.
+In
+
+WWW 2009 MADRID!Track: Search / Session: Query Categorization481our terminology, the queries “pizza” and “dentist” have high
+localization capability. By the same measure, the queries
+“map” and “hotel”, have geo intent, but no localization ca-
+pability. We also examine the fact that some queries that
+have localization capabilities may have a geographic region
+of relevance that is of smaller radius than others. For ex-
+ample, users may be willing to drive up to only 10 miles for
+“pizza” but be willing to drive say up to 30 miles for a good
+“dentist” and up to 100 miles for a bargain on a “2008 honda
+civic”.
+
+For the convenience of description, we consider that an
+explicit geo intent query consists of (a) a location part: that
+explicitly helps identify the location and (b) a non-location
+part, e.g., in the query “pizza in 95054”, the term “95054” is
+the location part and the remaining terms, the non-location
+part. Welch and Cho [19] have recently found that features
+derived from non-location parts of explicit geo queries in web
+search logs can help identify queries that have implicit geo
+intent. Nevertheless, their work only considers diﬀerentiat-
+ing geo queries (explicit and implicit) from non-geo intent
+queries and does not further investigate diﬀerent levels of
+geo information and diﬀerent localization capabilities.
+
+Our techniques stem from ideas in language modeling [6,
+11] which have been widely utilized for natural language pro-
+cessing, speech recognition and information retrieval (IR).
+Basically, we build geo language models at a ﬁne grained
+i.e., city level and extract n-gram language model features
+for discovering users’ speciﬁc implicit geo intent. We also
+combine many other appropriate language and non-language
+geo features from ﬁned grained geo queries with n-gram fea-
+tures for better geo-intent discovery. In order to be able to
+accurately train diﬀerent language models for thousands of
+diﬀerent cities and robustly extract geo features at ﬁne levels
+of granularity, we utilize a sample from a months worth of
+web search logs from a major search engine (Yahoo!) which
+contains more than 2.8 billion search instances. We ﬁnd
+that our city language models are good at predicting the
+city pertinent to the query with very high accuracy.
+
+Our chief contributions are (1) a method for identifying
+users’ implicit city-level geo intent (2) a method for dis-
+criminating diﬀerent localization capabilities of geo queries.
+(3) a method for predicting the city corresponding to the
+geo-intent in a location-speciﬁc query. (4) Our models are
+learned from large amounts of click-through data and involve
+little supervision. This allows us to quickly retrain models
+on fresh data, and adapt to seasonal and other variations,
+since the query logs are constantly evolving. For example,
+we can quickly re-learn the location for the “next red sox
+game”. Studying geo intent queries with the aim of ﬁnding
+localization capabilities (city/location or a larger regional
+level) can help better understand users’ underlying geo in-
+tent, thus allowing us to better customize search results for
+diﬀerent users. We begin by reviewing related work in §2,
+and then describe our geo intention analysis system in de-
+tail in §3 and §4. We describe the experimental setup and
+the results of evaluating diﬀerent components of our system
+in §5 and conclude in §6.
+
+2. RELATED WORK
+
+Although considerable work has been done on how to uti-
+lize geographic information in meta data for IR [1, 12], re-
+search on automatically detecting and understanding users’
+diﬀerent geo intents in web search has just started. In 2007,
+
+the GeoCLEF community began a geo query parsing and
+classiﬁcation track [1], which required participants to not
+only extract location and non-location topic information of
+explicit geo queries but also required them to classify the
+topics into three predeﬁned sub-categories:
+informational
+(e.g. news, blogs), yellow pages (e.g.
+restaurants, hospi-
+tals) and maps (e.g. rivers, mountains). Diﬀerent from this
+track, our work aims at detecting users’ implicit geo intent
+and classifying geo intent queries on the basis of diﬀerent
+localization capabilities. Welch and Cho’s pilot study [19]
+shows that features extracted from non-location parts of ex-
+plicit geo queries can help discriminate queries that have
+geo intent from those that don’t. Diﬀerent from their work,
+we utilize more complex language modeling features for not
+only detecting users’ implicit geo intent but also discovering
+the exact missing location information and understanding
+the localization capability of the geo information need.
+
+Jones et al. [9] studied the relationship between the non-
+location part of an explicit geo query and the distance of the
+query’s location part from the issuer’s IP location and found
+that geo queries have varied distance distribution and there-
+fore diﬀerent localization capabilities. We further use this
+distance between the IP and the city of intent in a geo-query
+to label geo queries into several sub-categories and study the
+utility of language modeling features for discriminating be-
+tween these categories. Other research [22] considers using
+statistics from the IP locations of users who clicked a given
+query to study the query’s localization capability.
+
+Raghavan et al. [14] built language models from the con-
+textual language around diﬀerent name entities (e.g. person,
+location, organization, etc) in a TREC corpus, and utilized
+these entity language models for linking, clustering and clas-
+sifying diﬀerent entities. Pasca [10] utilized diﬀerent contex-
+tual language patterns in the search logs to extract diﬀerent
+types of name entities. These works demonstrated the eﬀec-
+tiveness of using contextual features for categorizing entities.
+In our work, we build language models for geo location enti-
+ties from large scale web search logs, and investigate whether
+more complex contextual features can help discover users’
+speciﬁc geo intent.
+
+Besides using web search logs, some research [13] consid-
+ers mining the returned web snippets from a commercial
+search engine to discover missing local information. Other
+research [18] considers mining both top web search results
+and web search logs to disambiguate whether a query that
+contains a geo location name implies geo intent, e.g. deter-
+mining whether the query “New York Style cheesecake” is a
+geo query, and discovering locations related to implicit geo
+queries, e.g. ﬁnding “Seattle, WA” is related to the query
+“space needle”. These works complement our approach to
+better understand users’ implicit speciﬁc geo intent.
+
+3. SYSTEM OVERVIEW
+
+In this paper we focus on building models using city level
+geo information for detecting and discovering users’ speciﬁc
+geo intent. The architecture of our geo intent analysis sys-
+tem is depicted in Figure 1. Given a query Q = w1 · · · wn,
+the system ﬁrst determines whether explicit geo informa-
+tion exists: if yes, the system goes to the fourth step, which
+divides the query into city and non-city parts Q = (Qc, Qnc)
+and sends the non-city part Qnc back to the third component
+of the system for analyzing users’ speciﬁc geo intent; other-
+wise, the system goes to the second step to detect whether
+
+WWW 2009 MADRID!Track: Search / Session: Query Categorization482level info.  
+Use  Classifier  I 
+to 
+if  Q has 
+determine 
+implicit  city  level  geo 
+intent. 
+
+ Find no explicit city 
+
+ Analyze the specific city 
+
+level geo intent in  Q : 
+1. Use Classifier II to 
+determine if it has: 
+a) Local geo intent 
+b) Neighbor region geo 
+intent 
+c) None of the above 
+2. Predict the location of 
+entities in  Q  
+ 
+
+ 
+
+Input query: 
+( 1
+wQ
+
+=
+
+nw
+
+)
+
+ 
+
+city level geo info.  
+
+Use  geo  info.  to  customize 
+search results for users 
+
+ 
+ Identify possible explicit 
+ Analyze city/location info. 
+
+Figure 1: System Architecture for Discovering the User’s Speciﬁc Geo Intent
+
+the query has implicit city level geo intent by using the
+ﬁrst level classiﬁer. If detected, the implicit city level geo
+intent is further analyzed in the third step.
+
+The third component discriminates users’ speciﬁc geo in-
+tents within implicit geo queries. Here we intuitively deﬁne
+three geo sub categories according to their diﬀerent local-
+ization capabilities: (1) local geo queries, which consist
+of geo queries that imply a user’s intention to ﬁnd locally
+relevant information, e.g. ‘pizza’ or ‘dentist’; (2) neighbor
+region geo queries, which consist of geo queries that im-
+ply a user’s intention to ﬁnd related information from nearby
+regions, e.g.
+‘car dealer’ or ‘real estate’; and (3) remaining
+geo queries that do not fall into the above three categories
+and are not easily localized, e.g.
+‘state maps’ or ‘hotels’.
+By classifying geo queries into these sub categories, users’
+speciﬁc geo information needs can be better satisﬁed: e.g.,
+if the query is labeled as a ‘local geo query’, related local
+information from or close to the user’s IP location can be
+delivered.
+
+We further use our city language models to predict cities
+in location-speciﬁc queries. These queries usually con-
+tain an entity (university, school, local media channel, doc-
+tor name etc) through which one can pinpoint a location
+(city/town level) corresponding to the geo-intent. We ﬁnd
+that if the query contains such an entity, the city language
+model is able to detect the city with very high accuracy. If
+the query is labeled as a ‘location-speciﬁc query’, informa-
+tion from the city where the entity occurs can be retrieved.
+The results from the third component are combined with
+other available information, e.g. the user’s IP location or an
+explicit city name in the query, to customize results for dif-
+ferent users and improve information retrieval performance.
+The geo location analysis tool used in the second step
+as a black-box for automatically identifying diﬀerent lev-
+els of explicit geo information in queries has been used in
+several past papers [9, 15]. This tool utilizes both context-
+dependent (e.g.
+‘in’,‘at’) and context-independent features
+to ﬁnd possible location parts in a query, and maps these
+location parts to a large global location databases contain-
+ing zip-codes, cities, counties, states, countries etc. This
+tool calculates a conﬁdence score in the range (0,1) for each
+location candidate identiﬁed in the query based on the conﬁ-
+dence of whether the candidate is indeed a geo location, and
+outputs all the possible locations and conﬁdence scores. We
+only consider location candidates whose conﬁdence scores
+exceed 0.5. In addition, so as to limit our scope, we only con-
+sider city location candidates that are in the United States.
+Our major contribution is to design and evaluate the two
+components that analyze users’ speciﬁc geo intent, (enclosed
+in dashed lines in Figure 1). In the next section, we describe
+how in each of these components language modeling tech-
+
+niques are employed to build city-level geo language models,
+and how rich geo language features at the city level are ex-
+tracted for training the two classiﬁers. We emphasize that
+studying ﬁne grained and complex geo language model fea-
+tures is necessary for this task that is more challenging than
+the task of identifying broad sense geo intent queries [19].
+4. FEATURES FOR THE CLASSIFIERS
+
+In this section we describe the set of features that were
+extracted from the search logs. These features were used in
+the construction of the two classiﬁers in Figure 1 and are
+described in greater detail in §5.2 and §5.3. First, for each
+query Q in the web search log, we correct possible spelling
+errors, remove any stopwords present in the INQUERY [4]
+stopword list1, and then utilize the geo location analysis tool
+[15] to identify every possible explicit city level geo query.
+That is, we decompose Qcg as (Qc, Qnc), where Qc and Qnc
+denote the location/city and non-location part respectively.
+This preprocessing step is similar to that employed by Welch
+and Cho [19] except for two main diﬀerences: one is that we
+utilize the geo location analysis tool instead of a dictionary
+to identify the location part (Qc) in a query. Since the tool
+uses contextual clues, it helps disambiguate whether a word
+like “reading” refers to the location or to the verb sense of
+“read”. This tool also covers zip-codes and many colloquial
+geo location names, e.g. “nyc” for “New York City”, that may
+appear in web queries. Therefore using this tool has some
+advantages compared to the dictionary based approach of
+Welch and Cho [19]. The other main diﬀerence is that in-
+stead of generating a group of base queries from each query
+by removing diﬀerent levels of possible location names, we
+only generate one base query (from Qnc) by removing the
+location part (Qc) for further feature extraction. We also do
+not apply stemming because research show removing stop-
+words has signiﬁcant positive impact for geo intent analysis
+while stemming has little additional impact [19].
+
+We then consider two diﬀerent ways of extracting city
+level geo features for our modeling: the ﬁrst is by building
+city language models by using all the identiﬁed non-location
+portions (Qcg) in the training data; the second is by view-
+ing each unigram, bigram and trigram in the non-city part
+(Qnc) as a Geo Information Unit (GIU) that can help
+discover users’ speciﬁc geo intent. We also collect various
+statistics of these GIUs. We describe these two methods in
+the following two subsections.
+4.1 City Language Models
+
+City names often have strong co-occurrence statistics with
+terms or phrases like ‘map’, ‘hotel’, ‘hospital’ and so on in
+
+1We remove ‘ﬀ’, ‘ﬁrst’ and ‘stave’ and ‘staves’ from the original
+version and use the remaining 414 stopwords.
+
+WWW 2009 MADRID!Track: Search / Session: Query Categorization483the query logs. Therefore, analyzing the language used in
+the non-city parts (Qnc) that co-occur with a certain city
+name in the location part (Qc) can possibly help discover
+missing city information in an implicit geo intent query.
+
+To build language models for each city, we go beyond the
+“bag of words” approach used in entity language models built
+by Raghavan et al [14] and instead follow a bigram language
+model approach. The reason is that bigram information can
+be very important to infer implicit geo intent from phrases,
+for e.g., the words ‘time’ and ‘square’ individually may not
+imply geo intent, but the phrase ‘time square’ has a high pos-
+sibility of being related to New York City. We do not build
+trigram language models because trigrams in web queries
+are much sparser than bigrams, making trigram language
+models not as robust as bigram language models.
+In the
+typical bigram language modeling approach, the probability
+of a string is expressed as the product of the probabilities
+of the words that compose the string, where the probability
+of each word is conditioned on the identity of the previous
+word [6]; therefore, given a query Q = w1 · · · wn, we have:
+
+P (Q) =
+
+n
+Y
+i=1
+
+P (wi|wi−1
+
+1
+
+) ≈
+
+n
+Y
+i=1
+
+P (wi|wi−1),
+
+(1)
+
+where wj
+i denotes the string wi · · · wj . Then, for each city
+Ck, we build bigram language models from the non-location
+portions (Qnc) of all the explicit geo intent queries (Qcg)
+that have the location portion (Qc) identiﬁed as the city
+Ck. In this way, we can calculate the probability P (Q|Ck)
+of a query Q generated from a city Ck’s language model by:
+
+P (Q|Ck) =
+
+n
+Y
+i=1
+
+P (wi|wi−1
+
+1
+
+, Ck) ≈
+
+n
+Y
+i=1
+
+P (wi|wi−1, Ck).
+
+(2)
+
+Researchers have proposed a broad range of smoothing
+techniques that adjust the maximum likelihood estimation
+(MLE) of parameters to solve the zero frequency problem
+in language modeling, and thereby produce more accurate
+estimations and predictions. Many good comparison stud-
+ies of diﬀerent smoothing techniques can be found in the
+literature [6, 21]. Diﬀerent smoothing techniques can have
+signiﬁcantly diﬀerent results.
+In this study, for the esti-
+mation of bigram probability, we employ a state-of-the-art
+smoothing technique (method B in Chen and Goodman[6]),
+which combines two intuitions from the Dirichlet smoothing
+and Good-Turing smoothing:
+
+P (wi|wi−1, Ck) =
+
+#(wi
+
+i−1, Ck) + αP (wi|Ck)
+#(wi−1, Ck) + α
+
+, α = β × |VCk |,
+
+(3)
+where #(wj
+i , Ck) denotes the frequency counts of the string
+wj
+i in the non-city parts (Qnc) related to the city Ck, |VCk |
+denotes the vocabulary size of the words that appear in the
+city Ck’s language model, α acts as the eﬀect of Dirichlet
+smoothing, β is a constant to control the degree of smoothing
+for diﬀerent cities that have diﬀerent vocabulary sizes. For
+the unigram probability P (wi|Ck) in equation 3, we employ
+the standard Dirichlet smoothing:
+
+P (wi|Ck) = #(wi,Ck)+γP (wi|C•)
+= #(wi,Ck)+γ#(wi,C•)/#(w•,C•)
+,
+
+#(w•,Ck)+γ
+
+#(w•,Ck )+γ
+
+(4)
+
+where w• denotes all the words and C• denotes all the cities,
+e.g. #(w•, Ck) denotes the counts of all the words appearing
+
+Orlando
+
+q =“Disney world ticket”
+P (Ci|Q)
+City Name
+0.98011
+0.01386
+0.00240
+0.00135
+0.00044
+
+New Castle
+San Antonio
+
+Kissimmee
+Anaheim
+
+q =“Harvard University”
+City Name
+Cambridge
+Princeton
+Longwood
+
+P (Ci|Q)
+0.63545
+0.05360
+0.05334
+0.01979
+0.01719
+
+Boston
+Tuskegee
+
+Table 1: Top-5 cities and the city generation poste-
+riors for two sample queries.
+
+in the non-location parts of geo-intent queries (Qnc) related
+to the city Ck and #(w•, C•) denotes the counts of all the
+words co-occurring with all the cities. γ is the Dirichlet
+smoothing parameter.
+
+For the task of detecting the cities relevant to a location
+speciﬁc query, we calculate the posterior probability of each
+query Q generated from a city Ci by:
+
+P (Ci|Q) ∝ P (Ci)P (Q|Ci),
+
+(5)
+
+where we set the prior P (Ci) to be a uniform distribution,
+i.e.
+the posterior calculation will be only aﬀected by the
+city generation probability P (Q|Ci), and not be biased to-
+wards those cities that appear most frequently in the query
+logs. After calculating all the posteriors, we can sort them
+to discover the most probable cities that each implicit geo
+query Q may be generated from. Table 1 shows the top-
+5 cities and the corresponding posteriors calculated by our
+city level language models, trained in experiments, for two
+sample queries: “Disney world ticket” and “Harvard Univer-
+sity”.
+‘New Castle’ appears in the top cities related to the
+ﬁrst query because of its ambiguous meaning – the geo anal-
+ysis tool we used fails to determine whether it means a new
+palace in Disney or the city named ‘New Castle’. We eval-
+uate city language models for this task later in the paper
+(refer §5.4).
+
+These posteriors are useful as features to detect implicit
+city level geo intent; therefore, we use them as geo language
+model features for classiﬁcation as well as for discovering the
+missing locations in the third component of Figure 1.
+4.2 Geo Information Unit Features
+
+Intuitively, the unigrams, bigrams and trigrams in the
+non-city parts (Qnc) of explicit geo queries (Qcg) can help
+detect users’ implicit geo intent, e.g.
+the queries “golden
+gate bridge” or “ﬁshermen’s wharf” may imply that users
+are interested in information about San Francisco. Thus, we
+view each unigram, bigram and trigram in the non-location
+portions (Qnc) of all the geo-intent queries (Qcg) as a Geo
+Information Unit (GIU) that can help discover users’ spe-
+ciﬁc geo intent, and extract statistics in the training data
+for each information unit. Then given any new input query
+Q, we ﬁnd all the geo information units in this query and
+utilize them to generate a wide range of features for various
+classiﬁcation tasks.
+
+For each n-gram GIU wi+n−1
+
+= wi · · · wi+n−1 appear-
+ing in the non-location part (Qnc)s of all geo-intent queries
+(Qcg), we calculate the following GIU features:
+
+i
+
+i
+
+• The frequency count of wi+n−1
+
+in the set of queries, Qnc,
+, C•), and the
+appearing in
+) =
+, C•)/#g(ngrams), where #g(ngrams) denotes
+
+from all cities C•, denoted as #(wi+n−1
+MLE probability (Pg(wi+n−1
+)) of wi+n−1
+the n-grams of all the queries, Qnc
+#(wi+n−1
+the number of n-grams in the set of all Qnc.
+
+: Pg(wi+n−1
+
+i
+
+i
+
+i
+
+i
+
+i
+
+WWW 2009 MADRID!Track: Search / Session: Query Categorization484i
+
+• The frequency of wi+n−1
+
+in all queries (including both
+geo and non-geo intent), denoted as #(wi+n−1
+), and the
+MLE probability of wi+n−1
+appearing in the n-grams of
+all the queries: P (wi+n−1
+) = #(wi+n−1
+)/#(ngrams),
+where #(ngrams) denotes the number of n-grams in all
+the queries.
+
+i
+
+i
+
+i
+
+i
+
+• The pair-wise mutual information (PMI) score [7] between
+
+and all city locations C•:
+
+i
+
+wi+n−1
+P M I(wi+n−1
+
+i
+
+i
+
+i
+
+i
+
+i
+
+)
+
+=
+
+,C•)
+
+)P (C•)
+
+, C•) =
+
+P (wi+n−1
+
+P (wi+n−1
+
+Pg(wi+n−1
+P (wi+n−1
+)
+• The number of cities that co-occur with wi+n−1
+• The MLE probability P (wi+n−1
+
+.
+appearing
+in the n-grams of Qncs that co-occur with city Ck, calcu-
+lated by:
+P (wi+n−1
+(ngrams) , where #Ck (ngrams) de-
+notes the number of n-grams in the Qncs that co-occur
+with city Ck.
+
+|Ck) = #(wi+n−1
+
+|Ck) of wi+n−1
+
+i
+#Ck
+
+,Ck )
+
+i
+
+i
+
+i
+
+i
+
+• Given the MLE probability P (wi+n−1
+
+|Ck) we calculate
+
+i
+
+i
+
+) ∝ P (Ck)P (wi+n−1
+
+the posterior: P (Ck|wi+n−1
+we assume P (Ck) is a uniform distribution. Then we ﬁnd
+the city Cm that has the maximum posterior to generate
+wi+n−1
+) and the frequency counts
+#(wi+n−1
+
+, Cm) as two more GIU features.
+
+, and use P (Cm|wi+n−1
+
+i
+
+i
+
+i
+
+|Ck), where
+
+i
+
+i
+
+)}, where N (wi+n−1
+
+• To measure the skewness of the posteriors {P (Ck|wi+n−1
+
+),
+k = 1, · · · , N (wi+n−1
+) denotes the
+number of cities that co-occur with the GIU, wi+n−1
+, we
+calculate the K-L divergence between the posteriors and
+a uniform distribution U (wi+n−1
+) and is
+computed by the following formula:
+N(wi+n−1
+
+) = 1/N (wi+n−1
+
+)
+
+i
+
+i
+
+i
+
+i
+
+i
+
+i
+P
+k=1
+
+P (Ck|wi+n−1
+
+i
+
+) log
+
+P (Ck|wi+n−1
+1/N(wi+n−1
+)
+
+i
+
+)
+
+i
+
+After calculating the above features for each GIU, given a
+new query Q, we can extract all the GIUs in it, and then
+either directly utilize the features of these GIUs to form a
+high dimensional sparse feature vector for represent-
+ing this query, or aggregate some features to form a low
+dimensional feature vector in order to reduce the train-
+ing cost. For the high dimensional representation, each GIU
+feature from each textually diﬀerent GIU occupies a diﬀer-
+ent dimension in the feature vector. For the low dimensional
+representation, we ﬁrst aggregate features from the unigram
+GIUs, that is, for each of the GIU features we calculate the
+typical statistics like minimum, maximum, and average of
+the feature values from all the unigram GIUs and then keep
+each statistic in a diﬀerent dimension in the feature vec-
+tor. We aggregate bigram and trigram GIUs in the same
+way and also keep calculated statistics in diﬀerent feature
+dimensions. We test both approaches in experiments.
+5. EXPERIMENTS
+
+We designed three experiments to evaluate the major parts
+of our system (enclosed in the dashed line in Figure 1) for
+discovering users’ implicit speciﬁc geo intent: (1) The ﬁrst
+experiment is to evaluate how the ﬁrst level classiﬁer – Clas-
+siﬁer I, in the second component in Figure 1, performs to
+detect users’ implicit city level geo intent when no explicit
+city information is found in the query. (2) The second ex-
+periment is to test how the well the second level classiﬁer
+– Classiﬁer II, in the third component in Figure 1, cate-
+gorizes implicit geo queries into diﬀerent localization capa-
+bilities. (3) The third experiment is to investigate how well
+
+City Name
+
+Frequency in
+
+Frequency in
+
+geo sub training set
+
+geo sub testing set
+
+New York
+Los Angeles
+
+Chicago
+Houston
+Las Vegas
+
+3794960
+3207062
+2275231
+1929131
+1755695
+
+3865216
+3228888
+2397036
+1926341
+1794026
+
+Table 2: Statistics of top-5 most frequent cities in
+two geo query subsets.
+
+our city language models detect location-speciﬁc queries and
+discover missing city information.
+
+In the next section we describe our data-set creation and
+feature extraction methodology before we move on to de-
+scribe the evaluation of the diﬀerent classiﬁers.
+5.1 Data
+
+We utilize a large industrial-scale real-world web search
+log from Yahoo!
+for this study. The training set is a
+subset of the Yahoo! web search log during May, 2008. It
+contains about 2.13 billion rows of search instance records
+covering about 1.44 billion queries and related information,
+e.g. users’ IP and the clicked URLs. The testing set is ran-
+domly sampled from the Yahoo! web search log during June,
+2008 and contains about 2.10 billion rows of search instance
+records covering about 1.42 billion queries and related in-
+formation. We applied the explicit geo information analysis
+tool described in §3 on both the training and the testing sets
+to identify each explicit geo query that contains a U.S. city
+location candidate with the conﬁdence score larger than 0.5.
+In this way, about 96.2M U.S. city level geo queries are iden-
+tiﬁed in the training set and extracted to form a geo sub
+training set, and about 96.7M U.S. city level geo queries
+are identiﬁed in the testing set and extracted to form a geo
+sub testing set. We ﬁnd 1614 distinct cities in the two geo
+query subsets. Table 2 shows 5 most frequent cities in the
+geo sub training/testing set respectively.
+
+We build city language models for each city as described
+in §4.1 by using all the explicit geo queries Qcg = (Qc, Qnc)
+in the geo sub training set. Then given any implicit geo
+query Q, we can calculate a set of city generation posteriors
+P (Ci|Q) from the trained city language models, and use the
+posteriors as the geo language model features for classiﬁca-
+tion. In experiments we use the 10 largest posteriors of each
+query as features for simplicity and noise reduction.
+
+We then utilize all of the original training set and the geo
+sub training set to extract GIU features for all the unigram,
+bigram and trigram GIUs that appear in the queries (Qnc) in
+the geo sub training set as described in §4.2. In experiments,
+to reduce noise, we ﬁlter any n-gram GIU (wi+n−1
+) that sat-
+isﬁes the condition – min(Pg(wi+n−1
+), P (wi+n−1
+)) ≤ 1 ×
+10−7 – and obtain 85078 unigram GIUs, 317628 bigram
+GIUs and 191802 trigram GIUs. These GIUs are used for
+calculating both a low and a high dimensional representation
+for each query in later classiﬁcation tasks.
+
+i
+
+i
+
+i
+
+Next, we describe each experiment in detail, including how
+we generate positive and negative samples for each task, the
+classiﬁers used, and the evaluation results.
+
+5.2 Evaluating Classiﬁer I
+
+In this section we describe the details of how we build
+models and evaluate the classiﬁer for city level geo-intent
+detection (refer Figure 1).
+
+WWW 2009 MADRID!Track: Search / Session: Query Categorization485DN+
+
+DN−
+
+www.local.com
+travel.yahoo.com
+
+www.tripadvisor.com
+www.yellowbook.com
+www.city-data.com
+
+search-desc.ebay.com
+
+www.youtube.com
+www.amazon.com
+www.myspace.com
+www.nextag.com
+
+Table 3: Some DNs in DN+ or DN−
+
+5.2.1 Label Generation
+
+Our automatic labeling method for this task utilizes URLs
+that have been frequently clicked for a query to automati-
+cally generate geo/non-geo intent labels for queries, instead
+of hiring human editors to make judgments. For example,
+if many users repeatedly clicked the URL local.yahoo.com
+for a query, it has a high probability of having geo intent.
+
+To ﬁnd URLs that reliably imply users’ geo intents, we
+consider only the domain name (DN) of the URL. We collect
+100 DNs that are most frequently clicked for queries in the
+geo sub training set to form the set DN1. We also collect 100
+DNs that are most frequently clicked from the other queries
+that are not in the geo sub training set but in the whole
+training set, into another set DN2. Then we obtain the DN
+sets DN+ and DN− for labeling queries that may/may not
+have geo intent by:
+
+DN+ = DN1\DN2, DN− = DN2\DN1.
+
+Some DNs that are intuitively useful for labeling users’ geo
+intent and appear in both DN1 and DN2 end up being ex-
+cluded from both DN+ and DN−. On analysis we found
+a few possible reasons for this. For example, in the above
+process, the clicked URLs of possible implicit geo queries or
+larger regional level (state/country) geo queries are counted
+in DN2. Similarly, the clicked URLs of some ambiguous
+queries where the black-box tool [15] falsely identiﬁes city
+names are counted in DN1. Therefore we introduce weak su-
+pervision into this domain name selection process by putting
+three useful DNs back to DN+ and two back to DN−:
+
+DN+ = DN+ ∪ {www.citysearch.com,
+www.yellowpages.com,
+DN− = DN− ∪ {en.wikipedia.org, answers.yahoo.com}
+
+local.yahoo.com}
+
+In this way, we obtain 67 DNs in DN+ and 64 DNs in DN−
+respectively. Some example DNs from the two sets are shown
+in Table 3.
+
+For any query in the geo sub training set, if it has a clicked
+DN in DN+, we label the query as a positive sample. For any
+query that is in the training set but not the geo sub training
+set, if it has a clicked DN in DN−, we label the query as a
+negative sample or non-geo intent query. We remove dupli-
+cates that have the same query terms and domain names.
+After that, we obtain 7.5M positive and 57.8M negative sam-
+ples. We then use the location portion (Qc) of the positive
+samples as the labels and the non-location portion (Qnc) as
+the implicit geo intent queries. Next, we randomly sample
+20,000 implicit geo queries and 20,000 non-geo queries to
+obtain 40,000 queries in the training subset I.
+
+For evaluation, we generate two testing subsets: test-
+ing subset I-1 and testing subset I-2 from the original
+testing set in two ways. The ﬁrst method is to follow the
+same above procedure: labeling positive samples only from
+queries in the geo sub testing set that have clicked DNs in
+DN+ and extracting Qncs as the implicit geo intent queries;
+labeling negative samples only from queries not in the geo
+
+sub testing that have clicked DNs in DN−. In this way, we
+obtain 8.0M implicit geo queries and 58.1M non-geo queries.
+Then we randomly sample 80,000 queries ( half positive, half
+negative) as the testing subset I-1.
+
+The second method diﬀers from the ﬁrst in how it ﬁnds
+the positive samples and creates the implicit geo queries. In
+the second method, we directly label both positive and neg-
+ative samples from the original testing set by only checking
+whether they have clicked DNs in DN+ or DN−. We use
+the black-box tool [15] to ﬁnd and remove all the possible
+location portions (place names, zip-codes etc) in the posi-
+tive and negative samples. Then we remove the duplicates.
+In this way, we obtain 31.3M positive samples and 53.2M
+negative samples. Then we randomly sample 80,000 queries
+( half positive, half negative) as the testing subset I-2. Note
+that classifying testing subset I-2 is more representative of
+the true query log, and possibly harder, because positive
+samples are directly obtained from the original testing set
+instead of only from the geo sub testing set. Testing sub-
+set I-2 may contain some real implicit geo queries instead of
+only the queries (Qnc) from explicit geo queries as in testing
+subset I-1.
+5.2.2 Classiﬁers and Evaluation Results
+
+We evaluate three state-of-the-art classiﬁcation techniques:
+Support Vector Machines (SVM) [5], gradient boosted de-
+cision tree [8] and multinomial logistic regression (MLGR)
+[3] for building the ﬁrst level classiﬁer. For the SVM, we
+employed linear kernel (SVM-Linear) as well as non-linear
+RBF gaussian kernel (SVM-RBF). Training SVM-linear typ-
+ically costs much less time than training SVM-RBF, while
+SVM-RBF usually performs better when the original input
+feature space is low dimensional. Decision trees have the
+advantage that they can learn conjunctions of features. For
+the gradient boosted decision trees, we used the TreeNet
+tool by Salford Systems2. For the MLGR, we utilized the
+open source R Project and its nnet library3.
+
+For each labeled query sample, we calculate the geo lan-
+guage model features – top-10 city generation posteriors,
+and the GIU features (low/high dimensional feature vec-
+tors), then combine them for classiﬁcation in two ways: 1)
+a low training cost way, which only uses the posteriors and
+the low dimensional GIU features, and 2) a high training
+cost way, which uses all the features that include the high
+dimensional GIU features in addition. Then we separately
+scale each feature dimension to be in the range [0,1] for all
+the samples, and train the classiﬁer based on diﬀerent mod-
+els with the data in the training subset I. We employ 5-fold
+cross validation to select the model parameters that achieve
+the highest average accuracy. Then we test the optimized
+classiﬁer on both the testing subset I-1 and I-2.
+
+Performance is evaluated by using the typical precision,
+recall and accuracy metrics: precision measures the per-
+centage of true positive samples (true geo intent queries)
+in the queries labeled by the classiﬁer to be positive (have
+geo intent); recall measures the fraction of the true positive
+samples detected by the classiﬁer in all the true positive sam-
+ples; accuracy measures the percentage of the correct labels,
+including both positive and negative ones, in the test set.
+In this task, low precision will hurt users’ search experience
+more than low recall or low accuracy. Thus a classiﬁer for
+
+2http://salford-systems.com/
+3http://www.r-project.org/
+
+WWW 2009 MADRID!Track: Search / Session: Query Categorization486Testing subset I-1
+
+Testing subset I-2
+
+low dimensional features
+Acc
+
+R
+
+P
+
+all features
+
+low dimensional features
+
+all features
+
+P
+
+R
+
+Acc
+
+P
+
+R
+
+Acc
+
+P
+
+R
+
+Acc
+
+SVM-linear
+SVM-RBF
+
+Treenet
+MLGR
+
+91.7% 82.6% 87.6% 99.9% 66.0% 83.0% 80.9% 35.7% 63.7% 99.9% 48.8% 74.4%
+91.4% 86.0% 89.0% 98.5% 62.8% 80.9% 80.4% 36.2% 63.7% 97.8% 48.0% 73.5%
+89.4% 87.4% 88.5%
+91.3% 83.5% 87.8%
+
+78.1% 40.9% 64.7%
+80.2% 36.4% 63.7%
+
+\
+\
+
+\
+\
+
+\
+\
+
+\
+\
+
+\
+\
+
+\
+\
+
+Table 4: Performances of discovering users’ implicit city level geo intent on the testing subset I-1 and I-2 by
+using diﬀerent classiﬁcation techniques and two sets of features. Precision, Recall and Accuracy are denoted
+by P, R and Acc, respectively.
+
+this task in a practical system should have high precision
+and reasonably good accuracy and recall.
+
+The evaluation results are shown in Table 4. We did not
+test the performances of training MLGR and Treenet with
+all features due to the high training cost. Results on the test-
+ing subset I-1 show that : (1) all the classiﬁers perform well
+by only using the low dimensional features (posteriors + low
+dimensional GIU features) with precision, recall and accu-
+racy values above 89%, 82% and 87% respectively. (2) using
+all features can further improve precision while recall drops
+about 14% and accuracy drops about 5%. (3) SVM-linear
+achieves the highest precision on both feature sets; Treenet
+achieves the highest recall by only using low dimensional
+features; SVM-RBF achieves the highest accuracy by only
+using low dimensional features. This result is expected since
+linear classiﬁers do better with an increase in the number of
+features in the presence of suﬃcient training data. Results
+on the testing subset I-2, the harder task, show that : (1)
+all the classiﬁers still perform reasonably well and achieve
+precision values higher than 80% when only using low di-
+mensional features except Treenet which has a precision of
+78%. (2) using all features can improve all the metrics and
+achieve high precision and reasonably good accuracy.
+
+On both testing subsets, we achieve both high precision,
+which is important for users’ satisfaction and good accuracy
+although recall drops for the hard task. Thus, the geo city
+language model features and GIU features can be used for
+eﬀectively discovering users’ implicit city level geo intent.
+
+As we know, the same web query can be issued by diﬀer-
+ent users at diﬀerent time. Thus the web log samples from
+two diﬀerent months may have considerable amount of the
+identical queries. We do an overlap analysis in order to bet-
+ter understand our evaluation results. We ﬁnd that in the
+96.7M geo sub testing set (from the June’s sample), about
+67% of the queries have appeared in the geo sub training set
+(from the May’s sample). There are 28.9M and 29.2M dis-
+tinct queries (Qnc) in the geo sub training and testing sets,
+respectively. We ﬁnd about 48.06% of these distinct queries
+(Qnc) of the geo sub testing set have appeared in the geo
+sub training set. The overlap also reveals that many geo lan-
+guage patterns found in old web query logs can be reused
+because many geo queries appear repeatedly. This process
+of splitting the training and test sets by time is a common
+procedure in domains where the data occurs as a time series
+4. In addition, there are plenty of new geo-queries, revealing
+that our models can generalize well for new queries as well.
+5.3 Evaluating Classiﬁer II
+
+As shown in Figure 1, when Classiﬁer I has detected an
+implicit city level geo intent query, the query will be passed
+
+4http://projects.ldc.upenn.edu/TDT/
+
+to the second level classiﬁer – Classiﬁer II for analyzing the
+query’s capability of being localized to the issuer’s IP loca-
+tion. In this section, we describe the details of how we build
+and evaluate Classiﬁer II.
+5.3.1 Label Generation
+
+We consider three predeﬁned categories: Local Geo quer-
+ies or LG, Neighbor Region geo queries or NRG, and
+remaining geo queries or RG, in §3 for this analysis. Our
+low cost training set generation technique again utilizes the
+geo sub training/testing sets where the non-city part
+(Qnc) in the original data is used to create an implicit geo
+intent query and the location part (Qc) is the city level label
+corresponding to the geo intent. We then use the informa-
+tion of distance L between the city level label (Qc) and the
+issuer’s IP location to generate one of the above three sub-
+category labels for each query.
+
+To better understand the distribution of the distance L in
+the geo queries, we divide L into 12 intervals and calculate
+the number of the geo queries in the geo sub training set
+(before and after we remove the duplicates) with distance
+values in each interval. The results are shown in Figure 2.
+It can be seen that a signiﬁcant portion of geo queries can
+be localized to less than 50 miles from their issuers’ IP loca-
+tions. A relatively small portion of geo queries can be local-
+ized to a 50-100 miles radius from the issuers’ IP locations.
+Many geo queries can hardly be localized. For representing
+this diﬀerence, we generate a geo sub category label for each
+query Q by ﬁrst collecting the distances, L = {L1...Ln},
+(note that the same query may be issued by users with dif-
+ferent IPs) and then calculate the median of these distances
+(Lm = median(L)) and assigning Q to LG, NRG or RG
+if Lm < 50, 50 ≤ Lm < 100, or Lm ≥ 100 (unit:miles),
+respectively.
+
+We generate a geo sub category label for each implicit geo
+query (Qnc) in the geo sub training set, remove duplicates
+and then randomly sample 15K implicit geo queries from
+each of the three geo sub categories to form training subset
+II. We then process the geo sub testing set in the same way
+to obtain the testing subset II. To investigate the utility
+of our geo features for discriminating between diﬀerent geo
+sub categories, we design four classiﬁcation tasks : task A
+– to discriminate between queries in LG and RG; task B –
+to discriminate between queries in LG and NRG; task C –
+to discriminate between queries in NRG and RG; task D –
+to simultaneously discriminate between queries in all three
+categories.
+
+In this experiment, we again use SVM [5], Treenet and
+MLGR [3], described in §5.2.2, for building Classiﬁer II.
+The classiﬁer uses the same geo features, including the top-
+10 city generation posteriors from the city language model
+and the GIU features, for the four classiﬁcation tasks. We
+
+WWW 2009 MADRID!Track: Search / Session: Query Categorization487)
+
+M
+
+(
+ 
+
+y
+c
+n
+e
+u
+q
+e
+r
+F
+
+25.0
+
+20.0
+
+15.0
+
+10.0
+
+5.0
+
+0.0
+
+5
+<
+
+0
+1
+-
+5
+
+0
+5
+-
+0
+4
+
+5
+7
+-
+0
+5
+
+0
+4
+-
+0
+3
+
+0
+2
+-
+0
+1
+
+0
+0
+1
+-
+5
+7
+
+	
+
+
+	
+
+	
+
+
+0
+0
+2
+-
+0
+0
+1
+
+0
+0
+5
+-
+0
+0
+2
+
+k
+1
+-
+0
+0
+5
+
+25.0
+
+20.0
+
+15.0
+
+10.0
+
+5.0
+
+0.0
+
+k
+2
+-
+k
+1
+
+e
+r
+o
+M
+
+5
+<
+
+0
+1
+-
+5
+
+0
+5
+-
+0
+4
+
+0
+2
+-
+0
+1
+
+0
+4
+-
+0
+3
+
+5
+7
+-
+0
+5
+
+0
+0
+1
+-
+5
+7
+
+	
+
+
+
+	
+
+	
+
+
+0
+0
+2
+-
+0
+0
+1
+
+0
+0
+5
+-
+0
+0
+2
+
+k
+1
+-
+0
+0
+5
+
+k
+2
+-
+k
+1
+
+e
+r
+o
+M
+
+Figure 2: Distributions of the distance L between the city Qc in the query and the issuer’ IP location. X
+axis denotes the distance intervals used (less than 5 miles, 5-10 miles, etc), Y axis denotes the number of geo
+queries (unit: million) in each interval. Left/Right graph shows L’s distribution in the geo sub training set
+before/after we remove the duplicates respectively.
+
+Task B
+
+Task A
+LG/RG LG/NRG NRG/RG
+low dimensional features
+
+Task C
+
+Task D
+
+All-3
+
+SVM-linear
+SVM-RBF
+
+Treenet
+MLGR
+
+61.3%
+62.0%
+62.8%
+61.2%
+
+53.5%
+53.9%
+54.2%
+53.4%
+
+61.0%
+61.8%
+60.8%
+61.0%
+
+42.6%
+43.2%
+44.1%
+42.6%
+
+SVM-linear
+SVM-RBF
+
+99.6%
+99.6%
+
+97.2%
+98.0%
+
+96.9%
+98.0%
+
+87.0%
+96.6%
+
+all features
+
+Table 5: Accuracies of discriminating implicit geo
+queries’ diﬀerent localization capabilities to issuers’
+IP locations by using diﬀerent classiﬁcation tech-
+niques and two sets of features for each of four clas-
+siﬁcation tasks on the testing subset II.
+also test the low and high training cost methods of using
+geo features as described in §5.2.2. We separately scale
+each feature dimension to be in the range [0,1] for all the
+samples, and train the classiﬁer based on diﬀerent models
+using data in training subset II for each of the four
+tasks. We employ 5-fold cross validation to select model
+parameters that achieve the highest average accuracy for
+each task and test the optimized classiﬁer on the testing
+subset II. Performance is evaluated by using accuracy as a
+metric. Note that tasks A, B and C are binary classiﬁcation
+tasks involving two labels while task D is a three-category
+classiﬁcation task with three labels. The results are shown
+in Table 5. Again when using all features, we only test the
+performances of training SVM-linear and SVM-RBF.
+
+We make the following observations: (1) Using low di-
+mensional features (top-10 city generation posteriors + ag-
+gregate GIU features), the model cannot easily discriminate
+the subtle diﬀerences between LG (local geo queries) and
+NRG (neighbor region geo queries), but can diﬀerentiate be-
+tween LG and RG (not local or neighbor region geo queries),
+and between NRG and RG, with reasonable accuracy (62.8%
+by Treenet and 61.8% by SVM-RBF) (2) Using high dimen-
+sional features greatly improves the accuracy to more than
+96% using SVM-RBF even for the task of classifying all three
+categories simultaneously (task D). This means that diﬀer-
+ent geo sub categories indeed have diﬀerent GIUs and GIU
+features. (3) Using all features in a non-linear model like
+SVM-RBF performs better than a linear model, especially
+for the three-category classiﬁcation task (task D). There-
+fore, by using SVM-RBF and all geo features, Classiﬁer II
+
+Location-speciﬁc query
+airport check metro airport
+woodﬁeld mall jobs
+utah herald journal classiﬁed ads
+wkrn news 2
+motel near knotts berry farm california Buena Park
+
+location
+Detroit
+schaumburg
+Logan
+Nashville
+
+Table 6: Example of correct predictions of the city
+name for a location speciﬁc query
+
+can eﬀectively discriminate diﬀerent localization capabilities
+of implicit geo queries’ to issuers’ IP locations. In this way
+we can determine users’ speciﬁc geo intents. Note that al-
+though training SVM-RBF with high dimensional data is
+computationally expensive, the prediction cost is very low.
+In addition, SVM-linear which has low training cost but rea-
+sonably high accuracy (87%) is a good choice when oﬀ-line
+training cost is a big issue.
+5.4 Location-Speciﬁc Query Discovery
+
+In this task we aim to ﬁnd queries with mentions of an en-
+tity that is in some way speciﬁc to a particular geographic
+location (in our case cities). Such “localized entities” may be
+hotels, local tv and radio channels, local newspapers, uni-
+versities, schools, people names like doctors, sports teams
+and so on. Basically if a location (city/town level) can be
+pinpointed to some item mentioned in the query, then the
+query is a location-speciﬁc query, by our deﬁnition. Exam-
+ples of a location speciﬁc query and corresponding locations
+are shown in Table 6.
+5.4.1 Label Generation
+
+We evaluate our city language models for retrieving cities
+in location-speciﬁc queries in this experiment. One impor-
+tant property of location-speciﬁc queries is that although
+explicit geo information is missing one may still accurately
+discover the exact location (city/town level) in the user’s
+mind, e.g. “Liberty Statue” or “Disney ﬂ” can be viewed as
+location-speciﬁc queries, which are highly likely to be related
+to New York or Orlando respectively. Our low-cost training
+method again utilizes the non-city part (Qnc) of explicit geo
+queries as implicit geo intent queries, and tries to discover
+possible location-speciﬁc queries from them. This approach
+has another advantage that the city part (Qc) can be used as
+the ground truth city label for automatic evaluation. Since
+it is extremely expensive to hire human editors to examine
+over hundred million implicit geo-queries (Qnc) with their
+city labels (Qc) and identify all the possible location-speciﬁc
+
+WWW 2009 MADRID!Track: Search / Session: Query Categorization488queries to create training and testing data, we ﬁrst utilize
+the following weakly supervised approach combined with the
+city language models for this discovery task, and then sam-
+ple outputs of the city language models on the testing data
+for human evaluation.
+
+i
+
+i
+
+i
+
+i
+
+i
+
+Our weakly supervised approach ﬁnvolves designing a few
+ad hoc rules to ﬁnd the GIUs that may come from location-
+speciﬁc queries. For example, we require that the maximum
+city generation posterior –P (Cm|wi+n−1
+) – be larger than
+a threshold, t1, and the corresponding maximum frequency
+count, #(wi+n−1
+, Cm), be larger than a threshold t2; as an-
+other example of our rules, we either require that wi+n−1
+appear in less than a threshold, t3, number of cities or its
+overall counts in the geo queries divided by the number of
+city: #(wi+n−1
+, C•)/#(|C•|) is larger than a threshold t4.
+These rules are constructed by considering the characteris-
+tics of the GIU features that location-speciﬁc queries may
+have, and the thresholds are set by looking through the
+GIUs (wi+n−1
+) and their GIU feature values in the train-
+ing data. We leave the question of how to automatically
+generate these rules for future work. In this way, from the
+geo sub training set we obtain 1022 unigram GIUs, 4374
+bigram GIUs and 3765 trigram GIUs that may come from
+location-speciﬁc queries. We then select queries, which con-
+tain any of these GIUs, in the geo sub training/testing sets.
+In this way we form training subset III/testing subset
+III, each of which contains about 1.06M and 1.05M possible
+distinct location-speciﬁc queries (distinct Qncs) respectively.
+We use these automatically generated training and testing
+subsets to automatically tune parameters for our task. We
+now describe how to utilize city language models to further
+discover cities for location-speciﬁc queries from these two
+subsets.
+5.4.2 City Language Models for Retrieving Candi-
+
+date locations
+
+Discovering missing related cities for location-speciﬁc queries
+
+can be viewed as a challenging multi-category classiﬁcation
+task, in which there are 1614 diﬀerent categories (city la-
+bels). Given a query (Q) which has implicit geo-intent and
+is location-speciﬁc, we calculate the city generation poste-
+rior P (Ck|Q) of each city Ck by using city language models
+(CLM) and equation 5. Then we sort these posteriors and
+get the corresponding ranked list of cities. We check whether
+the maximum posterior P (Cm|Q) is larger than a threshold
+ta:
+if yes, Cm is suggested as a candidate location for the
+location speciﬁc query Q. Next, we discuss how to tune ta
+with the training subset III.
+
+We utilize the city part (Qc) as the ground truth city label
+for each query (remember that the implicit geo-query, Q, is
+the non-city part, Qnc, of a query in the logs), and calculate
+precision and recall metrics to roughly evaluate the CLM’s
+performance and tune ta. Speciﬁcally, given a query Q, we
+retrieve a set of cities {Ck|P (Ck|Q) > ta}. When the ground
+truth city label (Qcm ) is the same as the city (Cm) that has
+the largest value of P (Cm|Q) > ta, we count that as a right
+decision made by the CLM in the counter N1; but if Cm
+is diﬀerent from its ground truth city label Qcm , we count
+that as a wrong decision by the CLM, using the counter
+N2. We then calculate the precision P , and recall R by
+P = N1
+N , where N denotes the number
+of queries in the training subset III. Intuitively, P measures
+the percentage of exactly right location suggestions for the
+suggested good location-speciﬁc queries, and R measures the
+
+and R = N1+N2
+
+N1+N2
+
+i
+
+i
+
+n
+o
+s
+c
+e
+r
+P
+
+96.0%
+
+95.0%
+
+94.0%
+
+93.0%
+
+92.0%
+
+91.0%
+
+90.0%
+
+89.0%
+
+88.0%
+
+at =
+
+0.9
+
+at =
+
+0.8
+
+at =
+
+0.7
+at =
+
+0.6
+at =
+
+0.5
+
+60.0%
+
+65.0%
+
+70.0%
+
+75.0%
+
+80.0%
+
+85.0%
+
+90.0%
+
+95.0%
+
+Recall
+
+Figure 3: Precision/Recall curve on training subset
+III for location-speciﬁc query discovery.
+
+percentage of suggested good location-speciﬁc queries in all
+the possible location-speciﬁc queries.
+
+Figure 3 shows the precision/recall curve with diﬀerent ta
+values on the training subset III. It can be observed that by
+choosing ta = 0.7 we can maintain reasonably high precision
+(P = 92%) while the recall (R = 84.4%) does not drop too
+much. We follow the same procedure to apply CLM on
+testing subset III where it achieves precision of 88%, and
+recall of 74% at the threshold of ta = 0.7.
+
+To further evaluate the quality of the ranked list of cities
+sorted by P (Cm|Q) , for each query (Qnc) that is a location-
+speciﬁc query, we also compute an IR style measure called
+Mean Reciprocal Rank (MRR), which is the average of the
+reciprocal of the ranks of the correct answers to the queries
+in the testing data: M RR = P
+r(Q) , where r(Q) denotes
+Q
+
+1
+
+the rank position of the ground truth city label (Qc) of the
+location speciﬁc query, Q. The higher the MRR, the closer
+the correct answer’s rank position is to the top. When the
+correct label (Qc) is at rank 1 for all location speciﬁc queries
+(Q), the M RR = 1. By setting ta = 0.7, we have an M RR
+of 0.951 on training subset III and M RR of 0.929 on testing
+subset III. These high M RRs imply that for location-speciﬁc
+queries, the true city labels appear nearly at the top of the
+suggested city rank list. In this way we use the training and
+testing subsets to tune the threshold ta.
+
+The above promising results, especially the high preci-
+sion and M RR, show that city language models can ef-
+fectively suggest good location-speciﬁc queries and discover
+missing city labels. Nevertheless, our rules to discover possi-
+ble location-speciﬁc queries may be noisy and the automatic
+evaluation using (Qc) as the ground truth city label is still
+rough. Therefore, we design human evaluation experiments
+to investigate the CLM’s performance by asking human edi-
+tors to examine the quality of some sampled location-speciﬁc
+queries and their city labels.
+5.4.3 Human Evaluation
+
+We sampled a random set of queries from testing subset
+III, such that for each of these queries there existed at least
+one city, C, that was predicted such that P (C|Q) > ta,
+to obtain a set of 669 queries and 679 city predictions (10
+queries have 2 predictions, the remaining have one). Af-
+ter giving a detailed explanation of the task, we asked our
+annotators two questions: (1) if the selected query was a
+location speciﬁc query and (2) if the predicted location was
+correct. Judges were asked to mark “Yes” or “No” in re-
+sponse to these questions. Eleven judges judged at least 80
+predictions each and 240 predictions were judged by 2 an-
+notators. Annotators were allowed to mark a ‘?’ for either
+of the two questions. They were also allowed to use a search
+engine of their choice to better understand the meaning of
+
+WWW 2009 MADRID!Track: Search / Session: Query Categorization489their query. All but two of the annotators worked in the
+area of information retrieval. The annotators were a mix of
+native and non-native speakers of English.
+
+The inter-annotator agreement on our task was very high
+(84.5 % on question (1) and 73% on question (2)). The dis-
+agreement on question (2) was often for ambiguous queries
+like “insider tv show cbs”, where one annotator considered
+our prediction of “hollywood” as a location to be correct,
+since that is the location of the CBS studios. Similarly the
+query “city of angels tv.com” was a source of confusion, since
+the location in the show is Los Angeles, but the show itself
+is a national television show.
+
+Of the queries that were marked location speciﬁc the accu-
+racy of predicting a location was 84.5% 5, providing further
+conﬁdence to support the rough evaluation of the previous
+section. However, only half of the queries of the sampled
+679 were marked as location speciﬁc. Some of the error may
+be attributed to the explicit geo queries, obtained by using
+the black-box tool [15], but the remaining was due to the
+ad-hoc rules used for generating the data-sets used for pa-
+rameter tuning. A cleaner data-set or better rules may help
+improve the accuracy of prediction signiﬁcantly. Neverthe-
+less even this noisy data set can be used to train parameters
+with pretty high accuracy as we have seen.
+6. CONCLUSION AND FUTURE WORK
+
+We addressed the challenging task of automatically dis-
+covering user’s speciﬁc geo intent in the web search at the
+ﬁne-grained geo level – city/location level, even when the
+explicit geo information is missing. We employ geo features
+at ﬁne levels of granularity extracted from large scale web
+search logs for this task. We propose two diﬀerent ways for
+extracting geo features: one is through building city level geo
+language models and calculating a query’s city generation
+posteriors, the other one is through analyzing geo informa-
+tion units and extracting rich GIU features at the city level.
+These geo features are used for the construction of classiﬁers
+in our geo intent analysis system, which detect and discover
+users’ implicit geo intent at the city level, diﬀerentiate be-
+tween diﬀerent localization capabilities of geo-intent queries,
+and predict cities in location-speciﬁc queries.
+
+For each individual step, we design a learning task for
+evaluating the performance; and in each task, we use min-
+imum human labeling eﬀort to supervise the data and la-
+bel generation to automatically obtain large-scale learning
+samples for training and testing. We leverage click-through
+data as a surrogate for human labels. Experimental results
+demonstrated the eﬀectiveness of using city language model
+features and GIU features for all three learning tasks.
+
+We can explore active learning approaches [17] to select a
+relatively small number of samples for human judgment and
+automatically learn better rules to get clean location-speciﬁc
+query candidates, to generate more accurate CLMs. We can
+also exploit other information in web search logs that may
+help for this task, e.g. user clicks on the local modules of
+the returned web pages given a query. We can also try to
+build our models at a zip-code level to disambiguate between
+locations that have the same name in the future. We can
+also consider locations beyond the US for future work.
+
+We can incorporate our city language models into retrieval
+models. We are also interested in using the geo intent anal-
+ysis results for helping to provide better query suggestions.
+5When we had two judgments for a query we arbitrarily used one.
+
+7. ACKNOWLEDGMENTS
+
+The modeling and experimental work for this paper was done
+when Xing Yi was an intern at Yahoo! Inc. Xing Yi was also sup-
+ported in part by the Center for Intelligent Information Retrieval,
+in part by the Defense Advanced Research Projects Agency (DAR-
+PA) under contract number HR0011-06-C-0023, and in part by
+UpToDate. Any opinions, ﬁndings and conclusions or recommen-
+dations expressed in this material are the authors’ and do not
+necessarily reﬂect those of the sponsor. We also thank Rosie
+Jones for her valuable discussions on this work.
+8. REFERENCES
+[1] GeoCLEF workshop - Evaluation of cross-language
+
+geographic information retrieval systems.
+www.uni-hildesheim.de/geoclef.
+
+[2] L. Andrade and M. J. Silva. Relevance ranking for
+
+geographic ir. In ACM GIR, 2006.
+
+[3] D. B¨ohning. Multinomial Logistic Regression Algorithm.
+
+Annals of the Inst. of Statistical Math., 44:197–200,
+November 1992.
+
+[4] J. Broglio, J. P. Callan, and W. B. Croft. An overview of
+the INQUERY system as used for the TIPSTER project.
+Technical report, Amherst, MA, USA, 1993.
+
+[5] C.-C. Chang and C.-J. Lin. LIBSVM: a library for support
+
+vector machines. Software available at
+http://www.csie.ntu.edu.tw/ cjlin/libsvm, 2001.
+
+[6] S. F. Chen and J. Goodman. An empirical study of
+
+smoothing techniques for language modeling. In
+Proceedings of ACL, pages 310–318, 1996.
+
+[7] K. W. Church and P. Hanks. Word association norms,
+
+mutual information, and lexicography. In Proceedings of
+ACL, pages 76–83, 1989.
+
+[8] J. H. Friedman. Greedy function approximation: A gradient
+boosting machine. Annals of Statistics, 29:1189–1232, 2001.
+
+[9] R. Jones, W. V. Zhang, B. Rey, P. Jhala, and E. Stipp.
+
+Geographic intention and modiﬁcation in web search.
+International Journal of Geographical Information Science
+(IJGIS), March 2008.
+
+[10] M. Pasca. Weakly-supervised discovery of named entities
+using web search queries. In CIKM, pages 683–690, 2007.
+
+[11] J. M. Ponte and W. B. Croft. A language modeling
+
+approach to information retrieval. In ACM SIGIR, pages
+275–281, 1998.
+
+[12] R. Purves and C. Jones, editors. ACM GIR. ACM, 2007.
+[13] J. Qian. Local Search Using Address Completion. US
+
+Patent Application 20080065694, March 2008.
+
+[14] H. Raghavan, J. Allan, and A. McCallum. An exploration
+
+of entity models, collective classiﬁcation and relation
+description. In ACM LinkKDD, pages 1–10, 2004.
+
+[15] S. Riise, D. Patel, and E. Stipp. Geographical Location
+Extraction. US Patent Application 20050108213, 2003.
+
+[16] M. Sanderson and J. Kohler. Analyzing geographic queries.
+
+In ACM GIR, Sheﬃeld, UK, 2004.
+
+[17] S. Tong and D. Koller. Support vector machine active
+
+learning with applications to text classiﬁcation. In
+Proceedings of ICML, pages 999–1006, 2000.
+
+[18] L. Wang, C. Wang, X. Xie, J. Forman, Y. Lu, W.-Y. Ma,
+
+and Y. Li. Detecting dominant locations from search
+queries. In ACM SIGIR, pages 424–431, 2005.
+
+[19] M. J. Welch and J. Cho. Automatically identifying
+
+localizable queries. In ACM SIGIR, pages 507–514, 2008.
+
+[20] B. Yu and G. Cai. A query-aware document ranking
+
+method for geographic information retrieval. In ACM GIR,
+pages 49–54, 2007.
+
+[21] C. Zhai and J. Laﬀerty. A study of smoothing methods for
+
+language models applied to ad-hoc Information Retrieval.
+In ACM SIGIR, pages 334–342, 2001.
+
+[22] Z. Zhuang, C. Brunk, and C. L. Giles. Modeling and
+
+visualizing geo-sensitive queries based on user clicks. In
+ACM LocWeb, pages 73–76, 2008.
+
+WWW 2009 MADRID!Track: Search / Session: Query Categorization490

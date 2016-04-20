@@ -1,0 +1,2281 @@
+Choreography Conformance via Synchronizability ∗
+
+Samik Basu
+
+Department of Computer Science
+
+Iowa State University
+Ames, IA 50011, USA
+
+sbasu@cs.iastate.edu
+
+Tevﬁk Bultan
+
+Department of Computer Science
+
+Santa Barbara, CA 93106, USA
+
+University of California
+bultan@cs.ucsb.edu
+
+ABSTRACT
+Choreography analysis has been a crucial problem in service
+oriented computing.
+Interactions among services involve
+message exchanges across organizational boundaries in a dis-
+tributed computing environment, and in order to build such
+systems in a reliable manner, it is necessary to develop tech-
+niques for analyzing such interactions. Choreography con-
+formance involves verifying that a set of services behave ac-
+cording to a given choreography speciﬁcation that character-
+izes their interactions. Unfortunately this is an undecidable
+problem when services interact with asynchronous commu-
+nication. In this paper we present techniques that identify
+if the interaction behavior for a set of services remain the
+same when asynchronous communication is replaced with
+synchronous communication. This is called the synchroniz-
+ability problem and determining the synchronizability of a
+set of services has been an open problem for several years.
+We solve this problem in this paper. Our results can be
+used to identify synchronizable services for which choreogra-
+phy conformance can be checked eﬃciently. Our results on
+synchronizability are applicable to any software infrastruc-
+ture that supports message-based interactions.
+
+Categories and Subject Descriptors
+H.5.3 [Group and Organization Interfaces]: Asynchronous
+Interaction; D.2.4 [Software/Program Veriﬁcation]: Model
+Checking; D.2.4 [Software/Program Veriﬁcation]: For-
+mal Methods
+
+General Terms
+Theory, Veriﬁcation
+
+Keywords
+Message-based Interaction, Synchronizability
+
+1.
+
+INTRODUCTION
+
+Software systems are becoming increasingly more concur-
+rent and distributed. In fact, nowadays, many software sys-
+tems consist of multiple components that execute concur-
+rently, possibly on diﬀerent machines. Moreover, new trends
+∗
+0716095 and CCF-0702758.
+
+This work is supported in parts by NSF grants CNS-
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2011, March 28–April 1, 2011, Hyderabad, India.
+ACM 978-1-4503-0632-4/11/03.
+
+in computing, such as service-oriented architecture, cloud
+computing, multi-core hardware, all point to even more con-
+currency and distribution among the components of software
+systems in the future. At the same time, concurrent and
+distributed software systems are increasingly used in every
+aspect of society and in some cases provide safety critical
+services. Hence, it is very important to develop techniques
+that guarantee that these software systems behave as they
+are expected to behave.
+
+A crucial problem in dependability of concurrent and dis-
+tributed software systems is the coordination of diﬀerent
+components that form the whole system. In order to com-
+plete a task, components of a software system have to coor-
+dinate their executions by interacting with each other. A
+fundamental question is, what should be the interaction
+mechanism given the trend for increased level of concurrency
+and distribution in computing? One emerging paradigm is
+message-based communication [17, 21, 16, 24, 2, 5, 19, 8],
+where components interact with each other by sending and
+receiving messages.
+
+Speciﬁcation and analysis of message-based interactions
+has been an important research area in service oriented com-
+puting in the last several years. Choreography languages
+enable speciﬁcation of such interactions. A choreography
+speciﬁcation corresponds to a global ordering of the mes-
+sage exchange events among the peers participating to a
+composite service, i.e., a choreography speciﬁcation identi-
+ﬁes the set of allowable message sequences for a composite
+web service. Choreography conformance problem is identify-
+ing if a set of given services adhere to a given choreography
+speciﬁcation. In general this conformance problem is unde-
+cidable when asynchronous communication is used. This is
+because, systems where peers communicate asynchronously
+with unbounded FIFO message queues can simulate Turing
+Machines [3].
+
+In this paper, we identify a class of systems where chore-
+ography conformance can be eﬃciently checked even in the
+presence of asynchronous communication. We achieve this
+by checking a condition called synchronizability. A set of ser-
+vices is synchronizable if and only if the ordering of message
+exchanges remain the same when asynchronous communica-
+tion is replaced with synchronous communication. In this
+paper we give an algorithm for determining synchronizabil-
+ity of a set of services that communicate with asynchronous
+communication.
+
+It is important to note that the choreography analysis
+problem is not isolated to the area of service-oriented com-
+puting.
+It is a fundamental problem that appears in any
+
+WWW 2011 – Session: Web ApplicationsMarch 28–April 1, 2011, Hyderabad, India795area where message-based communication is used to coordi-
+nate interactions of multiple concurrent or distributed com-
+ponents. For example, recently, earlier results on choreog-
+raphy analysis have been applied to analysis of Singularity
+channel contracts [22]. Singularity is an experimental oper-
+ating system developed by Microsoft Research in order to
+improve the dependability of software systems [14]. In the
+Singularity operating system all inter-process communica-
+tion is done via messages sent through asynchronous com-
+munication channels. Each channel is governed by a channel
+contract [8]. A channel contract is basically a state machine
+that speciﬁes the allowable ordering of messages between
+the client and the server. Hence, channel contracts serve
+the same purpose that choreography speciﬁcations serve in
+service oriented computing.
+
+As another example, UBF(B) is a speciﬁcation language
+for speciﬁcation of communication contracts in distributed
+Erlang programs [1]. UBF(B) contracts are ﬁnite state ma-
+chines, where transitions correspond to request response pat-
+terns. Given a state, a transition from that state identiﬁes a
+request response sequence where after receiving a message,
+the process sends a response and changes its state to the
+destination state.
+
+UBF(B) contracts, Singularity channel contracts, and web
+service choreography speciﬁcations are all mechanisms for
+specifying ordering of messages exchanged among a set of
+concurrent or distributed processes. Analysis and veriﬁca-
+tion of message-based interactions is an essential problem
+for all these speciﬁcation mechanisms and the results we
+present in this paper are directly applicable to all of them.
+
+1.1 A Summary of Our Results
+
+The core problem we study in this paper is the following:
+Given a set of peers (individual services) that interact via
+asynchronous messaging (i.e., messages are sent and received
+through unbounded FIFO message queues), does the inter-
+action behavior change when asynchronous communication
+is replaced with synchronous communication? This is called
+the synchronizability problem [11]. In asynchronous commu-
+nication with unbounded message queues, the send actions
+are never blocked. In contrast, in synchronous communica-
+tion each send action must synchronize with a corresponding
+receive action in order to execute, otherwise it blocks (this
+is also called rendezvous style communication). Synchroniz-
+ability problem investigates the equivalence of asynchronous
+and synchronous communication as far as the interaction be-
+havior is concerned. Interaction behavior is deﬁned as the
+global sequence of send actions.
+
+The synchronizability problem has been open for several
+years, in the sense that it was not known if synchronizability
+is decidable or not. Note that ﬁnite state machines communi-
+cating with unbounded message queues can simulate Turing
+machines, hence, many veriﬁcation problems about them
+is undecidable [3].
+In this paper we give an algorithm for
+determining synchronizability of a set of ﬁnite state peers
+that communicate with unbounded message queues. Our
+main result is that synchronizability can be determined by
+comparing the behavior of the peers with synchronous com-
+munication and with bounded asynchronous communication
+where each message queue is restricted to a queue of size 1
+(i.e., if there is already a message in the queue, then the
+send actions that try to send to that queue block). We show
+that if the interaction behavior of the peers are the same
+
+Algorithm 1 Conformance via Synchronizability
+1: procedure ConfChecking(C, P1,P2, . . . , Pn)
+
+(cid:2) C: Choreography; Pi: i-th Peer Description;
+
+Construct I0;
+Construct I1;
+(cid:2) Ii: System with peers using i size message queues
+if I0 is Equivalent to I1 then
+(cid:2) Synchronizable
+
+Modelcheck C against I0 (e.g., use Spin);
+return result;
+
+System is not synchronizable
+
+2:
+3:
+
+4:
+5:
+6:
+7:
+8:
+9:
+10: end procedure
+
+end if
+
+else
+
+for the synchronous and the 1-bounded asynchronous com-
+munication then they are synchronizable (i.e., the interac-
+tion behavior is also the same for unbounded asynchronous
+communication).
+If the interaction behavior of the peers
+are not the same for the synchronous and the 1-bounded
+asynchronous communication, then we also know that it is
+not the same for unbounded asynchronous communication.
+Hence, comparing the behavior of the synchronous commu-
+nication and the 1-bounded asynchronous communication is
+enough for determining synchronizability. This type of com-
+parison can be done using existing ﬁnite state veriﬁcation
+tools since both synchronous communication and 1-bounded
+asynchronous communication lead to ﬁnite state spaces.
+
+Once we determine that a set of peers are synchronizable,
+then we can easily check choreography conformance using
+existing ﬁnite state veriﬁcation tools. Algorithm 1 outlines
+this strategy. Note that choreography conformance check-
+ing is undecidable in general since, as we mentioned earlier,
+ﬁnite state machines communicating with unbounded mes-
+sage queues can simulate Turing machines, and therefore it
+is not possible to verify them automatically. The synchroniz-
+ability checking mechanism we present in this paper enables
+us to identify a class of peers where choreography confor-
+mance can be easily checked. Interestingly many choreog-
+raphy speciﬁcations lead to synchronizable interactions, so
+this class seems to be practically very useful.
+1.2 Organization
+
+Rest of the paper is organized as follows. Section 2 presents
+some motivating examples and discusses the salient aspects
+of our contribution. Section 3 introduces the formal descrip-
+tion of peers and systems, and describes the choreography
+conformance problem. Section 4 discusses the formalisms
+necessary for proving the decidability of synchronizability
+problem. Section 5 presents the main theorems identifying
+the necessary and suﬃcient conditions for synchronizability.
+Section 6 compares our technique with the existing ones. Fi-
+nally, Section 7 summarizes the contributions of our work
+followed by some future avenues of research.
+
+2. AN OVERVIEW
+
+Figure 1 shows three variations of systems containing re-
+quester and server peers [11]. Each transition is labeled with
+either a send action (preﬁxed with “!”) or a receive action
+(preﬁxed with “?”). The start and the ﬁnal states in the
+requester peers are t1 and t2, respectively; while the start
+and the ﬁnal states in the server peers are s1 and s2, re-
+
+WWW 2011 – Session: Web ApplicationsMarch 28–April 1, 2011, Hyderabad, India796!e
+
+?a1
+
+?a2
+
+?a1
+
+!e
+
+?a2
+
+!r1
+
+!e
+
+!r2
+
+!r1
+
+!r2
+
+r1,r2,e
+
+a1,a2
+!a1 !a2
+
+!r1
+r1,r2,e
+
+!r2
+a1,a2
+
+!a1 !a2
+
+?r1
+
+?r2
+
+?r1
+
+?r2
+
+?a
+
+!r
+
+r,r1,r2,e
+
+a
+
+?r
+
+!a
+
+r
+e
+t
+s
+e
+u
+q
+e
+r
+
+r
+e
+v
+r
+e
+s
+
+(cid:1)t1
+
+(cid:1)s1 
+
+!e 
+
+!r1 
+
+?r1 
+
+(cid:1)t2
+
+es1 
+
+?e 
+
+?a1 
+
+t1s4 
+
+!a1  !a2 
+
+t1s3 
+
+(cid:1)t1 r1s1 
+!r1 
+
+(cid:1)t1 r1r1s1 
+
+(cid:1)t1  
+
+(cid:1)s4 
+
+(cid:1)t2
+
+(cid:1)s2 
+
+!r1  !a1 
+
+r1s4 
+
+(cid:1)t1  
+!a1 
+
+a1t1  
+
+r1s1 
+
+a1t1
+
+(cid:1)s1 
+
+!r1 
+
+!r2 
+
+t1s1 
+
+!e 
+
+t2s2 
+
+?e
+
+?e
+
+?r1
+
+?r2
+
+?e
+
+(a) System 1: i. Asynchronous (partial) & ii. Synchronous
+
+Composition 1
+
+Composition 2
+
+Composition 3
+
+Figure 1: Three Systems with Server and Requester
+Peers [11]
+
+spectively. In the ﬁrst two systems, whenever the requester
+sends a request message (r1 or r2), the server responds with
+a corresponding acknowledgment (a1 or a2). Note that al-
+though the behavior of the server is identical in the ﬁrst two
+systems the behavior of the requester is diﬀerent.
+In the
+third system, one type of request message (r) causes server
+to send an acknowledgment message (a), but the other two
+types of requests (r1 and r2) are not acknowledged. Finally,
+when the requester sends an end message (e) the interaction
+terminates.
+
+Figure 2 illustrates the behavior of each of the systems
+
+when the peers communicate asynchronously or synchronously.
+In asynchronous communication, when a peer executes a
+send action, the sent message is added to the tail of the re-
+ceive queue of the receiver, and a peer can consume the mes-
+sage at the head of its receive queue by executing a receive
+action. The size of the queue is unbounded. In synchronous
+communication, on the other hand, sender and receiver move
+in lock-step, i.e., a send action of a sender is allowed only
+when the receiver is ready to perform the corresponding re-
+ceive action. The message exchange occurs when the sender
+and the receiver take the send and receive transitions simul-
+taneously.
+
+In Figure 2, for the asynchronous case, we show the global
+state of the system by listing the local states of the partic-
+ipating peers along with the contents of their queues. We
+annotate each state by ﬁrst listing the contents of the re-
+quester’s receive queue (where  means that the queue is
+empty), followed by the requester’s local state, followed by
+the server’s receive queue, followed by the server’s local state.
+For instance, initially the queues of all peers are empty, and
+each peer is in its initial local state, i.e., the global system
+state is (t1s1).
+
+Observe that, asynchronous communication may result in
+a system which contains inﬁnite number of states. For in-
+stance, when peers asynchronously communicate, the behav-
+ior of System 1 contains an inﬁnite length sequence of states
+
+t1s1
+
+!r1−→ t1r1s2
+
+!r1−→ t1r1r1s2
+
+!r1−→ . . .
+
+where requester peer keeps sending r1 which is not con-
+sumed by the server. System 3 also exhibits similar inﬁ-
+nite state behavior when peers communicate asynchronously
+(Figure 2(c)-i). As a result, it is not possible to directly
+verify whether Systems 1 and 3 (when peers communicate
+
+(cid:1)t2es1 
+
+?e 
+
+(cid:1)t2
+
+(cid:1)s2 
+
+!e 
+(cid:1)t1
+
+(cid:1)s1 
+
+?a1 
+
+!r1 
+
+!r2 
+
+?a2 
+
+t3s3 
+
+(cid:1)t4r1s1 
+
+(cid:1)t3r2s1 
+
+!a1 
+
+?r1 
+
+?r2 
+
+!a2 
+
+a1t4
+
+(cid:1)s1 
+
+(cid:1)t4
+
+(cid:1)s4 
+
+(cid:1)t3
+
+(cid:1)s3 
+
+a2t3
+
+(cid:1)s1 
+
+t2s2 
+
+!e 
+
+?a1 
+
+t1s1 
+
+?a2 
+
+t4s4 
+
+!r1 
+
+!r2 
+
+t3s3 
+
+(b) System 2: i. Asynchronous & ii. Synchronous
+
+(cid:1)t2es1 
+
+?e 
+
+(cid:1)t2
+
+(cid:1)s2 
+
+!e 
+(cid:1)t1
+
+(cid:1)s1 
+
+?a 
+
+!r 
+
+!r1 
+
+?r1 
+
+(cid:1)t1
+
+r1r2s1 
+
+!r2 
+
+(cid:1)t3rs1 
+
+(cid:1)t1r1s1 
+
+?r1 
+
+!r1 
+
+!a 
+
+?r1 
+
+at3
+
+(cid:1)s3 
+
+(cid:1)t3
+
+(cid:1)s3 
+
+(cid:1)t1
+
+r1r1s1 
+
+t2s2 
+
+!e 
+
+!r1 
+
+!a 
+
+!r2 
+
+t1s1 
+
+!r 
+t3s3 
+
+(c) System 3: i. Asynchronous (partial) & ii. Synchronous
+
+Figure 2: System Behaviors using Peers in Figure 1
+
+asynchronously) conform to any choreography speciﬁcation
+using the ﬁnite state veriﬁcation techniques and tools.
+
+As noted before, veriﬁcation of conformance can be easily
+performed if the peers communicate in a synchronous fash-
+ion. This is because, in this case, system behavior always
+contains ﬁnite number of states (of the order of the product
+of the number of local states of the peers).
+
+In this paper, we identify the necessary and suﬃcient con-
+ditions under which the behavior of the system when peers
+communicate asynchronously is equivalent to the behavior
+of the system when peers communicate synchronously, i.e.,
+the peer interactions are synchronizable. If these conditions
+are satisﬁed, then choreography conformance of a system
+can be veriﬁed using the system behavior where the peers
+interact synchronously. We prove that synchronizability can
+be decided by verifying the equivalence between two varia-
+tions of the system under consideration.
+In one variation,
+the participating peers interact synchronously, while in the
+other, the peers interact asynchronously and have message
+
+WWW 2011 – Session: Web ApplicationsMarch 28–April 1, 2011, Hyderabad, India797t1 
+
+!o1 
+
+?o2 
+
+t2 
+
+?o2 
+
+!o1 
+
+o1 
+c1 
+a1 
+
+t3 
+
+s2 
+
+s1 
+
+!o2 
+
+?o1 
+
+?o1 
+
+!o2 
+
+s3 
+
+?a2 
+
+!c1 
+
+!a1  ?c2 
+
+t4 
+
+t5 
+
+o2 
+c2 
+a2 
+
+?a1 
+
+!c2 
+
+!a2  ?c1 
+
+s4 
+
+s5 
+
+Figure 3: Peers following the Haggle Protocol [15]
+
+queues bounded by 1 (the 1-bounded system). As both vari-
+ations have ﬁnite number of states, the veriﬁcation of their
+behavioral equivalence is decidable and can be eﬃciently per-
+formed using existing tools.
+
+Observe that 1-bounded version of System 1 from 1 has a
+
+path where the following actions are performed:
+
+!r1 ?r1 !r1 !a1 ?r1 ?a1 !a1 ?a1 !e ?e
+
+The subsequence containing only the send actions (i.e., the
+interaction sequence) !r1 !r1 !a1 !a1 !e is not present in syn-
+chronous version of System 1 (Figure 2(a)). Therefore, Sys-
+tem 1 is not synchronizable.
+
+The behavior of System 2, when peers communicate asyn-
+chronously, has ﬁnite number of states (Figure 2(b)-i). The
+linear as well as branching behavior of this system w.r.t.
+send actions is identical to its synchronous counterpart (Fig-
+ure 2(b)-ii). Using our approach, we can automatically deter-
+mine that System 2 is synchronizable. Furthermore, based
+on the synchronizability condition we use, we can also con-
+clude that any temporal property that is satisﬁed by System
+2 is also satisﬁed by its synchronous version, and vice versa.
+The behavior of System 3, when peers communicate asyn-
+chronously, is shown in Figure 2(c)-i. It has inﬁnite number
+of states. We prove that System 3 is also synchronizable and
+any temporal property that is satisﬁed by System 3 is also
+satisﬁed by its synchronous counter-part and vice versa.
+
+Finally, consider the example in Figure 3, where two peers
+are negotiating on oﬀers following the Haggle protocol [15].
+The peers can send an oﬀer (oi), accept an oﬀer (ai) or can-
+cel an oﬀer (ci). Any of the peers can send the ﬁrst oﬀer. We
+prove that the system of peers for the Haggle protocol is in-
+deed synchronizable; more speciﬁcally, unlike System 2 and
+System 3, this system is “language” synchronizable. That is,
+the conformance to choreography speciﬁcations expressed as
+sequences of send actions and/or in Linear Temporal Logic
+(LTL [6]) can be decided using the system where the peers
+interact in a synchronous fashion.
+
+In the rest of the paper we discuss diﬀerent variations of
+conditions for synchronizability based on the diﬀerent levels
+of expressivity of the choreography speciﬁcation being con-
+sidered. For instance, if the choreography speciﬁcation ex-
+presses some desired sequencing of send actions (using FSA,
+regular expressions, LTL) in the peer interactions, then the
+synchronizability condition is based on language equivalence.
+We say that systems satisfying this synchronizability condi-
+tion are language synchronizable. On the other hand, if the
+choreography speciﬁcation expresses desired branching be-
+havior (using branching time temporal logics such as CTL,
+
+∗
+
+ACTL, CTL
+[6]) of the send actions in the peer interactions,
+then the synchronizability condition is based on bisimulation
+equivalence or simulation equivalence. Accordingly, we say
+that systems satisfying these conditions are either bisimula-
+tion synchronizable or simulation synchronizable.
+
+In the earlier work on synchronizability [11], only language
+based choreography conformance was considered and only
+suﬃcient (but not necessary) conditions were identiﬁed for
+verifying synchronizability. The suﬃcient conditions on syn-
+chronizability presented in [11], are satisﬁed by the Systems
+2 and 3 in Figure 2; however the satisﬁability of these condi-
+tions only guarantees that the languages resulting from asyn-
+chronous and synchronous interactions of peers are identical.
+In contrast, our conditions ensure that any temporal prop-
+erty (linear and branching time) satisﬁed by asynchronous
+system is also satisﬁed by the synchronous counter-part. Fur-
+thermore, since the conditions given in [11] are suﬃcient
+conditions, violation of such conditions may result in false
+positives, when synchronizable systems do not satisfy the
+suﬃcient condition. For instance, the autonomous condition
+described in [11] (from any local state, a peer can either send
+or receive messages but not both) is violated by the peers
+in Figure 3 and generates a false positive. However, our
+analysis correctly determines that the system is (language)
+synchronizable.
+
+3. CHOREOGRAPHY CONFORMANCE
+
+In this section, we ﬁrst formally deﬁne the behavior of
+the peers and the system. We use automata to represent
+the peer and system behaviors. A state in the automata
+corresponds to the conﬁguration of the peer or system and
+labeled transitions denote how the peer or system evolve
+(after performing certain actions) from one state to another.
+
+Deﬁnition 1
+
+(Peer Behavior). A peer behavior or sim-
+
+ply a peer, denoted by P, is a Finite State Automaton (FSA)
+(M, T, s0, F, δ) where M is the union of input (M in
+) and
+output (M out
+) message sets, T is the ﬁnite set of states,
+s0 ∈ T is the initial state, F ⊆ T is the set of ﬁnal states,
+and δ ⊆ T × (M ∪ {}) × T is the transition relation.
+A transition τ ∈ δ can be one of the following three types:
+(1) a send-transition of the form (t1, !m1, t2) which sends out
+a message m1 ∈ M out
+, (2) a receive-transition of the form
+(t1, ?m2, t2) which consumes a message m2 ∈ M in
+from its
+input queue, and (3) an -transition of the form (t1, , t2).
+We write t a−→ t(cid:3)
+
+to denote that (t, a, t(cid:3)
+
+) ∈ δ.
+
+Figures 1 and 3 present FSA representations of three dif-
+ferent variations of requester and server peers, and a pair
+of peers participating in an oﬀer negotiation protocol. The
+start states in each FSA are shown with incoming transitions
+with no labels and source, and the ﬁnal states are shown us-
+ing (cid:7)• . Transitions between any two states are labeled with
+send and receive actions.
+In the following, we will consider systems described using
+a set of peers, (cid:8)P1, . . . ,Pn(cid:9), where Pi = (Mi, Ti, s0i, Fi, δi)
+= ∅,
+and Mi = M in
+∀i, j : i (cid:13)= j ⇒ M in
+j = ∅. All peer
+pairs in Figures 1 and 3 satisfy the above criteria.
+
+, such that ∀i : M in
+∩ M out
+j = M out
+
+i ∩ M out
+
+i ∪ M out
+
+i ∩ M in
+
+i
+
+i
+
+i
+
+Deﬁnition 2
+
+(System Behavior). A system behavior
+or simply a system over a set of peers (cid:8)P1, . . . , Pn(cid:9), where
+Pi = (Mi, Ti, s0i, Fi, δi) and Mi = M in
+, is denoted
+
+i ∪ M out
+
+i
+
+WWW 2011 – Session: Web ApplicationsMarch 28–April 1, 2011, Hyderabad, India798by an automaton (possibly inﬁnite state) I = (M, C, c0, F, Δ)
+where
+
+1. M = ∪iMi
+2. C ⊆ Q1 × T1 × Q2 × T2 . . .Qn × Tn such that ∀i ∈
+
+[1..n] : Qi ⊆ (M in
+i )
+
+∗
+
+3. c0 ∈ C such that c0 = (, s01, , s02 . . . , , s0n)
+4. F ⊆ {} × F1 × {} × F2 . . . × {} × Fn; and
+5. Δ ⊆ C × M × C, and for c = (Q1, t1, Q2, t2, . . . Qn, tn)
+
+1, t(cid:3)
+
+1, Q(cid:3)
+
+= (Q(cid:3)
+
+and c(cid:3)
+(a) c !m−→ c(cid:3) ∈ Δ if ∃i, j ∈ [1..n] : m ∈ M out
+
+2, . . . Q(cid:3)
+
+n, t(cid:3)
+n)
+
+2, t(cid:3)
+
+i ∩ M in
+j ,
+
+!m−→ t(cid:3)
+i ∈ δi,
+j = Qj m,
+
+i. ti
+ii. Q(cid:3)
+iii. ∀k ∈ [1..n] : k (cid:13)= j ⇒ Qk = Q(cid:3)
+iv. ∀k ∈ [1..n] : k (cid:13)= i ⇒ t(cid:3)
+k = tk
+
+k and
+
+(b) c ?m−→ c(cid:3) ∈ Δ if ∃i ∈ [1..n] : m ∈ M in
+
+i
+
+?m−→ t(cid:3)
+
+i ∈ δi,
+i. ti
+ii. Qi = mQ(cid:3)
+i,
+iii. ∀k ∈ [1..n] : k (cid:13)= i ⇒ Qk = Q(cid:3)
+iv. ∀k ∈ [1..n] : k (cid:13)= i ⇒ t(cid:3)
+k = tk
+−→ c(cid:3) ∈ Δ if ∃i ∈ [1..n]
+i. ti
+ii. ∀k ∈ [1..n]Qk = Q(cid:3)
+k and
+iii. ∀k ∈ [1..n] : k (cid:13)= i ⇒ t(cid:3)
+
+i ∈ δi,
+
+−→ t(cid:3)
+
+k = tk
+
+(c) c
+
+k and
+
+The above deﬁnition [4, 10] states that a peer can send a mes-
+sage which gets attached to the tail of the queue of the peer
+capable of receiving the message, while a peer can receive
+a message if the corresponding message is at the head of
+its queue (after the receive action is performed the received
+message is removed from the queue).
+
+Figures 2(a)-i, (b)-i, (c)-i illustrate the system behavior
+automata for the three requester/server peers from Figure 1.
+Each state is annotated with the local states of the peers
+along with the content of their message queues and the tran-
+sitions between the states follow the deﬁnition given above.
+Our objective is to verify whether a given system I con-
+forms to a desired choreography speciﬁcation C. A choreog-
+raphy speciﬁcation can be described in diﬀerent languages,
+e.g., FSA, temporal logic, and accordingly, the semantics of
+the conformance depends on the semantics of the choreogra-
+phy speciﬁcation language.
+For instance, if C is described as a ﬁnite state machine
+over the alphabet of send actions, then one can ask whether
+the sequences of send actions in I are identical to the ones
+speciﬁed by C. This corresponds to the veriﬁcation of lan-
+guage equivalence (denoted by L(I) = L(C)) where, in our
+case, language of an FSA (L(·)) is the set of sequences of
+send actions from its start state to a ﬁnal state.
+The choreography speciﬁcation C can be described as a
+temporal property in the language of LTL. The standard
+LTL semantics deﬁned for a set of inﬁnite sequences over
+set of atomic propositions can be easily adapted for chore-
+ography speciﬁcation where send actions will be mapped to
+atomic propositions and ﬁnite sequences of send actions will
+be extended to form inﬁnite sequences by adding an inﬁnite
+
+suﬃx over a special symbol. In this case, the conformance of
+I to C amounts to verifying I |= C. In essence, the |= relation
+checks whether the language of I is a subset of the language
+of the B¨uchi automaton [23] representing the semantics of
+the C expressed in LTL. Hence, in this case choreography
+conformance corresponds to language inclusion.
+
+The above problems of conformance veriﬁcation (against
+FSA and LTL) are undecidable in general due to the inﬁnite
+state-space of I resulting from asynchronous communication
+among the peers participating in I. The problem of confor-
+mance remains undecidable if the choreography speciﬁcation
+C is represented using an FSA over send actions and the con-
+formance demands that any temporal property satisﬁed by
+C should also be satisﬁed by I. Yet another possibility is
+to use branching time temporal logic formulas (speciﬁed in
+branching time logics such as Computation Tree Temporal
+Logic (CTL) or CTL
+[6]) as the choreography speciﬁcation
+and demand that I should satisfy the given temporal logic
+formulas. For these last two variations of conformance, lan-
+guage equivalence or inclusion are not strong enough and
+stronger notions of equivalence are needed as we show in
+the following sections.
+
+∗
+
+In this paper, we provide the necessary and suﬃcient con-
+ditions for synchronizability for all these variations of chore-
+ography conformance and prove that checking these condi-
+tions is decidable. Hence, our results identify a sub-class of
+peer systems for which choreography conformance is decid-
+able even when unbounded asynchronous communication is
+used.
+
+4. SYNCHRONIZABILITY
+
+As noted in the previous section, the conformance prob-
+lem is undecidable due to potentially inﬁnite state-space of
+the system I. For instance, System 1 in Figure 2(a)-i has
+an inﬁnite state-space due to the presence of unbounded se-
+quence of requester’s send action (e.g., r1 and r2) without
+the corresponding receive action by the server. On the other
+hand, if the peers exchange messages via synchronous com-
+munication (where each send action is synchronized with the
+corresponding receive action) the behavior of the system has
+ﬁnite state-space as shown in Figures 2(a)-iii, (b)-ii, (c)-ii.
+
+It is well-known that language equivalence and satisﬁabil-
+ity of temporal logic properties are decidable when the state
+machine, under consideration, has ﬁnite state-space. Syn-
+chronizability analysis identiﬁes whether the asynchronous
+and synchronous behaviors of the system are “equivalent”
+with respect to send actions. When a system is synchro-
+nizable, conformance of its synchronous behavior to a given
+choreography speciﬁcation proves the conformance of its asyn-
+chronous behavior.
+
+∗
+
+As we are concerned with choreography speciﬁcations ex-
+pressed as FSAs, LTL, CTL and CTL
+, there are diﬀerent
+characterizations of synchronizability. In the following, we
+formally describe these notions and introduce the concepts
+necessary for proving the decidability of synchronizability
+problem.
+synchronous system behavior containing a set of peers (cid:8)P1,
+. . . , Pn(cid:9), where Pi = (Mi, Ti, s0i, Fi, δi) and Mi = M in
+i ∪
+, is denoted by an automaton I0 = (M, C, c0, F, Δ)
+M out
+where
+
+(Synchronous Behavior). The
+
+Deﬁnition 3
+
+i
+
+1. M = ∪iMi
+
+WWW 2011 – Session: Web ApplicationsMarch 28–April 1, 2011, Hyderabad, India7992. C ⊆ T1 × T2 . . . × Tn
+3. c0 ∈ C such that c0 = (s01, s02 . . . , s0n)
+4. F ⊆ F1 × F2 . . . × Fn; and
+5. Δ ⊆ C × M × C and for c = (t1, t2, . . . , tn) and c(cid:3)
+
+2, . . . , t(cid:3)
+n)
+
+(t(cid:3)
+1, t(cid:3)
+(a) c !m−→ c(cid:3) ∈ Δ if ∃i, j ∈ [1..n] : m ∈ M out
+
+i ∩ M in
+j ,
+
+!m−→ t(cid:3)
+?m−→ t(cid:3)
+
+i ∈ δi,
+j ∈ δj,
+
+i. ti
+ii. tj
+iii. ∀k ∈ [1..n] : k (cid:13)= i ∧ k (cid:13)= j ⇒ t(cid:3)
+−→ c(cid:3) ∈ Δ if ∃i ∈ [1..n]
+i. ti
+ii. ∀k ∈ [1..n]Qk = Q(cid:3)
+k and
+iii. ∀k ∈ [1..n] : k (cid:13)= i ⇒ t(cid:3)
+
+i ∈ δi,
+
+−→ t(cid:3)
+
+k = tk
+
+(b) c
+
+k = tk
+
+Figures 2(a)-ii, 2(b)-ii and 2(c)-iii show the synchronous
+behavior automata for the three requester/server systems
+shown in Figure 1.
+
+Deﬁnition 4
+
+(Language Equivalence). The language
+of a system I = (M, C, c0, F, Δ), denoted by L(I), is the set
+of sequences of send actions on any path from c0 to any state
+in F . Systems I and I(cid:3)
+are language equivalent if and only
+if L(I) = L(I(cid:3)
+
+).
+
+For example, one of the elements in the language of the au-
+tomaton corresponding to the asynchronous version of Sys-
+tem 2 (Figure 2(b)-i) is !r1!a1!e.
+
+Deﬁnition 5. I is said to be language synchronizable if
+
+and only if L(I) = L(I0).
+If I is language synchronizable then the sequences of send
+actions in I are identical to that speciﬁed by a choreography
+speciﬁcation C (deﬁned as an FSA over send actions) if and
+only if the sequences of send actions in I0 are identical to
+that speciﬁed by C. Hence, conformance to a choreography
+C can be checked on the ﬁnite state automaton of I0 and
+the result will tell us if I conforms to C or not. A similar
+approach can be used even when C is speciﬁed as an LTL
+property. This is because, in this case the objective is to
+verify language inclusion, i.e., whether L(I) is a subset of
+the language of the B¨uchi automaton representing the se-
+mantics of C expressed in LTL. In short, if C is speciﬁed as
+an FSA or in LTL and I is language synchronizable, then
+the conformance veriﬁcation can be performed using I0.
+
+However, language inclusion and equivalence are not strong
+enough for choreography conformance checking via synchro-
+nizability if the choreography speciﬁcation is given as a branch-
+ing time temporal logic formula. To handle such cases we
+use a stronger notion of equivalence.
+
+(Bisimulation Equivalence). Given two
+
+= (M(cid:3), C(cid:3), c(cid:3)
+
+0, F (cid:3), Δ
+)
+are bisimulation
+
+, t and t(cid:3)
+
+(cid:3)
+
+Deﬁnition 6
+
+systems I = (M, C, c0, F, Δ) and I(cid:3)
+and two states, t ∈ C and t(cid:3) ∈ C(cid:3)
+equivalent, denoted by t ≈ t(cid:3)
+=⇒ s : ∃t(cid:3)
+=⇒ s(cid:3)
+
+, implies
+=⇒ s(cid:3)
+: s ≈ s(cid:3)
+=⇒ s : s ≈ s(cid:3)
+
+∀t !m
+∀t(cid:3)
+
+: ∃t !m
+
+!m
+
+!m
+
+and
+
+Recall that System 2 (Figure 2(b)-i) has the same behavior
+for any k > 0 bound. Figure 4 shows the 1-bounded System
+
+!m
+
+=⇒ denotes a sequence of transitions contain-
+In the above,
+ing zero or more transitions over actions in {} ∪ M in
+or
+{} ∪ M(cid:3)in and a single transition over !m.
+0, F (cid:3), Δ
+(cid:3)
+)
+are said to be bisimulation equivalent, denoted by I ≈ I(cid:3)
+, if
+and only if c0 ≈ c(cid:3)
+0.
+
+Systems I = (M, C, c0, F, Δ) and I(cid:3)
+
+= (M(cid:3), C(cid:3), c(cid:3)
+
+=
+
+The above deﬁnition is similar to weak bisimulation equiv-
+alence [20] of states (systems) where =⇒ corresponds to -
+closure transitions.
+
+Deﬁnition 7. I is said to be bisimulation synchronizable
+
+if and only if I ≈ I0.
+
+It is well known that bisimulation equivalence preserves all
+temporal logic properties including branching time temporal
+logic properties [6]. Hence, if C is speciﬁed in CTL or CTL
+∗
+,
+and I is bisimulation synchronizable, then the conformance
+veriﬁcation can be performed using I0.
+
+Proposition 1. I is bisimulation synchronizable implies
+
+that I is language synchronizable.
+
+The above proposition follows from the fact that while bisim-
+ulation synchronizability demands the equivalence of branch-
+ing behavior w.r.t. send actions, language synchronizability
+only requires the equivalence between sequences of send ac-
+tions. Hence, bisimulation synchronizability is a more strict
+notion for synchronizability and therefore enables confor-
+mance veriﬁcation for a richer set of conformance proper-
+ties (any property expressed in temporal logic, LTL, CTL,
+CTL
+
+).
+
+∗
+
+Simulation pre-order relation [20] presents the condition
+under which one system simulates every (send) actions in
+the other. We will use this concept in Section 5 to order
+the systems where peers asynchronously communicate using
+message queues of diﬀerent sizes/capacities.
+
+Deﬁnition 8
+
+tems I = (M, C, c0, F, Δ) and I(cid:3)
+two states, t ∈ C and t(cid:3) ∈ C(cid:3)
+t ≺ t(cid:3)
+
+, implies
+
+(Simulation Pre-order). Given two sys-
+
+= (M(cid:3), C(cid:3), c(cid:3)
+, t simulates t(cid:3)
+
+0, F (cid:3), Δ
+
+(cid:3)
+
+) and
+denoted by
+
+I(cid:3)
+= (M(cid:3), C(cid:3), c(cid:3)
+noted by I ≺ I(cid:3)
+
+!m
+
+=⇒ s(cid:3)
+
+=⇒ s : ∃t(cid:3)
+
+∀t !m
+0, F (cid:3), Δ
+, if and only if c0 ≺ c(cid:3)
+0.
+
+(cid:3)
+
+: s ≺ s(cid:3)
+
+) simulates I = (M, C, c0, F, Δ), de-
+
+5. DECIDING SYNCHRONIZABILITY
+
+In this section, we identify the necessary and suﬃcient
+condition for determining synchronizability. The condition
+involves comparing the behavior of the system using syn-
+chronous communication with the one using asynchronous
+communication with message queue of size equal to 1.
+
+Deﬁnition 9
+
+(k-bounded System). A k-bounded sys-
+tem (denoted by Ik) is a system where the length of mes-
+sage queue for any peer is at most k. The description of
+k-bounded system behavior is, therefore, realized by augment-
+ing condition 5(a) in Deﬁnition 2 to include the condition
+|Qj| < k, where |Qj| denotes the length of the queue for peer
+j.
+
+WWW 2011 – Session: Web ApplicationsMarch 28–April 1, 2011, Hyderabad, India800(cid:1)t2es1 
+
+?e 
+
+(cid:1)t2
+
+(cid:1)s2 
+
+(cid:1)t1
+
+(cid:1)s1 
+
+!e 
+
+?r2 
+
+?a 
+
+!r 
+
+!r1 
+
+!r2 
+
+?r1 
+
+(cid:1)t1r2s1 
+
+(cid:1)t3rs1 
+
+(cid:1)t1r1s1 
+
+?r1 
+
+!a 
+
+at3
+
+(cid:1)s1 
+
+(cid:1)t3
+
+(cid:1)s3 
+
+Figure 4: 1-bounded System 3
+
+3; observe that this is “structurally diﬀerent” from the ver-
+sions where the peers of System 3 (Figure 1) communicate
+via pure asynchronous (Figure 2(c)-i) and pure synchronous
+(Figure 2(c)-ii) interactions.
+
+Proposition 2. ∀k ≥ 0 : [Ik ≺ Ik+1 ∧ L(Ik) ⊆ L(Ik+1)]
+
+Proof. Every move of a system where peers asynchronously
+
+communicate using message queue size k can be simulated
+(Deﬁnition 8) by the system using > k size message queues
+by avoiding the send actions that makes the receiver’s queue
+size to exceed k. Secondly, Ik ≺ Ik+1 implies L(Ik) ⊆
+L(Ik+1).
+The above proposition along with Deﬁnition 5 (or Deﬁni-
+tion 7) implies that if I is language (bisimulation) synchro-
+nizable then ∀k ≥ 0 : L(Ik) = L(Ik+1) (∀k ≥ 0 : Ik ≈
+Ik+1).
+
+Theorem 1.
+
+L(I0) = L(I1) ⇒ ∀k ≥ 1 : L(Ik) = L(Ik+1)
+
+Proof. Consider that there exists k > 1 such that L(Ik) (cid:13)=
+L(I1). Therefore, there exists a ﬁnite path (witness) distin-
+guishing Ik from I1. In other words, both Ik and I1 have
+a path over the same sequence of send actions such that the
+path eventually leads to a state from where Ik can perform a
+send action which is not possible in I1. In the following, we
+will consider paths with =⇒-transitions (see Deﬁnition 6).
+
+Consider that such a path with l send actions is
+
+!m1
+
+=⇒ tk
+
+tk
+0
+
+!m2
+
+=⇒ . . . !ml=⇒ tk
+
+l
+
+in Ik
+
+1
+
+(1)
+and the corresponding path in I1 that deviates from the
+above after l send actions is
+!m2
+
+such that ∀j ∈ [0..l]tk
+
+t1
+0
+
+!m1
+
+=⇒ t1
+
+=⇒ . . . !ml=⇒ t1
+j = t1
+j .
+
+1
+
+l in I1
+
+(2)
+
+In the above paths, tk
+l
+
+!m(cid:2)
+=⇒ which
+l the peer (say P) which
+is not possible from t1
+l , i.e., at t1
+is responsible for consuming m(cid:3)
+is not ready to move on
+any receive action and its message queue is full (contains 1
+pending receive action).
+
+is capable of realizing
+
+As L(I1) = L(I0), there exists a path,
+
+!m1
+
+=⇒ t0
+
+1
+
+t0
+0
+
+!m2
+
+=⇒ . . . !ml=⇒ t0
+
+l in I0
+
+(3)
+
+We prove by induction that there exists a path over the
+same sequence of send actions in I1 where every receives are
+performed immediately by peer P. Let such a path be
+
+t(cid:3)1
+
+0
+
+!m(cid:2)
+=⇒ t(cid:3)1
+1
+
+1
+
+!m(cid:2)
+=⇒ . . .
+2
+
+!m(cid:2)
+l=⇒ t(cid:3)1
+
+l
+
+(4)
+
+j↓P and ti
+
+j↓E to denote the local states of the peer
+We use ti
+P and the local states of the peers (∈ E) other than P in
+state ti
+j, respectively. Note that, at states with subscript 0
+0, t(cid:3)1
+(t1
+0 ) are start states in the system, i.e., the local states
+all peers at these states are identical.
+
+0, t0
+
+i=1.
+
+If !m1 is an action from some peer in E
+Base case:
+to another peer in E, then there exists an identical action
+!m(cid:3)
+1 =!m1 as the states of peers in E are identical in t1
+0 and
+t(cid:3)1
+0 and t(cid:3)1
+0 . The resulting next states of t1
+0 are also identical.
+If !m1 is an action from some peer in E to the peer P,
+then there exists an identical action !m(cid:3)
+1 =!m1 as the states
+0 and t(cid:3)1
+of peers in E are identical in t1
+0 . Furthermore, as t0
+0
+also allows !m, it must have the capability to receive ?m at
+the local state of peer P in t0
+0. Therefore, the next state of
+1 ↓P = t0
+1↓P and t(cid:3)1
+t(cid:3)1
+0 is such that the t(cid:3)1
+If !m1 is an action from peer P to some peer in E, then
+there exists an identical action !m(cid:3)
+1 =!m1 as the local state
+of P are identical in t(cid:3)1
+1 ↓P = t0
+from t(cid:3)0
+Induction Step. Let ∀i ≤ n :!m(cid:3)
+i ↓E= t1
+t(cid:3)1
+Using the arguments as above, we can prove that !m(cid:3)
+!mi+1, and t(cid:3)1
+
+We can, therefore, construct a matching path of length 1
+1↓E.
+1 ↓E= t1
+i ↓P = t0
+i ↓P and
+
+1↓P and t(cid:3)1
+i =!mi ∧ t(cid:3)1
+
+1 to t(cid:3)1
+i↓E.
+
+1 such that t(cid:3)1
+
+i+1↓P and t(cid:3)1
+
+i+1↓P = t0
+
+i+1↓E= t1
+
+1 ↓E= t1
+
+0 and t0
+0.
+
+i+1↓E.
+
+1↓E.
+
+i+1 =
+
+Therefore, paths 2 and 4 are over exactly the same se-
+l peer P
+is capable of
+. This violates our assumption that
+
+quence of send actions. Observe that at state t(cid:3)1
+has an empty message queue. As a result t(cid:3)1
+realizing the action !m(cid:3)
+path 1 is a witness distinguishing Ik and I1.
+
+l
+
+Theorem 2. L(I0) = L(I1) if and only if I is language
+
+synchronizable.
+
+Proof. Follows from Theorem 1 and Propositions 5, 2.
+
+Systems 2 and 3 (Figure 2(b, c)) are language synchroniz-
+able as the language of their respective 1-bounded behavior
+is identical to that of the corresponding synchronous behav-
+ior. Recall that, asynchronous behavior of System 2 is ﬁnite
+state and remains identical for message queues of all sizes.
+On the other hand, System 3 is inﬁnite state and its behavior
+“structurally” diﬀers for diﬀerent message queue size. The
+1-bounded system 3 is shown in Figure 4.
+
+The 1-bounded system behavior for the peers (Figure 3)
+following Haggle protocol is shown in Figure 5(a). In the ﬁg-
+ure, we have presented the partial view of the system where
+o1 is sent before o2. The dashed arrow corresponds to the
+case where o2 is sent followed by o1 before consuming o1.
+The synchronous behavior of the system is shown in Fig-
+ure 5(b). They are language equivalent as the path (involv-
+ing the dashed arrow) where !o1 is immediately followed by
+!o2 without consuming o1 (and similarly the one where !o2 is
+immediately followed by !o1), never reaches any of the ﬁnal
+states, i.e., these sequences of send actions along these paths
+are not in the language of the system. Therefore, the system
+is said to be language synchronizable.
+
+Next, we discuss the conditions under which system is
+
+bisimulation synchronizable.
+
+Theorem 3. The following holds when all peer behaviors
+
+in the system are deterministic:
+
+I0 ≈ I1 ⇒ ∀k ≥ 1 : Ik ≈ Ik+1
+
+WWW 2011 – Session: Web ApplicationsMarch 28–April 1, 2011, Hyderabad, India801(cid:1)t1
+
+(cid:1)s1 
+
+!o1 
+(cid:1)t2
+
+o1s1 
+
+?o1 
+
+!o2 
+
+(cid:1)t2
+
+o1s2 
+
+!o1 
+
+(cid:1)t3
+
+(cid:1)s2 
+
+?o1 
+
+(cid:1)t2
+
+(cid:1)s3 
+
+!o2 
+
+!c2 
+
+!a2 
+
+?o2 
+
+!a1 
+
+!c1 
+
+o2t2
+
+(cid:1)s2 
+
+c2t2
+
+(cid:1)s5  a2t2
+
+(cid:1)s4 
+
+(cid:1)t4
+
+a1s2 
+
+(cid:1)t5
+
+c1s2 
+
+?c2 
+
+?c1 
+
+?a1 
+
+(cid:1)t5
+
+(cid:1)s5 
+
+?a2 
+
+(cid:1)t4
+
+(cid:1)s4 
+
+(a)
+
+t1s1 
+
+!o1 
+
+!o2 
+
+t2s3 
+
+!o2 
+
+!o1 
+
+t3s2 
+
+!a2 
+
+!c1 
+
+!a1  !c2 
+
+t4s4 
+
+t5s5 
+
+(b)
+
+Figure 5: System with peers following Haggle Pro-
+tocol: (a) 1-bounded; (b) Synchronous
+
+Proof. Let there exist a k > 1 such that Ik (cid:13)≈ I1. There-
+fore, there exists a ﬁnite path (witness) distinguishing Ik
+from I1. In other words, both Ik and I1 have a path over
+the same sequence of states (starting from the correspond-
+ing start states) such that the path eventually leads to a
+state from where Ik can perform a send action which is not
+possible in I1 due to limited size of of peer message queues
+in the latter.
+
+Consider that such a path with l send actions is
+
+!m1
+
+=⇒ tk
+
+1
+
+!m2
+
+=⇒ . . . !ml=⇒ tk
+
+l
+
+in Ik
+
+tk
+0
+
+t1
+0
+
+!m1
+
+=⇒ . . . !ml=⇒ t1
+
+(5)
+and the corresponding path in I1 that deviates from the
+above after l send actions is
+!m2
+
+=⇒ t1
+such that ∀j ∈ [0..l] : tk
+!m(cid:2)
+=⇒ which
+In the above paths, tk
+l is capable of performing
+l the peer (say P) which
+is not possible from t1
+l , i.e., at t1
+is responsible for consuming m(cid:3)
+is not ready to move on
+any receive action and its message queue is full (contains 1
+pending receive action).
+
+1
+j = t1
+j .
+
+l in I1
+
+(6)
+
+As I1 ≈ I0, there exists a path,
+
+t0
+0
+
+!m2
+
+!m1
+
+=⇒ t0
+=⇒ . . . !ml=⇒ t0
+j ≈ t1
+j .
+
+1
+
+l in I0
+
+such that ∀j ≥ 0 : t0
+j ↓E be the local states of the peer P and
+Let ti
+the local states of the peers (∈ E) other than P in state ti
+j,
+j↓E(cid:9). For ease of
+respectively. That is, ti
+
+j is a tuple (cid:8)ti
+
+j ↓P and ti
+
+j↓P , ti
+
+(7)
+
+explanation, in this notation we are not including the queue
+contents associated with each peer’s local state. Recall that,
+when i > 0, the local state of any peer is associated with
+the contents of its queue, while for i = 0, there is no such
+queue.
+
+Using paths 6 and 7, we construct a new path
+
+such that ∀j ≥ 0 : t(cid:3)1
+0 ≈ t0
+Recall that, t1
+1. The states (cid:8)t1
+
+2. The states (cid:8)t1
+
+3. Finally, send actions in (cid:8)t1
+
+l
+
+1
+
+0
+
+!m2
+
+!m1
+
+(8)
+
+t(cid:3)1
+
+0↓E(cid:9).
+
+j↓E(cid:9) and (cid:8)t(cid:3)1
+
+j ↓P = t0
+0↓E(cid:9) ≈ (cid:8)t0
+j ↓P , t(cid:3)1
+
+=⇒ t(cid:3)1
+j ↓E= t1
+0, i.e., (cid:8)t1
+j↓P , t1
+
+=⇒ . . . !ml=⇒ t(cid:3)1
+j↓E ∧ t(cid:3)1
+0↓P , t1
+
+in I1
+j↓P .
+0↓P , t0
+j ↓E(cid:9) have same set
+of send actions from some peer in E to be consumed
+by another peer in E. The destination states after such
+send actions are also identical.
+j↓E(cid:9) and (cid:8)t(cid:3)1
+
+j ↓E(cid:9) have same set
+of send actions from some peer in E to be consumed
+by the peer P. This is because (a) the local states of
+E are identical in t(cid:3)1
+j , (b) the local state of peer
+j ≈ t1
+P is identical in t(cid:3)1
+j , and (c) t0
+j (implies
+the action, under consideration, from a peer in E is
+consumed immediately by the peer P in t0
+j ). The des-
+tination states again maintains the same relationship
+as the current states.
+
+j and t1
+j and t0
+
+j ↓P , t(cid:3)1
+
+j↓P , t1
+
+j↓E(cid:9).
+
+j↓P , t1
+
+j ↓P , t1
+
+j ↓P , t(cid:3)1
+
+j ↓P , t(cid:3)1
+j and t0
+
+j ↓E(cid:9) from peer P to
+j ↓E(cid:9) as (a)
+j , and (b)
+j↓P
+
+j (same set of send actions are allowed from t0
+j↓P ).
+
+any other peer is also present in (cid:8)t(cid:3)1
+the local state of P is identical in t(cid:3)1
+j ≈ t1
+t0
+and t1
+Conversely, we can show that all send actions from
+j ↓E(cid:9) are also
+peer P to any other peer at state (cid:8)t(cid:3)1
+present in (cid:8)t1
+We prove this by contradiction. Assume that peer
+P can perform an send action at state (cid:8)t(cid:3)1
+j ↓P , t(cid:3)1
+j ↓E(cid:9)
+j ↓E(cid:9) and
+j ↓P , t1
+and the same action is blocked in (cid:8)t1
+j ↓P , t0
+(cid:8)t0
+j ). Recall that, we have con-
+strained the the peer behaviors to be deterministic (i.e.,
+I0 is also deterministic) and I0 ≈ I1. This implies one
+sequence of send actions cannot lead to two diﬀerent
+states in the system behavior. Therefore, I0 is bisimu-
+lation equivalent to I1 implies that t0
+j are also
+bisimulation equivalent. This implies that if t0
+j any
+send action from t0
+j . This re-
+sults in contradiction.
+
+j and t(cid:3)1
+j is also possible from t(cid:3)1
+
+j ↓E(cid:9) (as t1
+
+j ≈ t0
+
+Therefore,
+
+∀j ≥ 0 : t1
+
+j ≈ t(cid:3)1
+
+j
+
+(9)
+Observe that peer P’s message queue is empty at state t(cid:3)1
+l ↓E= t1
+l ↓E. As a result, t(cid:3)1
+l
+and t(cid:3)1
+is capable of performing
+the action !m(cid:3)
+. Therefore, the assumption that the path 5
+is a witness distinguishing Ik and I1 does not hold.
+
+l
+
+Theorem 4. The following holds when all peer behaviors
+in the system are deterministic. I0 ≈ I1 if and only if I is
+bisimulation synchronizable.
+
+Proof. Follows from Theorem 3 and Propositions 7, 2.
+
+System 2 (Figure 1) is bisimulation synchronizable as the
+branching behavior of the send actions in the automaton
+
+WWW 2011 – Session: Web ApplicationsMarch 28–April 1, 2011, Hyderabad, India802(synchronous system) in Figure 2(b)-ii is bisimilar to the
+branching behavior of send actions in the automaton (1-
+bounded system) in Figure 2(b)-i. Recall that, for any k,
+the behavior of k-bounded System 2 is exactly identical to
+1-bounded System 2.
+This is, however, not true for System 3 where k-bounded
+behavior is structurally diﬀerent from k − 1-bounded behav-
+ior.
+In spite of that, the synchronous behavior of System
+3 (Figure 2(b)-ii) is bisimilar to 1-bounded System 3 (Fig-
+ure 4), proving that all k-bounded System 3 are bisimilar.
+In other words, System 3 is bisimulation synchronizable.
+
+The system with peers following the Haggle protocol (Fig-
+ure 3) is not bisimulation synchronizable, as its 1-bounded
+behavior allows o1 immediately followed by o2 which can
+eventually result in peers sending oﬀers even after there is
+a cancel or an accept message in the peers’ message queue.
+This behavior is not bisimilar to the synchronous behavior
+of the system (Figure 5(b)). Note that, this behavior of
+the asynchronous system that witnesses the non-bisimilarity
+of the 1-bounded system and its synchronous counter-part,
+never leads to any ﬁnal states of the system. If the chore-
+ography speciﬁcation is only concerned with the behavior of
+the system that always eventually leads to the ﬁnal states
+of the system, then we can discard the states and the tran-
+sitions in the 1-bounded system that do not participate in
+any paths from the start to the ﬁnal states of the system.
+The bisimulation equivalence between synchronous and 1-
+bounded system can be checked after discarding such states
+and transitions, and the Theorems 3 and 4 remain valid
+as the deﬁnitions of bisimulation equivalence as well as the
+proofs of the theorems do not depend on the (un)reachability
+of the ﬁnal states.
+
+Remark 1. If the choreography speciﬁcation is described
+using universal fragment of CTL, i.e., ACTL, then one can
+deﬁne simulation synchronizability. This is because if I and
+I(cid:3)
+are simulation equivalent, i.e., I ≺ I(cid:3) ∧ I(cid:3) ≺ I, then I
+and I(cid:3)
+conform to the same set of choreography speciﬁcations
+expressed as ACTL properties. The proof, that when peer
+behaviors are deterministic I0 ≺ I1 ∧ I1 ≺ I0 if and only if
+I is simulation synchronizable, follows the same arguments
+as in Theorem 3.
+
+Synchronizability allows for verifying choreography confor-
+mance of I using I0. We have presented three diﬀerent vari-
+ations of synchronizability: language, bisimulation and sim-
+ulation synchronizability; each variation corresponds to the
+expressive power and semantics of the choreography speci-
+ﬁcation language. Bisimulation synchronizability allows for
+verifying conformance of I to choreography speciﬁcation ex-
+pressed in any temporal logic; Simulation synchronizability
+allows for verifying conformance of I to choreography spec-
+iﬁcations expressed in universal fragment of temporal logic;
+and ﬁnally, language synchronizability allows for verifying
+conformance of I to choreography speciﬁcation expressed as
+FSA and in LTL temporal logic. Bisimulation synchroniz-
+ability implies simulation synchronizability which, in turn,
+implies language synchronizability.
+We have proved that language, bisimulation and, respec-
+tively, simulation equivalence between I0 and I1 is the neces-
+sary and suﬃcient condition for language, bisimulation and
+simulation synchronizability. As I0 and I1 are automata
+with ﬁnite state-space, bisimulation and simulation synchro-
+nizability are decidable for systems with deterministic peers,
+
+and language synchronizability is decidable for systems with
+non-deterministic peers. In short, our results identify a sub-
+class of peer systems for which choreography conformance is
+decidable even when peers interact by exchanging messages
+asynchronously using unbounded message queues.
+
+6. RELATED WORK
+
+The synchronizability problem was ﬁrst proposed in [9, 11].
+The synchronizability deﬁnition used in [9, 11] corresponds
+to the language-synchronizability deﬁnition we use in this
+paper. Hence it cannot be used to check for conformance of
+branching time properties. Moreover, the synchronizability
+conditions given in [9, 11] are suﬃcient but not necessary
+conditions. For example, as we discussed earlier in the paper
+(see Section 2), one of the synchronizability conditions used
+in [9, 11] is called autonomous condition, and this condition
+prevents a peer from having a send and a receive transition
+from the same state. This condition sometimes fails for peer
+behaviors that are synchronizable, leading to false positives
+(which is the case for the Haggle protocol shown in Figure 3).
+The decidability of synchronizability has been an open
+problem since it has been deﬁned in [9, 11]. In this paper
+we show that synchronizability is decidable by giving a com-
+putable necessary and suﬃcient condition for synchronizabil-
+ity. Furthermore, we extend the synchronizability deﬁnition
+to bisimulation synchronizability that enables choreography
+conformance checking for branching time properties.
+
+In [7], message patterns expressed with Petri nets using
+synchronous communication are “de-synchronized”, i.e., one
+is interested in ﬁnding a speciﬁcation that produces the same
+pattern of messages when communications become asynchronous.
+However, in [7] instead of ﬁnding necessary and suﬃcient
+conditions for equivalence between the synchronous and asyn-
+chronous behavior, the authors try to eliminate race con-
+ditions that are created due to asynchronous behavior by
+several resolution strategies.
+
+In [18] diﬀerent communication models including synchronous
+
+communication and asynchronous communication are deﬁned
+with the goal of choosing the most appropriate communica-
+tion model for a given choreography speciﬁcation. However,
+one of the assumptions used in [18] limits the behaviors of
+the analyzed systems to use a ﬁnite size message queues.
+Our results on synchronizability does not require such a re-
+striction and therefore can be used to extend the approach
+presented in [18] to systems with inﬁnite state spaces.
+
+The work on session types [12, 13] formulates the confor-
+mance of an interaction to a predeﬁned choreography proto-
+col as a typing problem. The idea is to ﬁrst deﬁne a global
+type for interaction behavior which corresponds to the chore-
+ography speciﬁcation. Then during implementation of each
+peer, it is checked if each local peer implementation is “ty-
+pable” with respect to the global type. If that is the case then
+the typing rules ensure that when the peers are executed,
+they conform to the choreography speciﬁcation that corre-
+sponds to the global type. Interestingly, the type system for
+session types contains an analogue of the autonomous con-
+dition from [9, 11] and therefore cannot be used for chore-
+ography conformance checking of some synchronizable peer
+behaviors.
+
+7. CONCLUSION
+
+Message-based interaction mechanisms are becoming in-
+
+WWW 2011 – Session: Web ApplicationsMarch 28–April 1, 2011, Hyderabad, India803creasingly common in many software infrastructures includ-
+ing service oriented architecture, distributed systems pro-
+gramming, and concurrent programming at the systems level.
+Message-based communication provides a clean way of iso-
+lating behaviors of individual peers that participate in a dis-
+tributed system. Furthermore, it enables software develop-
+ers to specify global properties about the interaction behav-
+ior among the peers, which is called choreography speciﬁca-
+tion.
+
+In this paper we focused on one of the essential problems
+in choreography analysis: choreography conformance. In the
+presence of asynchronous communication, choreography con-
+formance problem becomes undecidable. We showed that for
+a class of systems choreography conformance can be checked
+eﬃciently by replacing the asynchronous communication op-
+erations with synchronous communication, which results in
+a ﬁnite state system. The key to this approach is ﬁguring out
+the cases where replacing asynchronous communication with
+synchronous communication does not aﬀect the interaction
+behavior. In this paper, we showed that this problem, called
+synchronizability, can be solved by comparing the behavior
+of a system with synchronous communication to the behav-
+ior of the same system with bounded asynchronous commu-
+nication where the queue sizes are limited to one. We also
+deﬁned diﬀerent variations of the synchronizability problem
+for diﬀerent types of choreography conformance checks and
+gave necessary and suﬃcient conditions for each of the vari-
+ations. Our results are applicable to analysis of the global
+interaction behavior in any software infrastructure that sup-
+ports message-based interactions.
+
+8. REFERENCES
+
+[1] J. Armstrong. Getting erlang to talk to the outside
+world. In Proceedings of the 2002 ACM SIGPLAN
+workshop on Erlang, pages 64–72, 2002.
+
+[2] G. Banavar, T. D. Chandra, R. E. Strom, and D. C.
+Sturman. A case for message oriented middleware. In
+13th International Symposium on Distributed
+Computing (DISC), pages 1–18, 1999.
+
+[3] D. Brand and P. Zaﬁropulo. On communicating
+
+ﬁnite-state machines. J. ACM, 30(2):323–342, 1983.
+[4] T. Bultan, X. Fu, R. Hull, and J. Su. Conversation
+
+speciﬁcation: A new approach to design and analysis
+of e-service composition. In Proc. 12th Int. World
+Wide Web Conf., pages 403–410, May 2003.
+
+[5] M. Carbone, K. Honda, N. Yoshida, R. Milner,
+
+G. Brown, and S. Ross-Talbot. A theoretical basis of
+communication-centred concurrent programming.
+[6] E. Clarke, O. Grumberg, and D. A. Peled. Model
+
+Checking. The MIT Press, Cambridge, Massachusetts,
+1999.
+
+[7] G. Decker, A. P. Barros, F. M. Kraft, and
+N. Lohmann. Non-desynchronizable service
+choreographies. In International Conference on Service
+Oriented Computing (ICSOC), pages 331–346, 2008.
+[8] M. F¨ahndrich, M. Aiken, C. Hawblitzel, O. Hodson,
+
+G. C. Hunt, J. R. Larus, and S. Levi. Language
+support for fast and reliable message-based
+communication in singularity os. In Proc. 2006
+EuroSys Conf., pages 177–190, 2006.
+
+[9] X. Fu, T. Bultan, and J. Su. Analysis of interacting
+
+web services. In Proc. 13th Int. World Wide Web
+Conf., pages 621 – 630, New York, May 2004.
+
+[10] X. Fu, T. Bultan, and J. Su. Conversation protocols:
+A formalism for speciﬁcation and analysis of reactive
+electronic services. Theoretical Computer Science,
+328(1-2):19–37, November 2004.
+
+[11] X. Fu, T. Bultan, and J. Su. Synchronizability of
+
+conversations among web services. IEEE Trans.
+Software Eng., 31(12):1042–1055, 2005.
+
+[12] K. Honda, V. T. Vasconcelos, and M. Kubo. Language
+
+primitives and type discipline for structured
+communication-based programming. In 7th European
+Symposium on Programming on Programming
+Languages and Systems (ESOP’98), pages 122–138,
+1998.
+
+[13] K. Honda, N. Yoshida, and M. Carbone. Multiparty
+asynchronous session types. In Proc. 35th Symp. on
+Principles of Programming Languages, pages 273–284,
+2008.
+
+[14] G. C. Hunt and J. R. Larus. Singularity: rethinking
+
+the software stack. Operating Systems Review,
+41(2):37–49, 2007.
+
+[15] Conversation support for agents, e-business, and
+
+component integration.
+http://www.research.ibm.com/convsupport.
+
+[16] Java API for XML messaging (JAXM).
+
+http://java.sun.com/developer/earlyAccess/xml/jaxm/.
+
+[17] Java Message Service.
+
+http://java.sun.com/products/jms/.
+
+[18] R. Kazhamiakin, M. Pistore, and L. Santuari. Analysis
+of communication models in web service compositions.
+In Proceedings of the 15th international conference on
+World Wide Web (WWW 2006), pages 267–276, 2006.
+[19] D. A. Menasc´e. Mom vs. rpc: Communication models
+
+for distributed applications. IEEE Internet Computing,
+9(2):90–93, 2005.
+
+[20] R. Milner. Communication and Concurrency.
+
+Prentice-Hall, New York, New York, 1989.
+
+[21] Microsoft Message Queuing Service.
+
+http://www.microsoft.com/windowsserver2003/
+technologies/msmq/default.mspx.
+
+[22] Z. Stengel and T. Bultan. Analyzing singularity
+
+channel contracts. In Proceedings of the 18th
+International Symposium on Software Testing and
+Analysis (ISSTA 2009), pages 13–24, 2009.
+
+[23] M. Y. Vardi. Automata-theoretic model checking
+
+revisited. In Proceedings of the International
+Conference on Veriﬁcation, Model Checking and
+Abstract Interpretation, pages 137–150, 2007.
+
+[24] S. Weerawarana, F. Curbera, F. Leymann, T. Storey,
+
+and D. F. Ferguson. Web Services Platform
+Architecture: SOAP, WSDL, WS-Policy,
+WS-Addressing, WS-BPEL, WS-Reliable Messaging,
+and More. Prentice Hall, March 2005.
+
+WWW 2011 – Session: Web ApplicationsMarch 28–April 1, 2011, Hyderabad, India804

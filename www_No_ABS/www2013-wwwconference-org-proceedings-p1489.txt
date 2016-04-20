@@ -1,0 +1,570 @@
+Probabilistic topic models, such as probabilistic latent semantic indexing [17] and its fully Bayesian generalization of latent Dirichlet allocation (LDA) [5], have been widely applied to discover latent semantic structures from collections Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+IW3C2 reserves the right to provide a hyperlink to the author s site if the Material is used in electronic media.
+of data, which can be text documents [5, 3, 6, 4, 9, 28], images [13, 34, 12, 31, 22, 37], and even biological data [1].
+Since exact posterior inference is intractable, both variation-al [5] and Monte Carlo [15] methods have been widely developed for approximate inference, which can normally deal with medium-sized datasets.
+In order to deal with large-scale data analysis problems, which are not uncommon in many application areas, various techniques have been developed to speed up the inference algorithms, such as the parallel inference algorithms on multiple CPU or GPU cores and multiple machines (please see [40] for a nice summary of existing techniques).
+Another nice advance is the development of online inference algorithms, which can not only deal with massive data corpora but also can deal with dynamic text streams, where data samples are incoming one-by-one or in small batches.
+One representative work is the online variational inference method for latent Dirichlet allocation (OLDA) [16].
+OLDA and its later extensions, including the online collapsed Gibbs sampling [20] and the hybrid online variational-Gibbs [27] methods have shown a success to scale to corpora containing millions of articles.
+However, the above online probabilistic topic models can be ine ective in controlling the sparsity of the discovered representations, partly due to their normalization constraints on the admixing proportions [42].
+Sparsity of the representations in a semantic space is a desirable property in text modeling [33] and human vision [29].
+For example, we will expect not every topic or sense, but only a few of them that make a nonzero contribution for each document or each word [33]; this is especially important in practice for large scale text mining endeavors such as those undertaken in industry, where it is not uncommon to learn hundreds if not thousands of topics for millions or billions of documents.
+Without an explicit sparci cation procedure, it would be extremely challenging, if not impossible, to nail down the semantic meanings of a document or word.
+In this paper, we present an approach to learning sparse online topic models, both to improve time e ciency and to deal with streaming data.
+Our approach is based on our recent work of sparse topical coding (STC) [42], a hierarchical non-negative matrix factorization (NMF) [23] model using word codes and document codes to represent an article at the individual word level and the whole document level, respectively.
+By using unnormalized code vectors, STC o ers an extra freedom to reconstruct word counts in text using a log-Poisson loss, and it can e ectively control the sparsity of latent representations to  nd compact topical representations by imposing appropriate sparsity-inducing regulariza-
+the context of learning compact descriptors for images and videos [21, 14, 25].
+However, the existing batch dictionary learning algorithm takes a full scan of the corpus at each gradient descent step, which is demanding in terms of both memory and computation; also, the batch algorithm cannot explore the redundancy of large-scale datasets for more effective training.
+Thus, in the current batch form, STC does not scale up to large-scale datasets and cannot deal with dynamic text streams.
+(cid:741)d sdn wdn (cid:735)k n(cid:3549)Id k=1:K d=1:D Figure 1: Graphical structure of STC [42].
+To address the above weakness of STC, we propose a novel sparse online topic model, which is essentially an online algorithm to learn the topical dictionary in STC.
+Our algorithm, based on the recent success of online stochastic optimization [8, 32], can scale to large data corpora (e.g., the entire Wikipedia corpus containing 6.6M articles) and can cope with dynamic text streams.
+Our main contributions can be summarised as follows:   We introduce online sparse topical coding (OSTC), which is e cient for learning online sparse topical representations.
+  We provide a theoretical analysis that when using a general setting for the learning rate, our online learning algorithm converges to a stationary point under reasonable conditions.
+  We present the collapsed sparse topical coding model as well as its online learning algorithm, and the online learning algorithm for the supervised max-margin sparse topical coding (MedSTC) [42].
+  Our empirical results on the medium-sized 20News-groups dataset and a large-scale Wikipedia dataset show that 1) online learning algorithms can improve time e ciency, while not sacri cing prediction performance or the perplexity performance of held-out data; 2) online sparse topical coding achieves lower perplex ity and higher word code sparsity than probabilistic online LDA.
+The rest of the paper is structured as follows.
+Section 2 summarizes related works.
+Section 3 brie y overviews STC and its batch learning algorithm.
+Section 4 presents the online sparse topical coding algorithm, analyzes its convergence, and discusses two extensions for learning collapsed STC and supervised STC.
+Section 5 presents empirical results on Wikipedia and 20Newsgroups data.
+Finally, Section 6 concludes.
+Various works have been developed for modeling independent dynamic text streams [39, 20] and dealing with large data corpora using topic models [16, 27, 38].
+Online topic models combine these two targets into one objective.
+It has been shown that these models can easily scale up to a corpus containing a few millions of articles [16, 27] by using proper inference methods.
+Another thing we care about is the sparsity of latent representations for the data [23].
+Suppose we have an article, we can expect only a few topical meanings in it.
+In the language of topic models, the latent representations of the article and its words tend to be sparse.
+Sparsity is also important for large scale text mining endeavors, where it is common to cut down the semantic meaning of a document or word from its topical descriptors learned from millions of articles for storage.
+Several models aim at faster and more e cient inference procedures [15, 36, 2].
+However, the inferred latent representations for these models are very dense.
+STC is a sparse topic model which relaxes the normalization constraints of the latent representations and explicitly put a sparse-inducing regularization on them.
+This method has been proved to be more successful to learn a sparse topical representation and its MAP inference is even signi cantly faster than some probabilistic topic models [42].
+Our online model is based on STC.
+We aim at building a topic model that can scale to a large corpus and can deal with dynamic text streams while simultaneously preserving sparse coding.
+In this section, we brie y overview sparse topical coding and its existing batch learning algorithm.
+We also provide a new interpretation for the sparse topic model from the projection point of view.
+(cid:2) Let V be a vocabulary with N terms.
+In a bag-of-words model, a document d is represented as a vector wd = (wd1,   , wd|Id|) , where Id is the index set of words that appear and wdn (n   Id) is the number of appearances of word n in document d. Sparse topical coding is a technique that projects the input wd into a linear latent space spanned by a set of automatically learned bases (a basis set is also called a dictionary).
+The combination weights denote a representation of document d in the latent space.
+STC is a hierarchical non-negative matrix factorization [29], with two-layers of latent representations for words and the entire documents, respectively.
+For the ease of understanding, it is helpful to start with a probabilistic generating process, which also provides an explicit comparison with LDA.
+Let   denote a dictionary with K bases, of which each row  k is a N dimensional basis.
+For text documents,  k is a topic, i.e., a unigram distribution over the terms in V .
+This statement leads to the constraint that  k   P, where P is a (N   1)-simplex.
+We will use  .n   R K to denote the nth column of  . Graphically, STC is a hierarchical latent variable model, as shown in Fig. 1, where  d   R K is the document code (i.e., the latent representation of a document d) while each sdn   R K is a word code (i.e., latent representation of the individual word n in document d).
+Formally, STC assumes that for each document d the word codes sdn are conditionally independent given its document code  d and the observed word counts wdn are independent given their latent representations sdn.
+The generative process for each document d is: 14901. draw a document code  d   p( );
+ (a) draw a word code sdn   p(s| d); (b) draw a word count wdn   p(w|sdn,  ).
+For the last step of generating word counts, we require the (cid:2) dn .n + , distribution to satisfy the constraint Ep[w] = s where  is a small positive number for avoiding degenerated distributions.
+One nice choice, as used in STC, is the Poisson distribution p(wdn|sdn,  ) = Poisson(wdn; s (cid:2) dn .n + ), (1) x!
+.
+This idea of using the linear combination s (cid:2) dn .n has been used as the where the linear combination s mean parameter of a Poisson distribution Poisson(x;  ) =  x e  (cid:2) dn .n as mean parameters can be generalized to the broad class of exponential family distributions for modeling various types of data.
+We refer the readers to [42] for more details.
+But we emphasize one advantage of such a mean parametrization, that is, using the linear combination as mean parameter makes it natural and convenient to constrain the feasible domains (e.g., non-negative domain for modeling word counts) of the word codes in order to have a good interpretation, while it would be reluctant to do so when using the linear combination as natural parameters1.
+As shown in [23], imposing appropriate constraints such as non-negativity constraints could result in signi cantly sparser and more inter-pretable patterns.
+The generating procedure de nes a joint distribution p( d, sd, wd| ) = p( d) p(sdn| d)p(wdn|sdn,  ), (cid:2) (2) n Id where sd = {sdn, n   Id}.
+To infer sparse word codes, STC de nes p(sdn| d) as a product of two component distributions p(sdn| d)   p(sdn| d,  )p(sdn| ) (3) where p(sdn| d,  ) is an isotropic Gaussian distribution N ( d,  1) and p(sdn| ) = Laplace(0,    1) is a Laplace distribu-  tion.
+This composite distribution is super-Gaussian [19] and the Laplace term will bias towards  nding sparse word codes.
+For p( d), both the normal prior p( d) = N (0,    1) and the  1) were discussed in [42].
+Laplace prior p( d) = Laplace(0,   Let   = { d}, S = {sd} and W = {wd} to denote all the latent document codes, latent word codes and observed word counts in the whole corpus.
+When p( ) is normal, STC solves the constrained problem (cid:3) (cid:7)(S,  ) +  (cid:5) (cid:5)2 min  ,S,  d,n Id s.t.
+:     0; S   0;  k   P,  k,
+  
+ (cid:5)sdn    d(cid:5)2
+ (4) where the objective function is the negative logarithm of the posterior p( , S,  |W) with a constant omitted; (cid:5) (cid:5)2
+
+ tribution Poisson(x;  ) is log  .
+If we use the natural (cid:2) dn .n + , we will have parametrization and let log   = s (cid:2) dn .n + ).
+The exponential transformation will   = exp(s make the resulting problem of STC hard to solve.
+w1 s11 (cid:628)1 (cid:637)1 w3 d1 sparse KL-divergence projection spanned convex cone s12 (cid:628)2 w2 Figure 2: A new projection view of STC with two topical bases over a vocabulary with three terms.
+(cid:4) d (cid:5) d(cid:5)2
+ (cid:4) (cid:4) loss is (cid:7)(S,  ) = d (cid:7)(sd,  ), where d,n (cid:5)sdn(cid:5)1.
+For text, the log-Poisson (cid:7)(sd,  ) = (cid:7)(wdn, s (cid:2) dn .n) (5) (cid:3) n Id is the log-loss contributed by document d and (cid:7)(wdn, s dn .n) =   log Poisson(wdn; s (cid:2) (cid:2) dn .n + ) (6) is the loss contributed by the individual word n. Since word counts are non-negative, a negative   or s will lose inter-pretability.
+Therefore, STC constrains the code parameters to be non-negative, as in [18].
+A non-negative code   or s can be interpreted as representing the relative importance of topics.
+The parameters ( ,  ,  ) are non-negative constants and they can be selected via cross-validation.
+1 and   To help understand the above de nition of STC, we also provide a new projection interpretation of STC as illustrated in Fig. 2.
+Suppose we have two topical bases   2 over a vocabulary with three terms w1, w2, and w3.
+The document d1 has two terms, each being projected to a point in the spanned convex cone2 under a KL-divergence measure3, and the document code  1 is an aggregation of the two word codes s11 and s12.
+By using appropriate regularization, the projection could be sparse.
+In this  gure we illustrate both sparse and non-sparse cases.
+For example, the word code s11 is sparse (i.e., on the boundary) while s12 is not.
+Problem (4) is biconvex, i.e., convex over   or ( , S) when the other is  xed, but not joint convex over ( , S,  ).
+A natural algorithm to solve this biconvex problem for a local optimum is coordinate descent, as used in [42] and sparse coding methods [24].
+The algorithm alternately performs the following two steps.
+Hierarchical sparse coding: optimizing over S and  .
+Since documents are i.i.d, we can perform the hierarchical sparse coding for each document separately.
+For document
+
+ lent to minimizing the unnormalized KL-divergence between observed word counts wdn and their reconstructions (cid:2) dn .n [35].
+s 1491d, we solve the constrained optimization problem (cid:3) (cid:7)(sd,  ) +  (cid:5) d(cid:5)2
+ min  d,sd n Id s.t.
+:  d   0; sdn   0,  n   Id.
+ 
+ (cid:5)sdn d(cid:5)2 2 +  (cid:5)sd(cid:5)
+ (7) As shown in [42], a coordinate descent procedure can be developed with iterative closed-form updates for word codes and document codes.
+Moreover, this algorithm has the same structure as the variational inference algorithm of the counterpart LDA [5] model.
+To compare with online LDA [16], which uses variational inference, we adopt the coordinate descent strategy to solve problem (7) in our online sparse topical coding.
+More formally, the algorithm alternatively solves Optimize over sd: when  d is  xed, sdn are not coupled.
+dn), where   k dn dn = max(0,   k For each sdn, the solution is sk is the larger solution of the equation  kn(  k dn)2 + (  +  kn )  (cid:4) dn +     wdn kn = 0, dn jn +  and   =  kn +      k where   = one dimensional problem can be solved in closed-form.
+j(cid:4)=k s k j d .
+This Optimize over  d: when sd is  xed, the closed-form solution is    k,   (cid:4) k d,  s n Id sk d = 1|Id|  /|Id| +   k d = (8) dn.
+If   (cid:8)  , the document code  d where  sk is close to the averaging aggregation of its individual word codes.
+Another choice is to set   =  , and we have  k d = d, which is again close to the average if |Id| is large.
+|Id|
+ Following [42], we set   =   since it reduces one parameter to  1) tune.
+Moreover, if the Laplace prior p( d) = Laplace(0,   is used, a closed-form solution also exists, d     k k d = max(0,  s  k,   (9)  |Id| ), which is a truncated averaging strategy for aggregating individual word codes to obtain  d.
+Dictionary learning: this step involves solving min   (cid:7)(S,  ), s.t.
+:  k   P, k.
+(10) STC uses a projected gradient descent method to update  , where the projection to the (cid:7)1-ball can be done e ciently in O(N ) time [11].
+We will use the public implementation of the batch algorithm as our baseline4.
+The above algorithm empirically converges faster than the variational inference algorithm of probabilistic LDA by avoiding calls to digamma function [42].
+However, it requires a full pass through the corpus at each gradient descent step of learning dictionary.
+A full pass of a very large dataset would be very expensive in terms of both memory and e -ciency.
+Furthermore, the batch gradient descent for dictionary learning can be ine cient in utilizing the redundance information of a large dataset.
+To overcome such ine cien-cy, we propose the online sparse topical coding (OSTC), which uses an online learning algorithm to learn the dictionary  .
+Our online algorithm is nearly as simple as the 4http://www.ml-thu.net/ jun/stc.html Algorithm 1 Online Sparse Topical Coding
+ 2: for t= 0,1,2,... do
+
+
+
+ 7: end for read document dt ( t, st) = HierarchicalSparseCoding(dt) let gt =  (cid:7)( t) and  t =  0/(t +   )  t+1    P ( t    tgt) batch coordinate descent algorithm for STC, but converges much faster for large datasets, as we shall see.
+The online learning algorithm for STC is described in algorithm 1.
+At each iteration t, we randomly sample a data point wt and perform the hierarchical sparse coding step to  nd the optimal codes  t and st, holding the dictionary  xed.
+Then, we update the dictionary using the information collected from the data wt by using the  rst-order update rule  t+1 =  P ( t     t g( t ; wt)) (11) where the gradient g( t; wt) =  (cid:7)(st,  )| t and  t denotes the learning rate.
+The update rule is in fact the solution of the subproblem (cid:7)(st,  t )     t(cid:11)g( t ; wt),      t(cid:12) + min   (cid:5)     t(cid:5)2
+
+
+ under a projection to ensure   be a topical dictionary.
+We have denoted the projection to the simplex P by  P .
+Mini-batches: A useful technique to reduce noise in stochastic learning is to consider multiple observations per iteration.
+Suppose we have M data at each iteration.
+After  tting the sparse codes for each document, the online update rule is  t+1 =  P ( t     t 1
+ M(cid:3) d=1 g( t; w d t )), (12) where wd t is the dth document in mini-batch t. Note that when M = D, we recover the batch STC.
+To provide some intuitive ideas, an illustration of the online learning procedure is shown in Fig. 3, whose detail description will be presented at the end of this section, after we have presented the convergence analysis and extensions.
+Comparison with online LDA: Recently e cient online learning algorithms have been proposed for LDA to scale up to large datasets and to deal with dynamic text streams [16, 20, 27].
+Our algorithm closely resembles the online variational Bayesian algorithm for LDA [16].
+This similarity makes it convenient to compare the two variants of online topic models, including time e ciency and sparsity of word codes, as reported in the experiments.
+The deterministic formulation of STC allows us to analyze the convergence behavior of the online algorithm.
+First, we analyze the regularity of the objective function in dictionary learning.
+Lemma 1.
+The cost function (cid:7)(st,  ; wt) is convex over   and bounded from below; and its gradient and Hessian matrix are bounded.
+1492christians israel power atheist bike n e e
+ s t n e m u c o
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Perplexity
+
+ scsi environment article don insurance scsi article writes space runs scsi space christian people runs people christian don god john people god jesus christian don god people jesus christian bible forged yalcin onur cosar deaf forged sy ihr bm yalcin forged sy ihr bm yalcin forged sy bm israel turkish forged israel turkish armenian armenians forged israel turkish israeli armenians wiring outlets slave master prong wiring jh blinker outlets melpar professor period writes picture scsi professor vonnegut whirrr enviroleague euclidean wiring mjm jh brightness karplus gillow incredulity kutluk enkidu professor wiring mjm compariators grendal karplus enviroleague god lilac masoretic indonesia wiring power circuit good current wiring circuit current power voltage god atheism keith religion islam god atheism religion atheists evidence nmm kryptonite jae cerri motorcycling nmm reining plow reins wallich wallich seca intake waist nmm quincy countersteer bike boogie dod bike dod scuffed ride motorcycle bike ride motorcycle bikes riding Figure 3: The change of perplexity and average word codes on test documents during the training process of OMedSTC (See section 4.2.2), as the online algorithm scans more articles (see the numbers near the blue curve).
+From top to bottom, we can see that the held-out perplexity drops down (in the left  gure); the average word codes grow sparser (the right  ve columns); and the semantic meaning of the most salient topics representing the 5 selected words becomes clearer (for each topic, we present the 5 top-ranked terms inside the boxes).
+Proof: The  rst part is obvious for the log-Poisson loss, since we have avoided the degenerated cases by introducing the parameter  and the maximum word count is bounded in real cases.
+The gradient  .n (cid:7)(st,  ; wt) = I(n   It)(1   wtn tn  .n+ )stn is also bounded for the same reason.
+For the s(cid:2) last part, we directly prove the largest eigenvalue of Hessian matrix is bounded:  max = sup  0 sup (cid:6)z(cid:6)2 1 z = sup  0 sup (cid:6)z(cid:6)2 1 z (cid:2) 2  .n (cid:7)(st,  ; wt)z (cid:3) (cid:2) tn (cid:2) stnwtns (cid:2) tn .n + )2 (s ( n It (cid:2) ( (cid:3) n It (cid:2) tn )z = stnwtns 2 2(cid:5)diag(wt)(cid:5)2   wtmax 2 z = sup (cid:6)z(cid:6)2 1 (cid:5)st(cid:5)2   1 2 )z (cid:5)stdiag(wt)s t (cid:5)2 (cid:2) 2 (cid:5)st(cid:5)1(cid:5)st(cid:5) .
+Since stn and  .n are non-negative, the  rst supremum is (cid:2) tn .n = 0.
+Then we use the de nition of the achieved when s induced matrix 2-norm to get a more compact expression.
+Finally, using inequalities of matrix norm and the maximum word count wtmax , we get the last inequality.
+Note that (cid:5)st(cid:5)1 = maxk  nsk tn was bounded by the number of di erent words exist in a mini-batch and (cid:5)st(cid:5)  = maxn  ksk tn relates to the scale of stn and was controlled by hyperparameters.
+So the Hessian matrix of (cid:7)(st,  ; wt) is bounded.
+To analyze the convergence of OSTC, we follow the method used in [16].
+Suppose that we sample articles together with their word codes, then we can compute the expected gradient of the cost function.
+Since STC and OSTC perform MAP estimates and  nd a single value of each word code, we compute the expectation over s by using an impulse distribution with our estimate of the codes.
+Then, we can derive results which are similar as in [7] to ensure that our online algorithm converge to a stationary point, as shown in the following theorem.
+Theorem 2.
+Assume that the learning rate  t satis es (cid:4)  (cid:4)  t=1( t)2 <  , t=1  t =  .
+Then, OSTC converges.
+Proof: The proof is partly based on [7].
+We  rst de ne the Lyapunow sequence ht = (cid:5) t    (cid:5)2 where   is a stationary point and prove that  t converges based on the convergence of ht.
+We denote the previous knowledge (i.e.,  t,  t, s t, 0    t   t) by P t. Then ( t     E[h t+1   h t|P ] t t t )Ewt [ (cid:7)(st,  t ; wt))2|P ; wt)|P ] t )2Ewt [( (cid:7)(st,  t ] =  2  t + (  Note that the  rst order derivative is bounded and the second order term was also bounded by A+B( t  )2, where A and B are non-negative values.
+This is because the eigenvalues of Hessian matrix is bounded and the gradient will
+ equation we get t+1   (1   (  ( t     t E[(h   2  t )2B)h ] = )Ewt [ (cid:7)(st,  t t|P t ; wt)|P t t ]( 
+ (13) Using the techniques in [7], if we replace ht with a scaling term and choose  t =  0/(t +   ) where   and  0 are positive constants, we can prove that ht converges and the in nite sum of the left hand side of Eq.
+(13) also converges.
+Therefore, the in nite sum of the right hand side of Eq.
+(13) also converges, i.e.,  (cid:3) t t=1 t   (14) (cid:4)  ] <  .
+t=1  t = ; wt)|P )Ewt [ (cid:7)(st,  t ( t     (cid:4)  t=1  0/(t +   ) =   and the  rst order Since derivative is bounded, we must have that | t | converges to zero.
+In all the experiments, we set  t =  0/(t+10), which satis es the assumptions in the above theorem.
+Before ending this section, we brie y present two extensions of the online learning algorithm for collapsed sparse topical coding and max-margin supervised dictionary learning.
+STC was intentionally designed as having a hierarchical structure, similar as the hierarchical probabilistic topic models, for easy comparison.
+But for practical performance, it has been demonstrated in probabilistic topic models that collapsing some parts of the latent variables could potentially improve performance [15].
+We take the analogy and develop a collapsed STC (CSTC), and show that our online learning algorithm can be naturally extended for CSTC.
+Speci cally, as described in Section 3.2, STC is a MAP estimate of a hierarchical Bayesian model.
+When using a normal prior on  , we can derive the collapsed STC by marginalizing out  .
+For each document d, we have the collapsed distribution p(sd, wd| )    d exp (cid:3) (cid:2)    
+
+    (cid:3) d(cid:3)2 (cid:4) n Id (cid:3)sdn(cid:3)2 2 + 2b (cid:4) (cid:3)sdn    d(cid:3)2 n Id (cid:4) m(cid:4)=m(cid:3) s(cid:2) dmsdm(cid:3)
+ (cid:5) (cid:5) ,  d (cid:3)    d exp   a where  d = exp{ (cid:7)(sd,  )    (cid:5)sd(cid:5)1} is independent of  d, a =   .
+Then, by performing
+  2  |Id|  2  |Id| and b =   4( +
+ ) 4( +
+ ) MAP estimation, we derive the collapsed STC as solving min S,  s.t.
+: d  sd) + (cid:7)(sd,  ) +  (cid:5)sd(cid:5)1 (cid:2) tr(s S   0;  k.
+  P, k, (15) where   = (a   b)I + bE and sd is an K   |Id| matrix, of which the column n corresponds to sdn.
+The problem is again biconvex, i.e., convex over S or   when the other is  xed.
+Both batch and online algorithms can be developed to solve Eq.
+(15), since the dictionary learning step is the same as in STC.
+The di erence is on the sparse coding step, which is now to  nd the optimal word codes for each document.
+We can also derive a coordinate descent algorithm, of which each substep has a closed-form solution.
+Speci cally, the optimal solution of sk dn is max(0,   k dn is the larger solution of the quadratic equation dn), where   k 2a kn(  k dn)2 + c kn  k dn + c dn k(cid:3)n   wdn kn = 0 k(cid:3) s where c =  kn +   + 2b (cid:4) (cid:3) k(cid:3)(cid:4)=k m(cid:4)=n sk dm.
+Both STC and CSTC learn dictionaries and infer sparse representations of unlabeled samples.
+But with the increasing availability of free online information such as image tags, user ratings, etc., various forms of  side-information  that can potentially o er  free  supervision have lead to a need for new topic models and training schemes that can make an e ective use of such information to achieve better results, such as more discriminative latent representations of text contents and more accurate classi ers [4, 41].
+In [42], a supervised max-margin STC (MedSTC) was developed to learn predictive representations and a supervised dictionary [26] by exploring the available side-information.
+The basic idea of MedSTC is to use document codes as input features for max-margin classi ers, e.g., the multi-class SVM [10].
+Formally, MedSTC solves the problem (cid:5) (cid:5)2  ,S, ,  f ( , S,  ) + CR( ,  ) + min s.t.
+:     0; S   0;  k   P,  k, (16)
+
+
+ (cid:3) where f ( , S,  ) is the objective function of STC and y
+
+ R( ,  ) = [ (yd, y) +  (cid:2) y  d    (cid:2) d yd max  d]
+ is the multiclass hinge loss with parameters   = [  for L classes, of which each  l is a K-dimensional vector associated with class l. The loss function  (yd, y) measures the cost of making a prediction y if the ground truth label is yd.
+Normally, we assume  (y, y) = 0, i.e., no cost for a correct prediction.
+The problem is again biconvex, i.e., convex over ( , S) or ( ,  ) when the other is  xed.
+In [42], a batch algorithm was developed to alternately solve for ( , S) and ( ,  ).
+Since   and   are not coupled, we can solve for each of them separately.
+For  , the subproblem is to learn a linear multi-class SVM.
+Based on the above online dictionary learning algorithm and the existing high-performance online learning algorithm for SVMs [32], we can develop an online learning algorithm for MedSTC, which is still guaranteed to converge.
+We denote this method by OMedSTC.
+Before presenting all the details of the experiments, we use Fig. 3 to illustrate the change of the perplexity on held-out documents and the word codes along the iterations of online learning.
+We present the results of OMedSTC with 70 topics on the 20Newsgroup data with a standard train/test split, which will be clear in the next section.
+Fig. 3 shows the perplexity of the test set and the average word codes of the  ve popular words, of which each one is from a di er-ent category, at di erent stages of online learning.
+For each word, we calculate the average word code over the test documents that are from the category as that particular word.
+For example, the average word code of bike is the mean of 1494all the word codes for bike in the rec.motorcycles category.
+We can see the held-out perplexity goes down when scanning more articles while at the same time the average word codes for each word grows sparser and at the end of training most words are dominated by a few topics.
+It is also nice to see that the semantic meanings of the most salient topics describing the selected words become clearer by listing their top words (i.e., words that have highest values in the topic).
+For example, the average word code for the word christians was dominated by some not-clearly-meaningful topics when we scan 20K articles, while at the end of our algorithm it was captured by only one topic that has a very clear topical meaning, with the top  ve words being god, people, jesus, christian, and bible, all relating to the target word chris-tians.
+Now, we present all the details of our empirical results on a dataset with 6.6M articles collected from Wikipedia and the
+ learning algorithms for STC, MedSTC and CSTC.
+We set the learning rate  t =  0/(t + 10) and tune  0 for models with di erent batch sizes5.
+All the experiments are done on a standard desktop with 2.67GHz processors and 2GB RAM.
+Note that to reduce the in uence of network speed, all the datasets were pre-collected.
+Thus, the experiments are not really online.
+But they su ce to evaluate the e ectiveness and e ciency of the online learning algorithms.
+We  rst report the results on the unsupervised Wikipedia dataset.
+We use perplexity as the performance measure, which is de ned as the geometric mean of the inverse marginal probability of each word in a held-out set of documents Wtest.
+Here, we randomly select 1000 articles as the held-out set.
+We compare OSTC with the ordinary batch STC and the online LDA (OLDA) using variational inference6 [16].
+We note that other versions of OLDA have been developed by doing hybrid variational inference and Monte Carlo sampling [27], which could improve the time e ciency of OLDA.
+But since our main focus is on topic sparsity7, we compare with the variational OLDA, whose procedure is more similar as OSTC.
+We will discuss the in uence of various inference methods for LDA on perplexity later.
+In the experiments, we set K = 100, which is su cient to  t the data well8.
+Below we  rst explain the perplexity measure we use for our STC models, which is slightly di erent from the commonly used perplexity for probabilistic models like LDA.
+the best performance.
+Similar as in [16], we set a smaller  0 for a larger batch size.
+http://www.cs.princeton.edu/ blei/downloads/onlineldavb .tar
+ topic representations due to the limited number of samples, both LDA and OLDA are not sparse models.
+In contrast, both STC and OSTC are sparse due to a soft-thresholding operators as presented in Section 3.3.
+held-out perplexity.
+Perplexity is a common measure of topic models  ability to generalize to test data.
+It is de ned as the geometric mean of word likelihood.
+For probabilistic models, word likelihood is a marginal of the joint distribution of words and topic assignment, where the topic distribution is inferred from test data.
+But for STC, since we do not have a distribution of word codes, we then have our perplexity de nition di erent with probabilistic topic models.
+We now use LDA as an example of probabilistic topic models to explicitly discuss its perplexity de nition compared with STC.
+For probabilistic topic models, the perplexity was de ned as follows.
+Let ntest denote all words in a test document i and N test is the total word counts in document i.
+Then the perplexity is the geometric mean of word likelihood in the test set: i i perplexity = exp .
+(17) (cid:3)   (cid:6) (cid:6) i log p(ntest i i N test i (cid:5) ) For LDA and OLDA, since exact inference is intractable, a variational bound was developed to approximate the perplexity [16].
+However, this variational bound utilize words in the held-out set and may over t the test data.
+Here we use a  document completion  method [30] to evaluate the held-out perplexity and this is done by  rst using half of the test words (denoted by ntest i1 ) to infer document codes for the test documents and then evaluating the held-out perplexity by sampling word code for the other half of words in the test data (denoted by ntest i2 ).
+This method avoid over tting since ntest i2 was not used for inference.
+Precisely, the perplexity of LDA is computed as (cid:5) (cid:3) perplexityLDA   exp   (cid:2) i log p(ntest i2 (cid:2) |p(ntest i1 , , ) i |N test i2 | .
+(18) For STC and OSTC, we do not de ne a posterior distribution of word codes, which means we can not compute the marginal of the joint distribution of words and topic assignment as in probabilistic topic models.
+However, in STC we can use a similar strategy as done in LDA by  rst utilizing half of the test terms (denoted by wtest i1 ) to infer the document codes for the test set and then sample word codes for the other half of terms (denoted by wtest i2 ) to calculate the held-out perplexity as perplexityST C   exp (cid:6) (cid:6) i log p(wtest i |I test |wtest i1 | ,  ) (19) (cid:3) (cid:5)   i2 .
+i2 From above discussions, we argue that both perplexity de nations are proper for their own settings.
+To further check this, we also provide an  interchange  experiment in the Appendix.
+In the following experiments we will use the Eq.
+(18) to calculate perplexity for LDA models and Eq.
+(19) for our STC models.
+To compare with OLDA, we follow the same settings in [16] and randomly choose a 99K subset of the whole Wikipedia data.
+Fig. 4(a) shows the perplexity of OSTC (with batch size M = 64), batch STC and OLDA (M = 64).
+We can see that OSTC converges much faster than batch STC because of its e ective exploration of document redundancy.
+We also observe that OSTC has a lower perplexity than OLDA.
+The main reason is that STC uses un-normalized word codes, which o er an additional freedom compared to the normalized probability in LDA.
+This extra freedom could lead to better  tness of the observed data.
+1495l y t i x e p r e
+ t u o d e
+ l
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ o i t a
+ y t i s r a p
+
+
+
+ l y t i x e p r e
+ t u o d e
+ l
+
+ x 105
+
+
+ (cid:85)/(cid:68)
+
+ (b)
+ (cid:85)/(cid:68) (c)
+
+ Documents Seen (a) Figure 4: (a) held-out perplexity of STC, online STC and online LDA on the 99K Wikipedia dataset; (b,c) perplexity and sparsity of OSTC and OLDA when the hyper-parameters   and   change.
+Table 1: Perplexity of LDA, CG-LDA and STC on two datasets.
+Wikipedia
+
+
+
+
+
+
+
+
+
+ To examine the in uence of approximate inference algorithms on perplexity, Table 1 further compares the perplexity of STC with those of the LDA models using variational mean eld as well as the collapsed Gibbs sampling [15].
+We denote the LDA using collapsed Gibbs sampling by CG-LDA.
+We can see that although using collapsed Gibbs sampling can improve the performance of LDA, its perplexity is still signi cantly higher than that of STC.
+Fig. 4(b) and Fig. 4(c) further compare the held-out perplexity and word code sparsity of OSTC and OLDA when their hyper-parameters change.
+Both models have a single pass on the 99K subset.
+For OSTC, we  x   =   = 0.025 and only change   (changing both   and   will lead to even better results), and for OLDA, the hyper-parameter is the Dirichlet parameter  .
+We can see that for both models, the hyper-parameter a ects the word code sparsity much.
+But for OLDA, the held-out perplexity doesn t change much, all remaining at a level of about 1,600.
+In contrast,   a ect-s much on the perplexity of OSTC.
+At all points, OSTC obtains a smaller perplexity than OLDA.
+Moreover, when   is set at a relatively large value (e.g., 0.01), OSTC obtains much lower perplexity and higher word code sparsity.
+Our observations are consistent with those in [42, 21], whose experiments demonstrate the e ectiveness of STC on discovering sparse (and interpretable) topical representations.
+We also investigate the performance of collapsed STC using online learning.
+From Fig. 4(b) and Fig. 4(c), we can see that the collapsed OSTC (i.e., OCSTC) outputs slightly sparser word codes and achieves even lower perplexity than OSTC, when both methods using the same hyper-parameters.
+This performance gain comes from relaxation of conditional independence constraints in the inference step.
+Now, we use the whole 6.6M Wikipedia dataset to examine the scalability of OSTC.
+Fig. 5 shows the perplexity of OSTC with di erent batch sizes, as a function of the running l y t i x e p r e
+ t u o   d e
+ l
+
+
+
+
+
+
+
+
+
+
+ Online Batch Size
+
+
+
+
+
+ Batch99K
+ CPU Seconds (log scale)
+
+ Figure 5: held-out perplexity of online STC using di erent batch sizes on the whole 6.6M Wikipedia dataset.
+time.
+We can see that the convergence speeds of di erent algorithms vary9.
+First, since batch algorithm su ers from writing disk operations due to its huge memory cost10, its performance is much worse than those of the online alternatives.
+Second, online algorithms with medium batch sizes (e.g., M = 256) converge faster than others.
+When we use a too small batch size (e.g., M = 4), it takes a long time to converge because we update the dictionary too frequently in each iteration without enough evidence.
+Finally, we also note that as the batch size becomes too large (e.g., M = 4096), the convergence speed of online algorithm approaches the very slow batch algorithm.
+The 20Newsgroups dataset consists of 18,774 documents from 20 di erent newsgroups with a standard train/test s-plit11 of 11,269/7,505.
+The vocabulary contains 61188 terms, and we remove a standard list of 524 stop words as in [42].
+verge before scanning the whole corpus.
+average 100 words, we will need about 4GB memory to store the word codes for the 99K subset when K = 100.
+For the
+
+
+
+
+ MedSTC batch size
+
+
+
+
+ batch
+ accuracy(%)
+
+
+
+
+ time(ks)
+
+
+
+
+
+
+ accuracy(%)
+
+
+
+
+ time(ks) accuracy(%) time(ks)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ e t a r r o r r e
+
+
+
+
+
+
+
+
+
+
+
+ MedSTC OMedSTC
+
+ CPU seconds(log scale)
+ e t a r r o r r e
+
+
+
+
+
+
+
+
+
+
+
+ CPU seconds(log scale)
+
+ (a) (b) Figure 6: (a) error rates of STC and MedSTC as a function of running time; (b) error rates of STC and CSTC as a function of running time.
+In these experiments, we focus on comparing both time e -ciency and test accuracy between STC and online STC with di erent batch sizes.
+The results of other supervised topic models, including MedLDA and sLDA, were reported in [42].
+) = 3600I(y (cid:15)= We choose the parameters K = 60,  (y, y (cid:10) y ),   = 0.1 and   =   = 0.01, which produce good results as shown in [42].
+(cid:10) Table 2 presents the classi cation accuracy of di erent models with di erent batch sizes.
+We can observe that the online STC obtains higher accuracy while with less running time than the online LDA using the same batch size.
+For STC, online learning algorithms generally improve the time e ciency in order to get a good classi cation model.
+For instance, the online STC with a batch size of 32 takes about a half of the running time of the batch STC, and its classi cation performance is surprisingly much better; for MedSTC, when the batch size is 16, the online MedSTC performs comparably with the batch MedSTC, while taking less running time.
+We also observe that batch sizes can a ect the convergence and classi cation performance of various online topic models.
+The reason is that too small batches update   slowly since   is high dimensional, while large batches tend to reach another extreme of being ine ective in exploring data redundancy.
+Fig. 6(a) shows the error rates of STC and MedSTC, using both batch and online learning algorithms, as a function of running time.
+We can see that by cycling on the medium-sized 20Newsgroups dataset, the online algorithms generally reach a good model faster than the batch algorithms.
+In the unsupervised setting, the online algorithm performs better both in time and classi cation accuracy.
+As has been demonstrated on the Wikipedia articles, we can expect large improvements in a much larger and redundant corpus.
+Then we report the evaluation of the collapsed STC on the
+ ing both batch and online learning algorithms.
+Fig. 6(b) presents the error rates as a function of running time.
+We can see that the online learning algorithms generally converge faster to fairly good results.
+But the collapsed STC does not shows dramatic improvements compared with STC.
+This is probably due to the fact that the problem of STC can be solved very well on the this dataset using the coordinate descent algorithm with a hierarchical sparse coding, and the collapsed sparse coding does not help a lot.
+Finally, to examine the semantics of the learned topics, Table 3 presents top words (i.e., words that have highest values in the topic) of the most salient topic learned by the online MedSTC for each category (i.e., topic that has highest value in the average document code of each category) on the 20Newsgroups dataset.
+We can generally see the strong association of the categories and the learned topics.
+We have presented a sparse online topic model for modeling dynamic text streams and discovering topic representations from large-scale datasets.
+The online dictionary learning algorithm is e cient and guaranteed to converge.
+Extensive empirical studies on Wikipedia and 20Newsgroups data have shown appealing performance in terms of held-out perplexity, word code sparsity and prediction accuracy.
+For future work, we are interested in various extensions and improvements, including cleverly adjusting the learning rates during learning and dealing with large-scale complex data analysis problems, such as relational network analysis.
+This work is supported by the National Basic Research Program (973 Program) of China (Nos.
+na (Nos.
+91120011, 61273023), and Tsinghua University Initiative Scienti c Research Program (No.
+20121088071).
+An alternative way to compare STC and LDA Due to di erent de nitions, more careful analysis should be done on comparing the perplexity between STC and L-DA.
+We now do an interesting  interchange  experiment.
+The idea is that although the inference procedure is different between STC and LDA, they both learn normalized topical bases (i.e. the dictionary).
+So we can turn to test the quality of their bases to see whether one model is strictly better than the other.
+To do this we  rst train bases with each model and then calculate the STC held-out perplexity and the LDA held-out perplexity using both bases by Eq.
+(19) and Eq.
+(18) separately.
+For example, we can use STC for training bases (STC bases) and LDA for calculating held-out perplexity (LDA testing).
+As an upper bound, we
+ politics.misc politics.guns politics.mideast religion.misc talk.
+graphics ms-windows compass comp.
+ibm.pc dma drive aspi wires compaq harddisk isa scsi card pc mac gnd init vv applelink mac apple nubus backlit wolves drive windows.x widget entry libx xsizehints libxmu converter misc.
+forsale trade msdos bid toshiba laptop baud accelerators modem decnet focus myhint mpc coupons send allocation windows yap cfg mywinobj vb dos  le bitmap  les mov hitler time stephanopoulos viability government throws chancellor president african rec.
+gun cranston guns militia people weapons  rearms  re fbi law sci.
+electronics pin compass tesla hook wire med jl hiv polio oily spect brightness methanol tinnitus doherty power blinker circuit eye patients msg space ics incoming het space nasa launch orbit moon earth shuttle autos car writes tint article carburetor lojack cars vw good volvo motorcycles gun bike zephyr te on dog shaft ride good hawk back baseball roster lefthanded baseball idle year team ball game players pitching hockey pt period switzerland italy aids norway czech austria qtr game cols rows graphics rtheta ellipse sphinx image  les color crypt mov n utils maxbyte db nist push o set trinomials encryption key cosmo power erzurum armenian turks negotiations turkish bayonet labor armenians alt.
+atheism contradictory rapist god depression writes people don allah article islam incoming taoism allocation aleph jesus bible objective morality christ christian soc.
+christian babylon god pentecostals husband jesus senses ceremonial people christian church
+
+ Number of Topics
+ [5] D. Blei, A. Ng, and M. Jordan.
+Latent Dirichlet also report the results by using the non-informative uniform basis.
+Experimental results using di erent number of topics on the 20Newsgroups dataset are shown below.
+LDA testing STC bases LDA bases Uniform l ) e a c s g o l ( y t i x e p r e
+ l t u o   d e
+ l
+
+
+
+
+
+ STC testing STC bases LDA bases Uniform l ) e a c s g o l ( y t i x e p r e
+ l t u o   d e
+ l
+
+
+ Number of Topics
+
+
+
+
+
+ (a) (b) Figure 7: (a) STC testing perplexity for di erent bases; (b) LDA testing perplexity for di erent bases.
+The left  gure shows held-out perplexity by STC using E-q.
+(19) and the right one shows held-out perplexity by LDA using Eq.
+(18).
+Each  gure compares among bases learned by both models and the uniform bases (as a baseline).
+The red bar shows the perplexity calculated by uniform bases as an upper bound.
+Obviously, both STC and LDA learn meaningful bases and their held-out perplexity is signi cant-ly lower than the perplexity produced by the uniform bases (In both  gures we use log scale for the perplexity axis.).
+In the left  gure when we calculate held-out perplexity by STC, we achieve a lower perplexity by using STC bases.
+However, LDA bases get a lower perplexity in the other setting in the right  gure.
+Thus, using the same model for training and testing achieves better results.
+The bases learned by other models can be useful, but not as accurate as the original one.
+Finally, we also note that in general, we get lower perplexity when using STC for testing.

@@ -1,0 +1,1436 @@
+Identifying and Discriminating Between Web and
+
+Peer-to-Peer Trafﬁc in the Network Core
+
+Jeffrey Erman
+
+Anirban Mahanti
+
+Martin Arlitt
+Department of Computer Science
+
+University of Calgary
+
+2500 University Drive NW
+Calgary, Canada T2N 1N4
+
+Carey Williamson
+
+{erman, mahanti, arlitt, carey}@cpsc.ucalgary.ca
+
+ABSTRACT
+Traﬃc classiﬁcation is the ability to identify and categorize
+network traﬃc by application type. In this paper, we con-
+sider the problem of traﬃc classiﬁcation in the network core.
+Classiﬁcation at the core is challenging because only partial
+information about the ﬂows and their contributors is avail-
+able. We address this problem by developing a framework
+that can classify a ﬂow using only unidirectional ﬂow infor-
+mation. We evaluated this approach using recent packet
+traces that we collected and pre-classiﬁed to establish a
+“base truth”. From our evaluation, we ﬁnd that ﬂow statis-
+tics for the server-to-client direction of a TCP connection
+provide greater classiﬁcation accuracy than the ﬂow statis-
+tics for the client-to-server direction. Because collection of
+the server-to-client ﬂow statistics may not always be feasible,
+we developed and validated an algorithm that can estimate
+the missing statistics from a unidirectional packet trace.
+
+Categories and Subject Descriptors
+C.2.2 [Computer-Communications Networks]: Network
+Protocols; C.4 [Computer Systems Organization]: Per-
+formance of Systems
+
+General Terms
+Algorithm, Measurement, Performance
+
+Keywords
+Traﬃc classiﬁcation, Machine learning, Clustering
+
+1.
+
+INTRODUCTION
+
+In recent years, Peer-to-Peer (P2P) ﬁle-exchange appli-
+cations have overtaken Web applications as the major con-
+tributor of traﬃc on the Internet. Recent estimates put the
+volume of P2P traﬃc at 70% of the total broadband traf-
+ﬁc [3,22]. P2P is often used for illegally sharing copyrighted
+music, video, games, and software; P2P traﬃc can cause
+network congestion and performance degradation of tradi-
+tional client-server applications such as the Web. The legal
+ramiﬁcations of this traﬃc combined with its aggressive use
+of network resources has necessitated a strong need for iden-
+tiﬁcation of network traﬃc by application type. This task,
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2007, May 8–12, 2007, Banff, Alberta, Canada.
+ACM 978-1-59593-654-7/07/0005.
+
+referred to as traﬃc classiﬁcation, is a pre-requisite to many
+network management and traﬃc engineering problems.
+
+The classical traﬃc classiﬁcation approach of mapping
+traﬃc to applications based on port numbers is now inef-
+fective [18, 19, 22, 30]. This ineﬀectiveness arises because
+applications such as network games, multimedia streaming,
+and Peer-to-Peer ﬁle sharing use dynamic ports for com-
+munication. Some P2P applications are also masking their
+identity by using port numbers reserved for other applica-
+tions. For example, KaZaA is known to use port 80, which
+is reserved for Web traﬃc.
+
+An alternative approach is payload-based analysis where
+packet payloads are searched for characteristic signatures of
+known applications [4, 15, 24, 30]. Application-layer analysis
+of packet contents is employed by some commercial band-
+width management tools [2,26]. This general approach, how-
+ever, poses several technical challenges. First, these tech-
+niques identify only traﬃc for which signatures are available;
+maintaining an up-to-date list of signatures is a daunting
+task. Second, these techniques typically require increased
+processing and storage capacity. Solutions such as captur-
+ing only a few payload bytes are not as eﬀective because
+many applications intentionally use variable-length padding
+to obscure application signatures. Finally, these techniques
+fail to detect encrypted traﬃc; many P2P applications are
+now moving towards using encryption.
+
+The diminished eﬀectiveness of the aforementioned tech-
+niques motivate use of ﬂow statistics for classifying net-
+work traﬃc [1, 25, 29]. There are at least three reasons why
+this approach is recommended. First, diﬀerent applications
+manifest dissimilar behaviors and thus exhibit diﬀerent ﬂow
+statistics. For instance, a large ﬁle transfer using FTP would
+have higher average packet size and smaller mean packet
+interarrival time than an instant messaging client sending
+short, occasional, messages to other clients. Second, al-
+though obfuscation of ﬂow statistics is also possible, it is gen-
+erally much harder to implement. Third, classiﬁcation based
+on ﬂow statistics can beneﬁt from the large body of work on
+scalable ﬂow sampling/estimation techniques [5,7,8,13,21].
+In this paper, we propose and evaluate a machine learn-
+ing approach for identifying and grouping network traﬃc
+according to traﬃc classes (e.g., Web, P2P, FTP, Others)
+at egress and ingress points of core networks. Recent traf-
+ﬁc classiﬁcation eﬀorts, including those that leverage ﬂow
+statistics, are developed and evaluated assuming that the ob-
+servation point is the network edge, where packet transmis-
+sions in both directions of a ﬂow can possibly be observed.
+
+WWW 2007 / Track: Technology for Developing RegionsSession: Networking Issues in the Web883At egress/ingress points of a network core, observing both
+directions of a ﬂow may not be possible because of routing
+asymmetries. This poses two challenges. First, important
+statistics for the satisfactory classiﬁcation of a ﬂow may not
+be available. Second, classiﬁcation can only use per-ﬂow in-
+formation and cannot rely on additional information such as
+communication pattern between hosts.
+
+In light of the above, our goal is to achieve rich traﬃc
+classiﬁcation using only unidirectional ﬂow records. Speciﬁ-
+cally, we propose and evaluate a clustering based framework
+for classifying network traﬃc using only unidirectional ﬂow
+statistics. Our work is facilitated by recent full-payload In-
+ternet packet traces. We identiﬁed the applications corre-
+sponding to individual ﬂows in the traces and used these
+pre-classiﬁed traces as the “base truth” to evaluate the clas-
+siﬁcation accuracy of our approach.
+
+One of the objectives of this work is to study the inﬂuence
+of directionality of ﬂow statistics in classifying traﬃc. From
+our performance evaluation, we ﬁnd that ﬂow statistics for
+the server-to-client direction of TCP connections achieve, on
+average, classiﬁcation accuracies of 95% for ﬂows and 80%
+for bytes; in contrast, using the client-to-server ﬂow statis-
+tics yields, on average, classiﬁcation accuracies of 93% for
+ﬂows and 60% for bytes. Based on our results, we hypothe-
+size that statistics for the server-to-client direction can bet-
+ter discriminate between ﬂows than statistics for the client-
+to-server direction, since for many common network appli-
+cations the ﬂow of application payload data is greater in the
+server-to-client direction.
+
+The server-to-client statistics of a ﬂow may not always be
+available at the network core. Motivated by our observations
+regarding the predictive power of server-to-client statistics,
+we developed and veriﬁed an algorithm that uses the packets
+seen along one direction of a ﬂow to estimate statistics for
+the direction that is not observed.
+
+To the best of our knowledge, this is the ﬁrst work to
+explore traﬃc/ﬂow classiﬁcation using unidirectional ﬂows
+(as typically seen at the network core). In this paper, we
+summarize our experience with a clustering-based classiﬁca-
+tion framework. Because server-to-client statistics are typ-
+ically available at the network edge, our approach can also
+be applied to classify traﬃc at the network edge.
+The
+contributions of this paper are summarized as follows:
+
+• We propose and evaluate a machine learning based
+classiﬁcation technique that only takes ﬂow statistics
+as input.
+
+• The comparison of predictive capability of diﬀerent
+unidirectional ﬂow statistics (e.g., packets originating
+only from the client, server, and combinations of both).
+• We develop an algorithm capable of estimating statis-
+tics from an unidirectional traces such as number of
+bytes and the number of packets of the unseen por-
+tions of the ﬂow.
+
+• We brieﬂy discuss the longevity of the models used in
+our classiﬁer, and the possible modiﬁcations that can
+be made to use our classiﬁer in real-time.
+
+The remainder of this paper is structured as follows. Sec-
+tion 2 describes the classiﬁcation framework considered in
+this paper. Section 3 describes our methodology. Results
+for classiﬁcation with unidirectional statistics are provided
+
+in Section 4. The ﬂow statistics estimation algorithm, its
+validation, and the classiﬁcation results obtained with esti-
+mated statistics are presented in Section 5. Section 6 dis-
+cusses the longitudinal accuracy of our classiﬁcation models,
+and possible modiﬁcation for real-time classiﬁcation. Sec-
+tion 7 overviews related work in light of ours. Section 8
+concludes the paper.
+
+2. MACHINE-LEARNED CLASSIFICATION
+The goal of traﬃc classiﬁcation is to map network ﬂows
+into predeﬁned application types or traﬃc classes. In this
+paper, our goal is to achieve traﬃc classiﬁcation using only
+unidirectional ﬂow statistics as input.
+Formally, the traﬃc classiﬁcation problem can be deﬁned
+as follows: Given a set of ﬂows X = {f1, f2,··· , fN}, where
+at-
+each ﬂow vector fi
+tributes {xi1, xi2,··· , xip}, and a set of traﬃc classes C =
+{C1, C2,··· , Cm}, the goal of traﬃc classiﬁcation is to de-
+ﬁne a mapping f : X → C such that each ﬂow fi is as-
+signed to only one traﬃc class [9]. Examples of ﬂow at-
+tributes include average packet size, average ﬂow duration,
+and ﬂow size, whereas examples of possible traﬃc classes
+include Web, Peer-to-Peer, and FTP.
+
+is characterized by a
+
+set of p
+
+Machine learning techniques can be used to solve the afore-
+mentioned traﬃc classiﬁcation problem. In the model build-
+ing step, training data (e.g., a collection of ﬂow records) are
+used to learn the characteristics of the (desired) classes; this
+step provides the basis for designing a classiﬁer. The remain-
+der of this section discusses details of the model building and
+classiﬁer design.
+2.1 Model Building
+
+Machine learning techniques for model building may be
+broadly categorized as either supervised or unsupervised [9].
+Supervised learning produces a model that ﬁts the training
+data, where the training data is labeled a priori. In contrast,
+unsupervised learning uses unlabeled training data to ﬁnd
+similarities or patterns among objects in the data set.
+
+Typically, model building is achieved using supervised
+learning techniques.
+In the traﬃc classiﬁcation context,
+however, we believe that unsupervised learning can oﬀer cer-
+tain advantages compared to supervised learning approaches.
+A key beneﬁt is that new applications can be identiﬁed by
+examining the ﬂows that are grouped to form a new clus-
+ter. The supervised approach can only classify traﬃc for
+which it has labeled training data, and cannot discover new
+applications [11].
+
+In this paper, we consider a speciﬁc type of unsupervised
+learning called clustering [9]. Clustering is the partitioning
+of previously unlabeled objects into disjoint groups, referred
+to as “clusters”, such that objects within a group are sim-
+ilar according to chosen criteria. Formally, the clustering
+of training ﬂows can be described as follows: Given a set
+of training ﬂows D = {t1, t2,··· , tn} and the desired num-
+ber of clusters, k, the task of clustering is to deﬁne a map-
+ping f : D → {1, 2,··· , k} where each ﬂow is assigned to
+only one cluster Yi, 1 ≤ i ≤ k, such that D = ∪k
+j=1Yj and
+Yi ∩ Yj = ∅,∀i (cid:54)= j [9, 16, 17].
+
+The goal of clustering is to group together objects that are
+similar. This grouping is achieved using a similarity metric.
+In the machine learning literature, several similarity metrics
+have been deﬁned. Without loss of generality, we use the
+Euclidean distance to measure the similarity between two
+
+WWW 2007 / Track: Technology for Developing RegionsSession: Networking Issues in the Web884ﬂow vectors fi and fj:
+
+sim(fi, fj) =
+
+(cid:118)(cid:117)(cid:117)(cid:116) p(cid:88)
+
+(xik − xjk)2.
+
+k=1
+
+The smaller the Euclidean distance between two ﬂow vectors
+is, the greater is the similarity between them.
+
+There are many diﬀerent clustering algorithms in the lit-
+erature [16, 17]. In this paper, we use the K-Means [9] al-
+gorithm. Our choice of K-Means is guided by our previous
+work [10] where we found that K-Means is one of the quick-
+est and simplest algorithms for clustering of Internet ﬂows;
+furthermore, our work also showed that K-Means can gen-
+erate very “pure” clusters (i.e., clusters that consist largely
+of a single application type).
+
+The K-Means algorithm belongs to the partition-based
+class of clustering algorithms. The algorithm begins by ran-
+domly choosing cluster centroids χi, i = 1, 2,··· , k, from
+within the training samples. The ﬂows in the training data
+set are then partitioned into the nearest cluster centroids
+using the Euclidean distance metric. K-Means iteratively
+computes new centroids of the clusters that are formed and
+then repartitions the ﬂows based on the new centroids. This
+process continues until a convergence criterion is met. In our
+implementation, the convergence criterion is to minimize the
+sum of the squared error for the clusters. The complexity of
+the clustering step is O(knm) where k is the number of clus-
+ters, n is the number of training ﬂows, and m is the number
+of iterations.
+
+There are some known diﬃculties with K-Means. For in-
+stance, the algorithm often ﬁnds a local optimum instead
+of a global optimum. This necessitates running K-Means
+multiple times to obtain a reasonable partition of the train-
+ing ﬂows, as done in this work. In practice, partitioning of
+the training ﬂows is expected to be undertaken infrequently,
+and we do not expect this problem to signiﬁcantly add to the
+cost of model building. In our experiments, we ﬁnd that the
+classiﬁcation models generated by running K-Means multi-
+ple times have similar performance. We also note that our
+overall approach is not speciﬁc to K-Means. Other cluster-
+ing algorithms may be used; investigation of classiﬁcation
+performance with other algorithms is left for future work.
+
+In most classiﬁcation problems, selection of features (or
+attributes) plays an important role. Many statistics can
+be obtained from a ﬂow. Following extensive experimenta-
+tion with over 25 diﬀerent statistics using standard feature
+selection algorithms [14], we reduced the set of ﬂow fea-
+tures to the following: total number of packets, mean packet
+size, mean payload size excluding headers, number of bytes
+transferred, ﬂow duration, and mean inter-arrival time of
+packets. Due to the heavy-tailed distribution of many of
+these features, we found it necessary to transform the ﬂow
+features [28]. Our experiments with many commonly used
+transformations indicated that logarithmic transformations
+yield the best results.
+
+2.2 Classiﬁer
+
+Our classiﬁer is distance-based [9]. A new ﬂow is assigned
+to the cluster to which it is most similar. The K-Means
+algorithm produces clusters that are spherical in shape and
+thus well-represented by the cluster centroids. Thus, a new
+
+ﬂow f is assigned to cluster Yj such that:
+
+Yj = arg min
+
+j
+
+sim(f, χj).
+
+The above is equivalent to maximum likelihood cluster as-
+signment for partitions generated by the K-Mean algorithm.
+The complexity of classiﬁcation of each ﬂow is O(k), where
+k is the total number of clusters.
+
+The aforementioned operation automatically assigns ﬂows
+to the clusters. To assign traﬃc classes to ﬂows, a mapping
+between clusters and traﬃc classes is required. Clearly, the
+task of mapping the clusters obtained in the model building
+step to the traﬃc classes requires identiﬁcation of (some of
+the) individual ﬂows in the training data set. Training ﬂows
+may be labeled using techniques including payload analy-
+sis, port-based analysis, heuristics, expert knowledge, exper-
+imentation, manual classiﬁcation, or a combination thereof.
+Identiﬁcation of training ﬂows is expected to be time con-
+suming; however, we also expect that once completed, the
+training data set can be used for a reasonably long period of
+time. Furthermore, it may not be necessary to identify each
+ﬂow in the training data set. We have found that clustering
+generates partitions with high purity and thus identiﬁcation
+of a small portion of the ﬂows in a cluster may be suﬃ-
+cient to map a cluster to a traﬃc class with a high degree of
+conﬁdence [10]. In this work, we assume that labels for all
+training ﬂows are available, and map a cluster to the traﬃc
+class that makes up the majority of ﬂows in that cluster.
+Our ongoing work is studying issues pertaining to labeling
+clusters and mapping clusters to traﬃc classes [12].
+
+3. EXPERIMENTAL METHODOLOGY
+
+This section outlines our experimental methodology. Sec-
+tion 3.1 describes the empirical traces used in this work.
+Section 3.2 discusses the process by which we established
+base truth for the traces. The testing scenarios are outlined
+in Section 3.3. Section 3.4 deﬁnes the performance metrics
+used in this study.
+3.1 Empirical Traces
+
+To facilitate our work, we required traces of recent Inter-
+net traﬃc. Although the classiﬁcation framework requires
+only transport-layer information, application-layer informa-
+tion is required to validate the results. Thus, we decided
+to collect full packet traces from a monitor attached to our
+campus Internet link.
+
+We collected eight 1-hour traces between April 6-9, 2006.
+Speciﬁcally, we collected traces on (Thursday) April 6 from
+9-10 am and 9-10 pm, on (Friday) April 7 from 9-10 am and
+9-10 pm, on (Saturday) April 8 from 9-10 am and 9-10 pm,
+and on (Sunday) April 9 from 9-10 am and 9-10 pm. We were
+limited to capturing only one hour of continuous full-packet
+traces owing to the disk capacity of our network monitor.
+Nevertheless, we expect our traces to cover some typical
+cases such as the noticeable diﬀerences in usage between the
+morning and evening hours, and the noticeable diﬀerences
+in usage between weekdays and weekends.
+
+Of the total trace data collected, approximately 85% of
+the packets, and approximately 90% of the bytes were trans-
+ferred using TCP. Thus, we focus exclusively on applications
+that use TCP for the remainder of the paper. Classiﬁcation
+of UDP ﬂows is left for future work.
+
+A TCP ﬂow, also referred to as a connection, consists of
+
+WWW 2007 / Track: Technology for Developing RegionsSession: Networking Issues in the Web885a bi-directional exchange of packets between two hosts. The
+start of a ﬂow is determined when SYN/SYNACK packets
+are received. Flows are (typically) terminated when either a
+FIN or RST packet is received; in addition, we assume that a
+ﬂow terminates if it was idle for 900 seconds. For each ﬂow,
+we designate the host that initiated the connection (i.e., sent
+the SYN packet) as the client, and the host that responds to
+the connection initiation (i.e., sends the SYNACK) as the
+server.
+3.2 Establishing Base Truth
+
+We classify the TCP ﬂows in the traces using a three
+step process that consists of payload-based signature match-
+ing, heuristics, and HTTPS identiﬁcation. The heuristics
+and HTTPS identiﬁcation steps deal with encrypted traﬃc
+that cannot be identiﬁed using payload signature matching.
+Manual classiﬁcation served as a validation tool for our clas-
+siﬁcation process.
+
+Our payload-based classiﬁcation uses many of the same
+methods and signatures described by Sen et al. [30] and
+Karagiannis et al. [20]. We augmented some of their P2P
+signatures to account for protocol changes and some new
+P2P applications. This step uses Bro [27], whose signature
+matching engine generates a signature match event when the
+packet payload matches a regular expression that is speciﬁed
+for a particular rule.
+
+Some P2P applications are now using encryption. For
+example, BitTorrent is using a technique called Message
+Stream Encryption (MSE) and Protocol Encryption (PE).
+The MSE/PE technique uses a Diﬃe-Hellman exchange that
+is combined with the infohash of the torrent to establish the
+key for the connection.1 After this exchange has occurred,
+the clients use RC4 to encrypt the data packets.
+
+We developed a heuristic to identify some of the afore-
+mentioned encrypted P2P traﬃc. Speciﬁcally, we maintain
+a lookup table of IP address and port number tuples from
+ﬂows that have recently been identiﬁed as using P2P. If a
+ﬂow is unlabeled and there is a match in our P2P lookup
+table, we label it as possible P2P. This mechanism works
+on the basis that some P2P clients use both encryption and
+plaintext. In general, heuristics such as these may be used
+to assign labels to any encrypted P2P ﬂow in the training
+data set.
+
+We also analyzed unlabeled traﬃc on port 443, to de-
+termine whether or not this traﬃc is indeed HTTPS. This
+veriﬁcation was done using an experimental version of Bro
+with this detection capability. In addition, automated ran-
+dom checks were performed to determine whether or not
+ﬂows labeled as HTTPS involved at least one host that was
+a Web server. These tests, however, were not done in an
+exhaustive fashion.
+
+Table 1 summarizes the classiﬁcation results for our traces.
+Over 29 diﬀerent protocols were identiﬁed; these include
+BB, BitTorrent, DirectConnect, eDonkey, FTP, Gnutella-
+based P2P programs (e.g., LimeWire, BearShare, Gnucleus,
+Morpheus, FreeWire), GoToMyPC, HTTP, ICQ, IDENT,
+IMAP, IMAP SSL, JetDirect, KaZaA, MySQL, MSSQL,
+MSN Messenger, MSN Web Cam, NNTP, POP3, POP3
+SSL, RTSP, Samba, SIP, SMTP, SOAP, SpamAssassin, SSH,
+SSL, VNC, and Z3950 Client. We grouped these proto-
+cols according to application categories. For example, the
+P2P category includes positively identiﬁed P2P traﬃc from
+1http://en.wikipedia.org/wiki/protocol encryption
+
+Table 1: Summary Statistics of the Empirical Traces
+
+Traﬃc Class
+Web
+EMAIL
+DATABASE
+P2P
+P2P (Encrypted)
+OTHER
+CHAT
+FTP
+STREAMING
+UNKNOWN (NP)
+UNKNOWN (443)
+UNKNOWN(Others)
+Total
+
+2,791,301
+299,736
+218,324
+201,231
+11,746
+12,130
+10,680
+4,636
+1,107
+932,897
+366,347
+161,492
+5,011,627
+
+Flows % Flows
+55.7%
+6.0%
+4.4%
+4.0%
+0.2%
+0.2%
+0.2%
+0.1%
+0.0%
+18.6%
+7.3%
+3.2%
+
+59.6 GB
+7.4 GB
+0.1 GB
+53.2 GB
+3.1 GB
+2.3 GB
+0.3 GB
+4.3 GB
+1.6 GB
+0.1 GB
+4.5 GB
+10.3 GB
+100.0% 146.8 GB
+
+Bytes % Bytes
+40.6%
+5.0%
+0.1%
+36.2%
+2.1%
+1.6%
+0.2%
+2.9%
+1.1%
+0.1%
+3.1%
+7.0%
+100.0%
+
+protocols including BitTorrent, Gnutella, and KaZaA. En-
+crypted P2P ﬂows identiﬁed using heuristics are labeled P2P
+(Encrypted). The OTHER category contains various identi-
+ﬁed applications that were not part of a larger group and did
+not account for many ﬂows. The tables also list three cat-
+egories of UNKNOWN ﬂows. The UNKNOWN(NP) refers
+to ﬂows with no payloads. Most of these are failed TCP con-
+nections, while some are port scans. The UNKNOWN(443)
+are ﬂows on port 443; they are likely to be HTTPS traﬃc.
+The third category is simply labeled as UNKNOWN(Others)
+to reﬂect the fact that we were not able to determine the
+applications that generated this traﬃc.
+
+From the table, we see that Web and P2P traﬃc account
+for a majority of the campus Internet traﬃc. Note that
+although P2P accounts for only 4% of the ﬂows, it still ac-
+counts for approximately 36% of the total bytes transferred.
+In our classiﬁcation experiments, we classify ﬂows into one
+of the 8 traﬃc classes shown in Table 1. For the purpose
+of classiﬁcation, P2P and P2P (Encrypted) are grouped to-
+gether to form the P2P traﬃc class. We exclude all unknown
+ﬂows as we do not have base truth for these.
+3.3 Testing Scenarios and Data Sets
+
+The empirical traces at our disposal have both directions
+of a ﬂow. Our goal is to study how the directionality (i.e.,
+client-to-server or server-to-client) of a ﬂow impacts classi-
+ﬁcation results. We generated from each empirical trace a
+“server-to-client” data set and a “client-to-server” data set
+that for each ﬂow in the trace records only the packets seen
+in the server-to-client direction or the client-to-server direc-
+tion, respectively. To represent the typical case of traﬃc
+seen at the network core, we selected for each ﬂow in an em-
+pirical trace either the client-to-server direction packets or
+the server-to-client direction packets. We refer to this third
+category of data sets as “random directionality”.
+3.4 Performance Metrics
+
+We use four metrics in our evaluation, namely ﬂow accu-
+
+racy, byte accuracy, precision, and recall.
+
+Flow accuracy is the number of correctly classiﬁed ﬂows
+divided by the total number of ﬂows in the test data set.
+Byte accuracy is the amount of correctly classiﬁed bytes di-
+vided by the total number of bytes in the test trace. Both
+metrics are important to maximize because having a few
+ﬂows misclassiﬁed could result in a many bytes being clas-
+siﬁed incorrectly.
+
+While these traditional metrics are useful, the accuracy
+measures neglect the fact that there might be consequences
+associated with incorrect classiﬁcation of a ﬂow. For ex-
+
+WWW 2007 / Track: Technology for Developing RegionsSession: Networking Issues in the Web886models in our classiﬁer for classiﬁcation of the entire respec-
+tive data set. We report the average results and the 95%
+conﬁdence intervals for the 10 models.
+
+The K-Means algorithm requires the number of clusters
+as an input. Here we describe how we selected k; in general,
+k can be considered a tuning knob that needs adjustment
+based on the type of traﬃc we are trying to classify. In our
+experiments, we found that both ﬂow and byte accuracies
+improved as we increased k from 25 to 400. The ﬂow accu-
+racy shows an incremental improvement of 5% to 8% for all
+three types of data sets. However, in terms of byte accuracy,
+the classiﬁcation using server-to-client data sets shows the
+greatest improvement, from 59% accuracy to 80%. With
+the client-to-server data sets the improvement in byte accu-
+racy is only 10%, and with the random data sets it is only
+5%. The improvement witnessed with the server-to-client
+data sets is because P2P traﬃc is being correctly identiﬁed.
+When the value of k used is 25, P2P ﬂows are almost always
+incorrectly classiﬁed as Web because there is only a single
+cluster representing P2P. However, when k increases to 400
+there are normally 12 to 15 clusters representing P2P, and
+the byte accuracy, on average, improves to 80%.
+In gen-
+eral, we expect k to be larger than the number of traﬃc
+classes or applications we are trying to classify. For exam-
+ple, we expect to form more than one cluster for Web traﬃc
+to capture its various characteristics, including well-known
+heavy-tailed ﬁle transfer sizes. With larger values for k we
+are able to capture more of the application characteristics
+within our clusters in the model. For the remainder of the
+evaluations, we used k equal to 400.
+
+Figure 1 shows the classiﬁcation accuracy results for data
+sets derived from each trace. Overall, we found that the
+server-to-client data sets consistently give the best classi-
+ﬁcation accuracy achieving, on average, 95% and 79% in
+terms of ﬂows and bytes, respectively. With the random
+data sets, the average ﬂow and byte accuracy was 91% and
+67%, respectively. For the client-to-server data sets, 94% of
+the ﬂows were correctly classiﬁed, on average, for an average
+byte accuracy of 57%. In general, using the client-to-server
+data sets resulted in the worst byte accuracies in all traces,
+except for the April 9, 9 pm trace.
+
+Figure 2 shows the ﬂow and byte accuracies achieved for
+the four most signiﬁcant applications (in terms of number
+of ﬂows). We found that all three types of data sets have a
+high ﬂow accuracy for the Database, Email, and Web traf-
+ﬁc, with both client-to-server and server-to-client data sets
+achieving, on average, accuracies in excess of 90% for all
+three applications. The application type that proved the
+most diﬃcult to classify was P2P. The server-to-client data
+sets achieved a 77% ﬂow accuracy; this is 20% greater than
+the accuracies with client-to-server and random data sets.
+
+Table 2: Confusion Matrix of Flows with Server-to-
+Client Data Sets (April 6, 9 am trace)
+
+Actual Class WEB
+511375
+
+WEB
+
+EMAIL
+
+P2P
+DB
+
+OTHER
+
+6620
+6886
+1262
+1904
+
+Classiﬁcation
+
+EMAIL
+
+5214
+64732
+3620
+420
+232
+
+P2P
+7284
+3066
+47716
+
+872
+1018
+
+DB
+520
+88
+199
+
+41262
+
+103
+
+OTHER
+
+1084
+631
+254
+166
+5336
+
+(a) Flow Accuracy
+
+(b) Byte Accuracy
+
+Figure 1: Classiﬁcation accuracy (all traces).
+
+ample, classiﬁcation of Web ﬂows as P2P might result in
+blocking or lower priority assignment for the Web ﬂows. We
+use precision and recall to quantify the impacts of incorrect
+classiﬁcation.
+
+Precision of a traﬃc class is deﬁned as the ratio of the
+number of true positives to the sum of true and false posi-
+tives for the class under consideration. If there is risk associ-
+ated with misclassiﬁcation of ﬂows, a higher precision value
+is desired. Recall measures the fraction of relevant ﬂows in a
+traﬃc class that have been correctly classiﬁed. It is deﬁned
+as the ratio of the number of true positives to the sum of
+true positives and false negatives for the class under consid-
+eration. A high recall value implies that there are very few
+relevant ﬂows that are misclassiﬁed as another traﬃc type.
+For example, if we want to assign high priority to Web ﬂows,
+we need to achieve high recall values for this traﬃc class.
+
+4. CLASSIFICATION RESULTS USING UNI-
+
+DIRECTIONAL FLOWS
+
+This section evaluates the eﬀectiveness of using diﬀerent
+unidirectional data sets in our classiﬁcation framework. As
+discussed in Section 3.3, we consider three test scenarios:
+data sets containing only client-to-server packets, data sets
+containing only server-to-client packets, and data sets that
+contain a random mixture of each directionality.
+
+From each data set, we generated 10 diﬀerent training
+data sets, each generated by selecting 64,000 random sample
+ﬂows. A sample size of 64,000 represents a good compromise
+between the model’s ability to represent diﬀerent applica-
+tions and the computational cost of building the model.2
+After the clustering was complete, we used each of these
+
+2Note that the number of ﬂows in a test data set typically
+ranges between 500,000 to 1,000,000.
+
+To help illustrate the accuracy of the classiﬁcation, Ta-
+ble 2 shows the “confusion matrix” [9] for the classiﬁer when
+
+ 0 0.2 0.4 0.6 0.8 1AMPMAMPMAMPMAMPMApril 6April 7April 8April 9Flow AccuracyServer-to-ClientClient-to-ServerRandom 0 0.2 0.4 0.6 0.8 1AMPMAMPMAMPMAMPMApril 6April 7April 8April 9Byte AccuracyServer-to-ClientRandomClient-to-ServerWWW 2007 / Track: Technology for Developing RegionsSession: Networking Issues in the Web887with the server-to-client models are mostly P2P and Web.
+In the random directionality case, SMTP did not form many
+clusters, which resulted in SMTP being misclassiﬁed most
+of the time.
+
+P2P ﬂows are classiﬁed more eﬀectively for the server-to-
+client data sets than the other data sets. With the server-
+to-client data sets, byte accuracy of approximately 83% is
+achieved, which represents a 30% increase over client-to-
+server and random data sets. This higher classiﬁcation accu-
+racy is because 20% more P2P ﬂows are correctly classiﬁed
+using the server-to-client data sets. This marked diﬀerence
+from the other data sets is one of the main reasons why
+server-to-client data sets achieve the best ﬂow and bytes ac-
+curacies in Figure 1.
+
+If server-to-client ﬂow statistics are used for discriminat-
+ing between P2P and Web ﬂows, encouraging results would
+be attained. Overall, in the server-to-client models Web
+ﬂows have precision and recall values of 97%; P2P ﬂows have
+precision of 82% and a recall of 77%. If a Quality-of-Service
+policy of assigning lower priority to P2P ﬂows than to Web
+ﬂows is implemented, 77% of the P2P would be correctly
+given a lower priority and at the same time less than 3%
+of the Web ﬂows would be mistakenly given a lower prior-
+ity. Such a deployed (real-time) system could ease the strain
+that P2P puts on many networks.
+
+While we have advocated the discrimination of P2P and
+Web traﬃc in the above example we are, however, not lim-
+ited to just these two types of applications. If reducing P2P
+was not the concern and instead prioritizing mission-critical
+business traﬃc was the focus then our classiﬁcation system
+could be used just as successfully. Business-critical traﬃc
+from a Database achieves a high accuracy as well. The con-
+fusion matrix provides further evidence of this fact with a
+precision of almost 98% and a recall of 94% when classifying
+Database ﬂows.
+
+5. CLASSIFICATION RESULTS USING FLOW
+
+ESTIMATION
+
+In this section we introduce and use our ﬂow statistic es-
+timation algorithm. This algorithm uses the packets of an
+unidirectional ﬂow to estimate the ﬂow statistics of the un-
+observed direction. The estimation algorithm is based on
+the syntax and semantics of the TCP protocol and thus,
+would not work for other transport protocols such as UDP.
+We ﬁrst introduce the algorithm in Section 5.1. Section 5.2
+discusses some of the assumptions. In Section 5.3, we em-
+pirically verify our estimation algorithm’s predictions. Last,
+in Section 5.4 we test the classiﬁcation accuracy using the
+estimated statistics.
+5.1 Algorithm
+
+The statistics of interest to us can be divided into three
+general categories: duration, number of bytes, and number
+of packets. After we obtain the data for these three general
+categories we can calculate other statistics such as average
+throughput, mean packet interarrival time, and packet av-
+erage size.
+
+The duration of a ﬂow is the amount of time from when
+the ﬁrst packet of a ﬂow is sent until the last packet of the
+ﬂow is sent. This statistic is fairly easy to calculate; we can
+use the ﬁrst and last packet sent in the observed direction
+as a good estimate of the ﬂow duration. This works well
+
+(a) Flow Accuracy
+
+(b) Byte Accuracy
+
+Figure 2: Classiﬁcation accuracy by application
+(April 6, 9 am trace).
+
+using a server-to-client data set. In this m × m matrix, the
+data value ci,j indicates the number of ﬂows from class i
+that were classiﬁed as class j. Obviously, we want values
+along the diagonal to be much larger than the others which
+is what we observe. By looking across the row of the confu-
+sion matrix at a given class i we can calculate the recall for
+that class. Likewise, by looking down a column at a given
+class j we can calculate the precision of that class.
+
+The per-application byte accuracy for Database and Web
+is high with all three types of data sets. However, for Email
+and P2P ﬂows the accuracies vary considerably between the
+diﬀerent data sets. For Email ﬂows, the client-to-server data
+sets provide 86% accuracy, but the random and server-to-
+client data sets have extremely low accuracies of 7% and
+23%, respectively.
+
+While it is diﬃcult for us to make a generalization to en-
+compass every model and trace, in the models where we did
+extensive analysis of the results, the reason why the client-
+to-server data sets classiﬁed Email so well was that SMTP
+ﬂows were being correctly classiﬁed. In the client-to-server
+models, SMTP ﬂows were put into a few large clusters that
+classiﬁed most of the SMTP traﬃc, with one of these clusters
+normally capturing most of the large SMTP ﬂows (in terms
+of bytes). However, in the server-to-client models the SMTP
+clusters were more fragmented and generally formed many
+small clusters. The smaller clusters were generally for SMTP
+ﬂows with few bytes transferred (less than 2000 bytes). The
+larger SMTP ﬂows that accounted for most of the Email
+bytes generally did not form a cluster and were included in
+clusters labeled either as P2P or Web. The confusion ma-
+trix in Table 2 further conﬁrms that these misclassiﬁcations
+
+ 0 0.2 0.4 0.6 0.8 1DBEmailWEBP2PFlow AccuracyRandomClient-to-ServerServer-to-Client 0 0.2 0.4 0.6 0.8 1DBEmailWEBP2PByte AccuracyRandomClient-to-ServerServer-to-ClientWWW 2007 / Track: Technology for Developing RegionsSession: Networking Issues in the Web888because typically in a well-behaving TCP connection every
+packet that is sent receives a corresponding acknowledgment
+from the other host. The packet exchanges typically occur-
+ring at the beginning and at the end of a ﬂow have the SYN
+and FIN packets, respectively.
+In cases where we did not
+see the SYN and/or FIN exchange, such as when the traﬃc
+monitor drops packets, we calculate the duration with the
+ﬁrst or last exchange of data packet and acknowledgment
+packets, which may result in a less accurate estimate of the
+ﬂow duration.
+
+The second category of statistics is concerned with the
+number of bytes transmitted. Our approach for calculating
+the number of bytes is similar to the technique developed by
+Smith et al. [31]. In the TCP protocol, the host responds to
+reception of TCP segments (packets) by sending acknowl-
+edgments (ACKs) with the sequence number ﬁeld (SEQ)
+in the TCP header set to indicate the next expected in-
+order byte. By using these ACK numbers we can estimate
+the amount of data that has been received by calculating
+the oﬀset between the highest ACK number and the lowest
+ACK number seen. This works fairly well for most TCP
+connections. However, it does not work reliably for connec-
+tions that were closed using TCP resets (RST). For TCP
+RST packets, the ACK number may not correspond to the
+in-order byte sequence received. Instead, some TCP imple-
+mentations assign a random value. To combat this problem,
+we exclude the ACK numbers from RST packets when we
+calculate the highest and lowest ACK numbers.
+
+The last category of statistics, the number of packets sent,
+is the most diﬃcult to estimate. We derive a set of heuristics
+that estimate, for each TCP ﬂow, the number of packets that
+could potentially be received in the other direction between
+transmission of two successive packets. We assume that if a
+SYN packet is seen, then we are seeing the client-to-server
+packets of a ﬂow. Otherwise, we assume we are seeing the
+server-to-client packets. Algorithm 1 shows the rules that
+we deﬁned. We track the last sequence number (PrevSeq)
+and acknowledgment number (PrevAck) seen in the ﬂow;
+these values are initialized to zero before a ﬂow starts. We
+also calculate the change in the sequence number (SeqChg)
+and acknowledgment number (AckChg) between the packets
+observed. In the event that we do not receive a SYN or a
+SYNACK packet at the beginning (or at all), our algorithm
+processes the ﬁrst data packet with either our ﬁrst (line 5)
+or second rule (line 7), and then works correctly afterward.
+We explain the remainder of this algorithm using exam-
+ples. Let us assume that we are seeing the client-to-server
+packets, that one packet (for the ﬂow of interest) had a se-
+quence number of 100 and an acknowledgment number of
+200, and that the next packet has a sequence number of
+1560 and an acknowledgment number of 200. The increase
+in sequence number indicates that the most recent packet
+carried some payload data. However, since the acknowledg-
+ment number has not increased we infer that the missing
+server-to-client packets for this interval had no payload data
+and would most likely be ACKs corresponding to the pay-
+load in the last packets sent. This case would be caught by
+our third rule (line 9) where we check to see if the sequence
+number has increased and the acknowledgment number has
+not. We calculate the number of ACKs as the sequence num-
+ber change divided by the expected maximum segment size
+(MSS). Conversely, if the sequence number does not increase
+but the acknowledgment number does increase we infer that
+
+Algorithm 1 Packet Estimation Algorithm
+1: P revSeq ← 0, P revAck ← 0
+2: M issedAcks ← 0, M issedData ← 0
+3: for each packet do
+4:
+5:
+6:
+7:
+
+continue
+
+Calculate(SeqChg, AckChg)
+if SeqChg > 0 and AckChg = 0 and P revSeq = 0 then
+
+(cid:46) SYN packet sent and nothing is missed
+else if SeqChg > 0 and AckChg > 0 and P revAck = 0
+
+then
+
+missed
+
+M issedAcks ← M issedAcks + 1
+
+(cid:46) SYNACK or SYN
+
+else if SeqChg > 0 and AckChg = 0 then
+
+else if SeqChg = 0 and AckChg > 0 then
+
+M issedAcks ← M issedAcks + (cid:100)SeqChange/M SS(cid:101)
+M issedData ← M issedData + (cid:100)AckChange/M SS(cid:101)
+M issedData ← M issedData + (cid:100)AckChange/M SS(cid:101)
+
+else if SeqChg > 0 and AckChg > 0 then
+else if SeqChg ≤ 0 or AckChg ≤ 0 then
+
+continue
+
+(cid:46) Nothing has been missed from last packet
+
+8:
+
+9:
+10:
+11:
+12:
+13:
+14:
+15:
+16:
+
+seen
+
+17:
+18: end for
+
+end if
+
+in this interval packets that were sent in the other direc-
+tion contained a total payload size directly proportional to
+the change in the acknowledgment numbers. To calculate
+the number of data packets, we divide the acknowledgment
+number change by the MSS. This case is handled by our
+fourth rule (line 11). The ﬁfth rule (line 13) handles cases
+where data are being sent simultaneously in both directions.
+The sixth rule (line 15) handles retransmissions and packets
+that are received out of order.
+5.2 Assumptions
+
+In our rules we make three general assumptions, the ﬁrst
+pertaining to the expected MSS of packets, the second per-
+taining to the ACK-ing policy of the TCP stacks, and the
+last in regards to retransmissions and packet loss.
+
+We use MSS in our calculations for the number of pack-
+ets sent. The MSS can be estimated from the options ﬁeld
+in the SYN/SYNACK packets of a connection. A MSS an-
+nouncement is made by each host at the beginning of a TCP
+connection with the lowest value typically being used.
+In
+a unidirectional trace it would be possible on a per-ﬂow
+basis to estimate MSS based on any announcements seen.
+However, to be more computationally eﬃcient to determine
+the expected MSS, we analyzed the empirical distribution
+of MSS in our traces. Our analysis showed that 95% of the
+connections had a MSS of 1460 bytes. Approximately 5%
+had a MSS of 1380 and some other minor groupings at 512
+and 1260. Therefore, we used 1460 bytes as the expected
+MSS in our veriﬁcation and results.
+
+How TCP acknowledges segments depends on the TCP
+In some cases,
+stacks of both the client and the server.
+an ACK is sent for every packet, while in other cases an
+ACK is sent for every other packet. Our heuristics assume a
+simple acknowledgment strategy of an ACK (with 40 bytes
+of header data and no payload) for every data packet in the
+ﬂow. We realize that this may over estimate the number of
+ACKs.
+
+We also assume there are no packet losses, and there-
+fore, our statistics do not take into account any retransmis-
+sions. We make this assumption because retransmissions
+reﬂect network congestion and transmission errors, rather
+than application-speciﬁc behaviour of the ﬂows that we want
+to classify. However, this does make our estimations lower
+than what the actual numbers should be but this has the
+
+WWW 2007 / Track: Technology for Developing RegionsSession: Networking Issues in the Web889Figure 3: Estimation of the ﬂow
+duration.
+
+Figure 4: Estimation of the num-
+ber of bytes.
+
+Figure 5: Estimation of the num-
+ber of packets.
+
+number of packets for 80% of the ﬂows, and within 20% of
+the actual number of bytes, for 90% of the ﬂows.
+
+Looking solely at the percentage error is somewhat mis-
+leading, since the high error cases often correspond to ﬂows
+with few packet transmissions (less than 10). The main
+source of inaccuracy are ﬂows that after the TCP hand-
+shake had occurred saw a single reject or RST packet from
+the server. The client in such cases attempts to send the
+initial data packets several times. This typically occurred
+in P2P connections that were refused. If our algorithm sees
+the server side of such ﬂows it estimates it missed either 0
+or 1 packets because we ignore RST packets. Otherwise, if
+it sees the client side of the ﬂow it thinks it missed several
+ACKs because we assume all packets are acknowledged. In
+both cases, the algorithm is oﬀ by a couple packets but the
+percentage error is large. We found that overall average er-
+ror per ﬂow is 2.4 packets, and that 87% of ﬂows are within 5
+packets of the actual number. In terms of bytes, the overall
+average error is 120 bytes, and 92% of the ﬂows are within
+500 bytes of the actual number.
+
+5.4 Classiﬁcation Using Estimated Statistics
+
+We examine the classiﬁcation accuracy of our classiﬁer if
+we use the estimation algorithm described in the previous
+section to estimate server-to-client statistics for our traces
+when only the client-to-server or random directionalities are
+seen.
+
+Figures 7 and 8 show the classiﬁcation accuracy. These
+experiments are similar to those reported in Figure 1, except
+that both model building and the subsequent classiﬁer use
+the estimated statistics when necessary. As seen in these
+ﬁgures, we ﬁnd that when we use the estimation algorithm
+to estimate the server-to-client statistics the ﬂow accuracy
+and byte accuracy achieved using the client-to-server and
+random directionality is very close to the actual accuracy
+we achieved when using the actual server-to-client statistics
+obtained from the empirical traces.
+
+Interestingly, our classiﬁcation accuracies are largely unaf-
+fected by the potential errors in our estimated ﬂow statistics.
+We think this robustness is due to the fact we use the log-
+arithm of the ﬂow statistics (as mentioned in Section 2.1).
+The magnitude of diﬀerence of the ﬂow statistics has a much
+greater impact in the classiﬁcation than the small errors in
+the estimations. This makes us believe it is possible to use
+our estimation technique to calculate the diﬀerent statistics
+that allow the best classiﬁcation, even though only partial
+information is available.
+
+Figure 6: CDF of the per-ﬂow percentage error.
+
+positive eﬀect of balancing the overestimation of the num-
+ber of ACKs.
+5.3 Validation
+
+Estimating ﬂow duration is easy, and overall the error in
+the duration estimation is low. The average ﬂow duration
+was 27.5 seconds, with an error of 7.3%. In our estimation
+results shown in Figure 3, we found that normally 90% of
+the ﬂows had duration errors less than 1 msec. In most cases
+where there was a high error in the duration, we found that
+the error was caused by a RST or FIN packet being sent
+well after the rest of the ﬂow’s packets were sent.
+
+Figure 4 shows a scatter plot of the actual number of bytes
+versus the estimated number of bytes for the random data
+set generated from the April 6, 9 am trace. The scatter plot
+shows strong agreement between the actual and estimated
+amount of bytes. For our traces, the algorithm was always
+within within 0.4% and 1.4% of the actual number of bytes.
+Figure 5 shows a scatter plot of the actual number of pack-
+ets versus the estimated number of packets for the random
+data set generated from the April 6, 9 am trace. As seen
+in the scatter plot, the estimated number of packets closely
+follows the actual number of packets; the estimate inaccu-
+racy appears to be somewhat larger when there are more
+packet transfers along the missing direction of the ﬂow. Ex-
+periments with the remaining traces showed that the packet
+estimate was, on average, within -5.3% and 1.6% of the ac-
+tual number of packets.
+
+On a per ﬂow basis, Figure 6 shows the distribution of the
+per-ﬂow percentage error for both packet and byte estima-
+tion. It shows that our estimate is within 30% of the actual
+
+ 0 10 20 30 40 50 60 0 10 20 30 40 50 60Actual SecondsEstimated Seconds 0 1 2 3 4 5 0 1 2 3 4 5Actual MBytesEstimated MBytes 0 250 500 750 1000 0 250 500 750 1000Actual PacketsEstimated Packets 0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1-100-75-50-25 0 25 50 75 100Empirical Distribution% Error Per FlowApr 6am - BytesApr 8am - BytesApr 6am - PacketsApr 8am - PacketsWWW 2007 / Track: Technology for Developing RegionsSession: Networking Issues in the Web890Figure 7: Flow accuracy with
+estimation algorithm estimating
+Server-to-Client statistics.
+
+Figure 8: Byte accuracy with es-
+timation algorithm to estimating
+Server-to-Client statistics.
+
+Figure 9: Longitudinal classiﬁca-
+tion accuracy using a single model
+on all traces.
+
+6. DISCUSSION
+
+We found in our experimentation that increasing the sam-
+ple size between 2000 and 128,000 does not signiﬁcantly im-
+prove our classiﬁcation results. However, we did ﬁnd that
+a larger sample size had a higher degree of conﬁdence of
+covering the sample space of traﬃc characteristics.
+
+Figure 9 shows that a single model (built by drawing sam-
+ples from one trace) is fairly resilient over a longer period
+of time. For this particular experiment, we used a model
+built from the (Friday) April 7, 9 am trace; our results show
+that this model is applicable on other days and times. This
+shows that a generic model could be built to classify traﬃc
+for long periods of time. This would reduce the frequency at
+which the expensive step of model building (i.e., clustering
+and labeling) would need to be repeated.
+
+We think that the classiﬁcation framework we use could
+be adapted in several ways. One example could be to build
+several models to reﬂect the characteristics of ﬂows after cer-
+tain packet milestones (e.g., 8, 32, and 64 packets). Then, a
+ﬂow currently in-progress could be classiﬁed using the diﬀer-
+ent models as it reaches the pre-set packet milestones. This
+approach can facilitate real-time classiﬁcation of ﬂows and
+is an idea that we are currently exploring [12].
+
+7. RELATED WORK
+
+The use of ﬂow statistics for clustering network traﬃc has
+received some attention in the literature [10, 23, 33]. These
+prior works only considered the model building stage and
+did not evaluate the predictive power of classiﬁers obtained
+from clustering.
+
+The classiﬁer proposed by Bernaille et al.
+
+is the closest
+to our work [1]. The classiﬁer similarly uses the K-Means
+algorithm and a minimum distance measure to assign ﬂow
+to an application label. Their work uses bi-directional ﬂow
+statistics derived from the ﬁrst P packet exchanges, and is
+not applicable to the more challenging traﬃc classiﬁcation
+setting considered in this paper.
+
+Some non-clustering, machine learning-based, techniques
+also use ﬂow statistics for classifying traﬃc [25,29]. Roughan
+et al. [29] use three algorithms from the data mining litera-
+ture, namely Nearest Neighbour, Linear Discriminate Anal-
+ysis, and Quadratic Discriminate Analysis, to classify ﬂows
+into four predetermined traﬃc classes. They study the use
+of diﬀerent statistics such as duration and average packet
+size of a ﬂow for classifying traﬃc into four distinct classes.
+Moore et al. [25] use a supervised machine learning algo-
+
+rithm called Na¨ıve Bayes as a classiﬁer. Using a “hand clas-
+siﬁed” trace, they show that the Na¨ıve Bayes approach has
+a high accuracy classifying traﬃc. These prior eﬀorts did
+not consider classiﬁcation at the network core. Our work
+on the use of clustering techniques for classiﬁcation at the
+network core complements these prior eﬀorts.
+
+Traﬃc identiﬁcation approaches that rely on application-
+level behaviors such as the number of concurrent TCP/UDP
+connections to an IP address have also been developed [6,19,
+20, 32]. Karagiannis et al. [19] proposed heuristics that cap-
+italize on the unique behaviors (e.g., concurrent use of both
+TCP and UDP by a source/destination host pair) of P2P
+applications when they are transferring data or establishing
+connections to identify this traﬃc. Their results show that
+this approach is comparable in terms of accuracy to payload-
+based identiﬁcation. In earlier work, a similar approach was
+used to identify chat traﬃc [6]. More recently, Karagiannis
+et al. [20] developed another method that uses the social,
+functional, and application behaviors to identify all types of
+traﬃc. Concurrent to [20], Xu et al. [32] develop a method-
+ology, based on data mining and information-theoretic tech-
+niques, to discover functional and application behavioral
+patterns of hosts and the services used by the hosts. They
+subsequently use these patterns to build general traﬃc pro-
+ﬁles, for example, “servers or services”, “heavy hitter hosts”,
+and “scans or exploits”. In contrast, our approach uses only
+ﬂow characteristics to classify network traﬃc, and achieves
+comparable or better accuracies when classifying traﬃc, in-
+cluding traﬃc originating from P2P applications.
+
+8. CONCLUSION
+
+This paper considered the problem of classifying network
+traﬃc when only one direction of network ﬂows are ob-
+served, as may be the case when the point-of-observation
+is the network core. To address this problem, we developed
+a clustering-based machine learning framework for classify-
+ing network traﬃc using only unidirectional ﬂow statistics.
+We evaluated the aforementioned classiﬁcation framework
+using a set of full-payload packet traces. The results show
+that, in general, rich traﬃc classiﬁcation using only unidi-
+rectional statistics is feasible, with our experiments show-
+ing accuracies of 95% in terms of ﬂows and 80% in terms
+of bytes. We also found better classiﬁcation performance is
+achieved when statistics for the server-to-client direction are
+used than when statistics for the client-to-server direction
+are used. Because collection of the server-to-client statistics
+
+ 0 0.2 0.4 0.6 0.8 1AMPMAMPMAMPMAMPMApril 6April 7April 8April 9Flow AccuracyEstimated with Client-to-ServerActual Server-to-ClientEstimated with Random 0 0.2 0.4 0.6 0.8 1AMPMAMPMAMPMAMPMApril 6April 7April 8April 9Byte AccuracyEstimated with Client-to-ServerActual Server-to-ClientEstimated with Random 0 0.2 0.4 0.6 0.8 1April 9April 8April 7April 6PMAMPMAMPMAMPMAMAccuracyFlow AccuracyByte AccuracyWWW 2007 / Track: Technology for Developing RegionsSession: Networking Issues in the Web891may not always be feasible, we developed and validated an
+algorithm that can estimate the missing statistics from a
+unidirectional packet trace.
+
+Acknowledgments
+This work was supported by the Natural Sciences and En-
+gineering Research Council (NSERC) of Canada and Infor-
+matics Circle of Research Excellence (iCORE) of the province
+of Alberta. We thank the anonymous reviewers for their
+comments on the original version of this paper.
+
+9. REFERENCES
+[1] L. Bernaille, R. Teixeira, and K. Salamatian. Early
+Application Identiﬁcation. In CoNEXT’06, Lisboa,
+Portugal, December 2006.
+
+[2] Cache Logic. http://www.cachelogic.com/.
+[3] Cache Logic. Peer-to-Peer in 2005,
+
+http://www.cachelogic.com/home/pages/research/,
+2005.
+
+[4] T. Choi, C. Kim, S. Yoon, J. Park, H. Kim, H. Chung,
+
+and T. Jesong. Content-Aware Internet Application
+Traﬃc Measurement and Analysis. In IEEE/IFIP
+NOMS’04, Seoul, Korea, April 2004.
+
+[5] Cisco NetFlow.
+
+http://www.cisco.com/warp/public/732/tech/netﬂow.
+
+[6] C. Dews, A. Wichmann, and A. Feldmann. An
+
+Analysis of Internet Chat Systems. In IMC’03, Miami
+Beach, USA, October 2003.
+
+[7] N. Duﬃeld, C. Lund, and M. Thorup. Properties and
+
+Prediction of Flow Statistics from Sampled Packet
+Streams. In IMW ’02, Marseille, France, August 2002.
+[8] N. Duﬃeld, C. Lund, and M. Thorup. Flow Sampling
+
+Under Hard Resource Constraints. In
+SIGMETRICS’04, New York, USA, June 2004.
+
+[9] M. Dunham. Data Mining: Introductory and Advanced
+
+Topics. Prentice Hall, New Jersey, 1st edition, 2003.
+
+[10] J. Erman, M. Arlitt, and A. Mahanti. Traﬃc
+Classiﬁcation using Clustering Algorithms. In
+SIGCOMM’06 MineNet Workshop, Pisa, Italy,
+September 2006.
+
+[11] J. Erman, A. Mahanti, and M. Arlitt. Internet Traﬃc
+
+Identiﬁcation using Machine Learning. In
+GLOBECOM’06, San Francisco, USA, November
+2006.
+
+[12] J. Erman, A. Mahanti, C. Williamson, M. Arlitt, and
+
+I. Cohen. A Semi-Supervised Approach to Network
+Traﬃc Classiﬁcation (Extended Abstract). In
+SIGMETRICS ’07, San Diego, USA, June 2007.
+[13] C. Estan, K. Keys, D. Moore, and G. Varghese.
+Building a Better NetFlow. In SIGCOMM ’04,
+Portland, USA, August 2004.
+
+[14] I. Guyon and A. Elisseef. An Introduction to Variable
+
+and Feature Selection. Journal of Machine Learning
+Research, pages 1157–1182, 2003.
+
+[15] P. Haﬀner, S. Sen, O. Spatscheck, and D. Wang.
+ACAS: Automated Construction of Application
+Signatures. In SIGCOMM’05 MineNet Workshop,
+Philadelphia, USA, August 2005.
+
+[16] A. K. Jain, M. N. Murty, and P. J. Flynn. Data
+
+Clustering: A Review. ACM Computing Surveys,
+31(3):254–323, September 1999.
+
+[17] D. Jiang, C. Tang, and A. Zhang. Cluster Analysis for
+Gene Expression Data: A Survey. IEEE Transactions
+On Knowledge and Data Engineering, 15(11),
+November 2004.
+
+[18] T. Karagiannis, A. Broido, and N. Brownlee. Is P2P
+Dying or Just Hiding? In GLOBECOM ’04, Dallas,
+USA, November 2004.
+
+[19] T. Karagiannis, A. Broido, M. Faloutsos, and
+
+K. claﬀy. Transport Layer Identiﬁcation of P2P
+Traﬃc. In IMC’04, Taormina, Italy, October 2004.
+
+[20] T. Karagiannis, K. Papagiannaki, and M. Faloutsos.
+BLINC: Multilevel Traﬃc Classiﬁcation in the Dark.
+In SIGCOMM’05, Philadelphia, USA, August 2005.
+
+[21] R. R. Kompella and C. Estan. The Power of Slicing in
+
+Internet Flow Measurement. In IMC’05, Berkeley,
+USA, October 2005.
+
+[22] A. Madhukar and C. Williamson. A Longitudinal
+
+Study of P2P Traﬃc Classiﬁcation. In MASCOTS’06,
+Monterey, USA, August 2006.
+
+[23] A. McGregor, M. Hall, P. Lorier, and J. Brunskill.
+
+Flow Clustering Using Machine Learning Techniques.
+In PAM 2004, Antibes Juan-les-Pins, France, April
+2004.
+
+[24] A. W. Moore and K. Papagiannaki. Toward the
+
+Accurate Identiﬁcation of Network Applications. In
+PAM 2005, Boston, USA, March 2005.
+
+[25] A. W. Moore and D. Zuev. Internet Traﬃc
+
+Classiﬁcation Using Bayesian Analysis Techniques. In
+SIGMETRIC’05, Banﬀ, Canada, June 2005.
+
+[26] Packeteer. http://www.packeteer.com/.
+[27] V. Paxson. Bro: A System for Detecting Network
+
+Intruders in Real-Time. Comput. Networks,
+31(23-24):2435–2463, 1999.
+
+[28] V. Paxson. Empirically-Derived Analytic Models of
+
+Wide-Area TCP Connections. IEEE/ACM
+Transactions on Networking, 2(4):316–336, August
+1998.
+
+[29] M. Roughan, S. Sen, O. Spatscheck, and N. Duﬃeld.
+
+Class-of-Service Mapping for QoS: A Statistical
+Signature-based Approach to IP Traﬃc Classiﬁcation.
+In IMC’04, Taormina, Italy, October 2004.
+
+[30] S. Sen, O. Spatscheck, and D. Wang. Accurate,
+
+Scalable In-Network Identiﬁcation of P2P Traﬃc
+Using Application Signatures. In WWW 2004, New
+York, USA, May 2004.
+
+[31] F. D. Smith, F. H. Campos, K. Jeﬀay, and D. Ott.
+What TCP/IP Protocol Headers Can Tell us about
+the Web. In SIGMETRICS ’01, Cambridge, USA,
+June 2001.
+
+[32] K. Xu, Z.-L. Zhang, and S. Bhattacharyya. Proﬁling
+
+Internet Backbone Traﬃc: Behavior Models and
+Applications. In SIGCOMM ’05, Philadelphia, USA,
+August 2005.
+
+[33] S. Zander, T. Nguyen, and G. Armitage. Automated
+
+Traﬃc Classiﬁcation and Application Identiﬁcation
+using Machine Learning. In LCN’05, Sydney,
+Australia, November 2005.
+
+WWW 2007 / Track: Technology for Developing RegionsSession: Networking Issues in the Web892

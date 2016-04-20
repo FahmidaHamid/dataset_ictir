@@ -1,0 +1,896 @@
+Security is an important aspect of Web engineering, and it should be taken into serious consideration in the development of high quality Web-based systems [5, 15, 19, 21, 23].
+In many cases, however, security does not receive su cient attention due to the complexity of Web-based systems, the ad hoc processes of system development, and even the fact that many designers or developers lack security knowledge on Web development techniques.
+It is not a surprise therefore, that website security breaches are common [7] and Web applications are more susceptible to malicious attacks than traditional computer applications [27].
+Browser-based attacks have posed serious threats to the Web in recent years.
+Exploiting the vulnerabilities in Web browsers [6, 25] or Web applications [11, 14], attackers may directly harm a Web browser s host machine and user through various attacks such as drive-by download [20, 24, 28], cross-site scripting [10, 37], cross-site request forgery [2, 46], and Web privacy attacks [4, 12].
+Attackers may even use browsers to indirectly launch large-scale distributed attacks against Web servers [17] or propagate Internet worms [18].
+Most of these browser-based attacks are closely tied with JavaScript, which is an interpreted programming language most often used for client-side scripting.
+JavaScript code embedded or included in HTML pages runs locally in a user s Web browser, and it is mainly used by websites to enhance the interactivity and functionality of their webpages.
+However, because JavaScript is equipped with a powerful and diverse set of capabilities in Web browsers [9], it has also become the weapon of choice for attackers.
+Modern Web browsers impose two restrictions to enforce JavaScript security: the sandbox mechanism and the same-origin policy.
+The former limits JavaScript to execute only in a certain environment without risking damage to the rest of the system, while the latter prevents JavaScript in a document of one origin from interacting with another document of a di erent origin [9, 45].
+Unfortunately, most JavaScript-related security vulnerabilities are still the breaches of either of these two restrictions [40].
+Some of these vulnerabilities are due to Web browser  aws, but the majority of them have been attributed to the  aws and insecure practices of websites [46, 48].
+A great deal of attention has been paid to the JavaScript-related security vulnerabilities such as cross-site scripting [10, 29, 38, 46, 48] that could directly lead to security breaches.
+However, little attention has been given to websites  insecure practices of using JavaScript on their webpages.
+Similar to websites  other insecure practices such as using the insecure JavaScript practices may not necessarily result in direct security breaches, but they could de nitely cultivate the creation of new attack vectors.
+In this paper, we present the  rst measurement study on insecure practices of using JavaScript at di erent websites.
+We mainly focus on two types of insecure practices: insecure JavaScript inclusion and insecure JavaScript dynamic generation.
+We de ne the former as the practices of using the src attribute of a <script> tag to directly or indirectly include a JavaScript  le from an external domain into the top-level document of a webpage.
+A top-level document is the document loaded from the URL displayed in a Web browser s address bar.
+By  directly , we mean that the <script> tag belongs to the top-level document, and by  indirectly , we mean that the <script> tag belongs to a sub-level frame or iframe document whose origin is the same as that of the top-level document.
+We de ne the latter as the practices of using dangerous techniques such as the eval() function to dynamically generate new scripts.
+Both types of insecure practices create new vectors for attackers to inject malicious JavaScript code into webpages and launch attacks such as cross-site scripting and cross-site request forgery.
+The primary objective of our work is to examine the severity and nature of these two types of insecure JavaScript practices on the Web.
+To achieve this goal, we devised an execution-based measurement approach.
+More speci cally, we instrumented the Mozilla Firefox 2 Web browser and visited the homepages of 6,805 popular websites in 15 di erent categories.
+The instrumented Firefox non-intrusively monitors the JavaScript inclusion and dynamic generation activities on those webpages, and it precisely records important information for o ine analysis.
+Our measurement results reveal that insecure JavaScript inclusion and dynamic generation practices are widely prevalent among websites.
+At least 66.4% of the measured websites have the insecure practices of including scripts from external domains into the top-level documents of their homepages.
+Over 74.9% of the measured websites use one or more types of JavaScript dynamic generation techniques, and insecure practices are quite common.
+For example, eval() function calls exist at 44.4% of the measured websites.
+Using the document.write() method and the innerHTML property is much more popular than using the relatively secure method of creating JavaScript elements via DOM (Document Object Model) methods.
+Our results also show that around 94.9% of the measured websites register various event han- dlers on their homepages, implying that the captured insecure JavaScript practices in inclusion and dynamic generation are likely conservative estimates.
+The main contribution of our paper is threefold.
+First, we introduce a browser instrumentation framework that enables us to capture essential JavaScript execution behavior on webpages.
+Not only can this framework measure the insecure JavaScript practices, it can also examine other JavaScript execution characteristics such as function call patterns and code (de)obfuscation activities.
+Second, we present a classi cation method to analyze and classify different types of dynamically generated JavaScript code.
+By extracting the AST (abstract syntax tree) trees of scripts and performing AST signature creation and matching, our classi cation method can e ectively assist us in understanding the structural information of the hundreds of thousands of dynamically generated scripts.
+Third, our measurement study sheds light on the insecure JavaScript practices and especially reveals the severity of insecure JavaScript inclusion and dynamic generation practices on the Web.
+Our in-depth analysis further indicates that safe alternatives to these insecure practices do exist in common cases.
+We therefore suggest website developers and administrators pay serious attention to these insecure engineering practices and use safe alternatives to avoid them.
+The rest of the paper is structured as follows.
+Section 2 explains why the two types of JavaScript practices are insecure.
+Section 3 introduces our measurement and analysis methodologies.
+Section 4 describes the data set of this study.
+Section 5 presents and analyzes our measurement results.
+Section 6 reviews related work, and  nally, Section 7 concludes the paper.
+In the same-origin policy, the origin of a document is de- ned using the protocol, domain name, and port of the URL from which the document is loaded.
+It is important to realize that this policy does not limit the origin of a script itself.
+Although JavaScript code cannot access another document loaded from a di erent origin, it can fully access the document in which it is embedded or included even when the code has a di erent origin than the document [9].
+Including scripts from an external domain into the top-level document of a webpage is very dangerous because it grants the scripts the maximum permissions allowed to control the webpage and the browser window.
+Therefore, if the author of a script  le or the administrator of a script hosting site is insincere or irresponsible, insecure JavaScript inclusion practices could lead to serious security and privacy breaches.
+Moreover, script hosting sites could become attractive targets of attacks, especially when their JavaScript  les are included by multiple websites.
+To lower the potential risks, websites should avoid external JavaScript inclusion by using internal JavaScript  les from the same sites when possible.
+Otherwise if external inclusion is really inevitable, for example some advertising sites or tra c analysis sites may necessitate it [22], external included scripts should be retrieved using HTTPS connections and should be restricted within a sub-level HTML frame or iframe document whose origin is di erent from that of the top-level document.
+The eval() function takes a string parameter and evaluates it as JavaScript code.
+This function is dangerous because it executes the passed script code with the privileges of the function s caller [39].
+Therefore, attackers may endeavor to inject malicious code into the evaluated string in order to take advantage of this capability.
+Meanwhile, since scripts are dynamically generated and evaluated, it is very challenging to e ectively  lter out maliciously injected code [13, 25, 32].
+Eval() should be avoided 1 if at all possible, and its safe alternatives should be used [35,
+ as using the document.write() function and the innerHTML property also pose similar security risks, as discussed in Section 5.
+Once attackers have successfully exploited these insecure practices and injected their malicious JavaScript code, they can easily launch severe attacks such as cross-site scripting
+ Offline Analysis Toolkit(cid:13) Web(cid:13) Pages(cid:13) Instrumented(cid:13) Content Module(cid:13) Instrumented(cid:13) DOM Module(cid:13) Instrumented(cid:13) SpiderMonkey(cid:13) JavaScript(cid:13) Engine(cid:13) Trace(cid:13) Files(cid:13) JavaScript Code Classification Tools(cid:13) AST Tree(cid:13) Extraction(cid:13) =(cid:13) AST Signature(cid:13) Creation and(cid:13) AST(cid:13) Signature(cid:13) a(cid:13) +(cid:13) Matching(cid:13) Categorization(cid:13) b(cid:13) c(cid:13) Other Tools(cid:13) Figure 1: Overview of the Instrumentation Framework and Analysis Toolkit.
+and cross-site request forgery.
+These attacks can be used to conduct many malicious activities such as account hijacking, user behavior tracking, denial of service attacking, and website defacing.
+Therefore, insecure engineering practices of using JavaScript should be thoroughly investigated, their risks should be highlighted to Web developers, and safe alternatives should be used to avoid them.
+We devised an execution-based measurement approach to study the insecure JavaScript practices on the Web.
+Our strategy is to  rst use an instrumented Web browser to obtain actual JavaScript execution trace information on di er-ent webpages, and then use o ine analysis to characterize and understand various JavaScript practices.
+An alternative approach is to simply perform static analysis on webpages.
+However, this approach su ers from the problem of unde-cidability and is unable to precisely determine which scripts will be generated and executed.
+In contrast, our approach allows us to e ectively capture the dynamics of webpages and JavaScript code in their real runtime environments.
+Figure 1 gives an overview of our instrumentation framework and analysis toolkit.
+To achieve an accurate and e cient measurement, we employed the source code instrumentation technique and instrumented the most popular open source Web browser  Mozilla Firefox.
+Our instrumentation method is similar to program tracing, which is a well-known approach for monitoring program behavior and measuring program performance.
+We followed a few rules suggested in [1] to minimize instrumentation overhead.
+More speci cally, we attempted to insert less instrumentation code and place the code only at necessary points with low execution frequency.
+We mainly instrumented three modules of Firefox 2 source code: the JavaScript engine, the content module, and the DOM module.
+Firefox uses SpiderMonkey as its JavaScript engine [47].
+SpiderMonkey JavaScript engine is written in C programming language and is a relatively independent module in Firefox.
+The major interface between Spider-Monkey and other modules in Firefox is the SpiderMonkey JSAPI [41].
+JSAPI facilitates other modules in Firefox to use the core JavaScript data types and functions of Spider-Monkey, and it also allows other modules to expose some of their objects and functions to JavaScript code.
+Inside the SpiderMonkey, our instrumented code written in C consists of three parts.
+First, eight trace logging functions were integrated into the JSAPI interface.
+These functions facilitate the trace collection in a consistent manner, recording various information such as script text, function calls, and event handler registrations.
+Second, we added code to the byte-code interpreter of SpiderMonkey so that we can record the execution information of any global scripts and function scripts.
+Third, we instrumented the object system implementation of SpiderMonkey to monitor the calls to the eval() function and collect both the calling context information and the evaluated content information.
+The trace  les generated in the above instrumentation points enable us to analyze the practices of JavaScript inclusion and the practices of JavaScript dynamic generation using eval().
+We also needed to monitor the practices of other JavaScript dynamic generation techniques.
+Originally we attempted to ful ll this task by still instrumenting inside the SpiderMonkey and monitoring the engine s native callbacks to the content and DOM modules.
+However, we found that this approach induces high overhead and could only record partial information.
+Therefore, we decided to directly instrument the content module and the DOM module of Firefox.
+In the content module of Firefox, we integrated C++ code to measure the other three types of JavaScript dynamic generation techniques.
+We instrumented the document.write() method 2 and the method for setting the innerHTML property of an HTML element to track their invocations.
+Both techniques can be used to add new content to an HTML document, and the added content may contain new JavaScript code.
+We also added code to monitor the method for replacing, inserting or appending a new DOM element, which could be created by using DOM methods such as docu-ment.createElement() and document.createTextNode().
+Our instrumentation code can identify the script type of elements and record their source and text information.
+Other techniques such as the insertAdjacentHTML() method or the outerHTML property are supported in the Internet Explorer Web browser only, and we cannot measure them in Firefox.
+In the DOM module and the content module, we added C++ code to measure various event handler registration techniques supported in Firefox.
+Event handlers can be triggered by user interaction or timer events.
+We collected event handler registration information to show that further JavaScript inclusion and execution could happen and our captured insecure practices are likely conservative estimates.
+Event handler registration and other aspects of information described above are written into a set of six di erent trace  les to assist our o ine analysis.
+Since many internal user interface components of Firefox also heavily use JavaScript, special care is needed to ensure that the above instrumentation code only records the JavaScript execution activities of a visited webpage.
+Our code checks the JSPrincipals [43] information of an object or script to guarantee this requirement.
+We also ensured that our instrumentation code only monitors and records essential information and does not change the execution logic of Firefox and SpiderMonkey.
+We took an o ine analysis approach so that we can suf- ciently analyze the trace information without interfering with the actual measurement process.
+We developed an of ine analysis toolkit that consists of a set of tools written in approximately 5,000 lines of Java code, 200 lines of C code,
+ for each AST tree in the XML  les do thisSig=the top N level structure of the AST tree; if thisSig matches an existing signature in S then Record the information of this matching; SigCreateMatch (XML les, N )
+
+
+
+
+
+
+
+ endif 9. endfor
+ S = S   {thisSig}; else Figure 2: High-level AST Signature Creation and Matching Procedure.
+script code.
+About half of the tools are used for classifying dynamically generated JavaScript code, and the others are used for processing trace records and calculating statistical information.
+The detailed description of the JavaScript code classi cation tools is as follows.
+The motivation for developing these classi cation tools is to automate the challenging task of understanding a large number of dynamically generated JavaScript code.
+To achieve this goal, we explored the concepts in software engineering and developed an AST (abstract syntax tree)-based classi- cation method.
+As illustrated in Figure 1, the key idea is to  rst extract the AST trees of scripts, then create and match AST signatures, and  nally merge signatures into different categories.
+We devised such an AST-based approach in that ASTs have been demonstrated e ective in program understanding [3, 30].
+The AST tree extraction tool is a standalone C program that embeds the SpiderMonkey 1.7 [47].
+This is the same version of the SpiderMonkey as used in our instrumented Firefox 2 Web browser.
+Therefore, our extraction tool can create a token stream and parse the stream into a syntax tree for a script in the same manner as in the instrumented Firefox.
+The tool  nally constructs the essential structure of a syntax tree as an AST tree and writes the tree into an XML  le to facilitate further comparison.
+We applied top-down tree matching techniques to perform AST signature creation and matching, and the high-level procedure is illustrated in Figure 2.
+First, an empty AST signature set S is initialized.
+Next, for each AST tree in the XML  les, its top N level structure is used to generate an AST signature, denoted as thisSig.
+Then, top-down tree comparisons are made to seek a match between the thisSig and an existing signature in the set S.
+If a match exists, this procedure keeps a record of the related information, otherwise, the thisSig is added to the set S as a new AST signature.
+Finally, this procedure returns the signature set S as its output.
+To be accurate and representative, an AST signature keeps the name and type information of an operator node, but it only keeps the type information of an operand.
+Top-down tree matching techniques can capture the key structural differences between trees, and they have been used in several Web-related projects [26, 33, 34].
+The comparison algorithm used in line 4 of this procedure is adapted from the STM (simple tree matching) algorithm presented in [31].
+STM is an e cient top-down tree distance comparison algorithm, and our adaptation is to only compare the top N levels of Table 1: Category Breakdown by Top-Level Domain.
+Category arts business computers games health home news recreation reference regional science shopping society sports world Total Uniq-Total com org
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ gov
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ net
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ edu
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ cc
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ other Total
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ trees.
+As shown in Section 5, such an adaptation is e ective in striking a good balance between retaining the accuracy and reducing the total number of signatures.
+The AST signature categorization tool was developed to further merge AST signatures into di erent categories.
+We de ned categories according to di erent types of JavaScript expressions and statements such as arithmetic expressions and assignment statements.
+Such a categorization can help us to understand the use purposes of JavaScript code from a programming language perspective.
+This tool is especially useful for analyzing dynamically generated scripts, most of which have speci c use purposes in terms of programming language functionality as revealed in our analysis.
+To obtain a representative data set, we followed a similar method as used in [16] and selected top websites listed by Alexa.com [36].
+We chose 15 categories and then top 500 sites from each of these categories.
+Table 1 gives the breakdown of 15 categories by DNS top-level domain (TLD).
+Since some sites appear in multiple categories, the total number of unique sites is 6,805 in our study.
+This number is over  ve times larger than that in [16], and we also only visited the homepages of those sites so that we can have a consistent measurement.
+Meanwhile, measuring the insecure JavaScript practices on homepages is su cient to illustrate the severity of the problem.
+Table 1 shows that the majority of the 6,805 sites come from the .com TLD and the country code (denoted as the cc) TLD.
+The former contributes 4,727 unique sites and the latter contributes 950 unique sites.
+The execution of JavaScript on a webpage can be roughly divided into two phases: the document loading and parsing phase and the event-driven phase [9].
+When the document loading and parsing phase ends, the event-driven phase starts and event handlers can be asynchronously executed in response to various user interaction and timer events.
+In our study, we developed a browser extension to automatically visit each of the 6,805 webpages using our instrumented Firefox Web browser.
+On each page, our browser extension waits for the end of the document loading and parsing phase and then stays in the event-driven phase for 10 seconds.
+Our browser extension has no intention to trigger the execution of any speci c event-handlers on a page.
+This is because the event handlers registered on di erent webpages are very diverse, and it is di cult to trigger their executions Total Pages with
+ Table 2: JavaScript Presence by Category and Top Level Domain.
+Category/
+ arts business computers games health home news recreation reference regional science shopping society sports world com org gov net edu cc other All embedded JS included JS
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ in a consistent manner.
+Therefore, the JavaScript execution data set collected in our measurement study covers the whole document loading and parsing phase and 10 seconds of the event-driven phase for each of the 6,805 homepages.
+The data set was collected in the second week of July 2008.
+We present and analyze our measurement results in this section.
+We  rst brie y present the results on JavaScript presence.
+Then, we detail the results on the insecure practices of JavaScript inclusion and dynamic generation.
+Finally, we give a short summary of the results on event handler registrations.
+Table 2 lists the results of overall JavaScript presence for the 6,805 measured homepages.
+We use JS to represent any JavaScript code, and we use DJS to represent the JavaScript code that is dynamically generated by using one of the four dynamic generation techniques measured in our instrumented Firefox Web browser.
+The embedded JS indicates that the executed JavaScript code is embedded within an HTML document, and the included JS indicates that the executed JavaScript code is included from a separate  le.
+Overall, JavaScript execution has been widely observed on
+ clusion are very common, and they are practiced on 6,421 and 6,270 pages, respectively.
+The percentage of webpages containing JavaScript execution within a category ranges from 89.8% for science to 99.2% for sports, and the percentage of webpages containing JavaScript execution within a TLD ranges from 90.6% for .edu to 97.9% for .com.
+JavaScript dynamic generation is also very popular, and there are 5,098 (74.9%) sites containing DJS on their homepages.
+For the DJS presence within a category, the lowest percentage is 54.8% for science, and the highest percentage is 91.2% for sports.
+For the DJS presence within a TLD, the highest percentage is 81.2% for .com, and the lowest percentage is 36.0% for other domains such as .mil and .info.
+i s n a m o d n o s u c n i e i l l i f t p i r c
+ a v a
+ f o n o i t c a r
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ The outdegree value
+
+ Figure 3: Cumulative distribution of the 4,517 JavaScript  le inclusion domains in terms of their outdegree values.
+Among all the 6,270 webpages with the included JS, we identify and analyze insecure practices of JavaScript inclusion.
+Note that we de ned the insecure JavaScript inclusion as the practices of using the src attribute of a <script> tag to directly or indirectly include a JavaScript  le from an external domain into the top-level document of a webpage.
+Keeping JavaScript code separate from HTML markups is actually a good engineering practice, advocated especially in the unobtrusive JavaScript programming paradigm [9, 49].
+Therefore, there is no need to analyze the good practices of including JavaScript  les from the same host or domain, and we only focus on the insecure inclusion practices.
+To our surprise, insecure JavaScript inclusion is very prevalent.
+Around 66.4% (4,517 out of 6,805) of websites directly or indirectly include JavaScript  les from external domains into the top-level documents of their homepages.
+Note that our analysis tool applies a conservative standard to compare the domain name of a JavaScript  le and that of its including homepage.
+Two domain names are regarded as di erent only if, after discarding their top-level domain names (e.g., .com) and the leading name  www  (if existing), they do not have any common sub-domain name3.
+Therefore, this 66.4% result is basically an objective estimate of the severity of insecure JavaScript inclusion practices.
+After further analyzing the domain name relationship between JavaScript  le inclusion sites and JavaScript  le hosting sites, we found that those 4,517 sites include JavaScript  les from a diverse set of 1,985 external domains.
+We can use a directed graph to characterize the domain name relationship between these sites.
+Di erent vertices represent di erent domain names, and a direct edge from vertex A to vertex B means that the homepage in domain A includes at least one JavaScript  le from domain B.
+Therefore, 4,517 vertices have a greater than zero outdegree value, and 1,985 vertices have a greater than zero indegree value.
+Figure 3 illustrates the CDF (cumulative distribution function) of the 4,517 JavaScript  le inclusion domains in terms of their outdegree values.
+We can see that approximately
+ and d2sub3.d2sub2.d2sub1.d2tld are regarded as di erent only if the intersection of the two sets {d1sub2, d1sub1} and {d2sub3, d2sub2, d2sub1} is empty.
+i s n a m o d g n i t s o h e l i f t p i r c
+ a v a
+ f o n o i t c a r
+
+
+
+
+
+
+
+
+
+
+
+ The indegree value Figure 4: Cumulative distribution of the 1,985 JavaScript  le hosting domains in terms of their in-degree values.
+three external domains.
+While the mean value of outdegree is 3.1, the maximum value of outdegree reaches 24.
+These results indicate that not only 66.4% of measured sites are at the risk of having their homepages under the control of the included JavaScript code, but many of them also face higher risks from multiple sources.
+From a di erent perspective, Figure 4 depicts the CDF of the 1,985 JavaScript  le hosting domains in terms of their indegree values.
+We can observe two interesting phenomena.
+On the one hand, JavaScript  les in approximately 60.6% of the hosting domains are only included by one of our visited homepages.
+On the other hand, JavaScript  les in approximately 7.7% of the hosting domains are included by at least 10 of our visited homepages, and JavaScript  les in 14 sites are even included by at least 100 of our visited homepages.
+The mean value of indegree is 7.2, but the maximum value of indegree reaches a very high value of 2,606.
+After inspecting those 14 high-pro le JavaScript  le hosting domains and many other low-pro le domains, we found that a few of them are popular tra c analysis service sites and advertising servers.
+However, most of them are the kind of  hidden  sites that provide nothing on their root URLs but just point to some stored JavaScript  les using URL paths.
+Understanding the properties of those sites is beyond the scope of this paper, but what we need to emphasize is that external JavaScript  le hosting sites, especially those high-pro le ones, create new vectors for large-scale browser-based attacks.
+Even a single compromised JavaScript  le could directly cause security breaches on thousands of websites.
+Among the 4,517 sites that include JavaScript  les from external domains, we also observed that 125 sites only use the HTTPS protocol to retrieve JavaScript  les and 138 sites use both the HTTP protocol and the HTTPS protocol to retrieve di erent JavaScript  les.
+In total, there are 263 sites using HTTPS to include scripts from 72 JavaScript  le hosting sites.
+These observations imply that some JavaScript  le hosting sites do provide the secure transmission service for accessing their hosted JavaScript  les, and some of our measured sites do use this service.
+However, this secure JavaScript transmission service is not popular.
+Only 3.6% (72 out of 1,985) of the JavaScript  le hosting sites provide the service, and only 5.8% (263 out of 4,517) of the JavaScript  le inclusion sites use the service.
+Also note that HTTPS protects data in transit, but it does not guarantee that a JavaScript  le is uncompromised in a hosting site.
+In contrast to these 4,517 sites, we did  nd that there are
+ is always restricted within a sub-level HTML frame or iframe document whose origin is di erent from that of the top-level document.
+This observation implies that some sites do limit the control of external included JavaScript code within sub-level documents and provide a protection to the top-level documents of their homepages.
+However, such a relatively secure practice is exclusively followed by only 324 measured sites, and those 4,517 sites still use a very insecure way to include external JavaScript  les.
+Our results show that insecure JavaScript inclusion is widely practiced by the majority (66.4%) of our measured sites.
+Our in-depth analysis on the domain name relationship between JavaScript  le inclusion sites and hosting sites further reveals the severity and nature of those insecure practices.
+Although HTTPS and sub-level documents are used by a small portion of sites to enhance the security of external JavaScript  le inclusion, we believe that the majority of measured JavaScript  le inclusion sites and hosting sites have not paid su cient attention to the potential risks of insecure JavaScript inclusion.
+For JavaScript  le inclusion sites, we suggest them (1) avoid external JavaScript inclusion by using internal JavaScript  les from the same sites, if at all possible; (2) restrict the permission of external included scripts by placing them within a sub-level HTML frame or iframe document whose origin is di erent from that of the top-level document, if external inclusion is really inevitable; and (3) retrieve external JavaScript  les using HTTPS connections, if the HTTPS service is available.
+The third suggestion needs a hosting site to provide the HTTPS service for accessing its JavaScript  les, but the  rst two suggestions can be easily adopted by JavaScript  le inclusion sites.
+Since 74.9% of measured sites (5,098 out of 6,805) contain DJS scripts on their homepages, we now characterize all the DJS scripts based on their generation techniques and analyze insecure practices.
+Table 3 lists the overall DJS presence by category and TLD for the four di erent DJS generation techniques.
+We can see that the eval() function and the document.write() method are widely used on 44.4% and 64.6% of webpages, respectively.
+In contrast, the innerHTML property and the DOM methods (i.e., replacing, inserting or appending a new created script element) are only used on 13.7% and 11.7% of webpages, respectively.
+It is also interesting to notice that the categories with the highest DJS presence values are news and sports for all the four generation techniques.
+The TLDs with the highest DJS presence values are .com, .net, and country code domains.
+These results indicate that JavaScript dynamic generation is more likely to be used on those sites that have more dynamic contents.
+We now examine the generated DJS instances on each webpage.
+A DJS instance is identi ed in di erent ways for di erent generation techniques.
+For the eval() function, the
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ d e t a r e n e g   a v e l h t i w s e g a p f o n o i t c a r
+
+
+
+ d e t a r e n e g  
+
+
+
+ r e n n i h t i w s e g a p f o n o i t c a r
+ innerHTML-generated
+
+
+
+
+
+ eval-generated
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Table 3: DJS Presence by Category and Top-Level Domain.
+Category/
+ arts business computers games health home news recreation reference regional science shopping society sports world com org gov net edu cc other All write-generated
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ generated
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ whole evaluated string content is regarded as a DJS instance.
+Within the written content of the document.write() method and the value of the innerHTML property, a DJS instance can be identi ed from three sources: (1) between a pair of <script> and </script> tags; (2) in an event handler speci ed as the value of an HTML attribute such as onclick or onmouseover; and (3) in a URL that uses the special javascript:protocol speci er [9].
+For the DOM methods, each new script element is identi ed as a DJS instance.
+Table 4 gives a summary of DJS instances for both the document loading and parsing phase, denoted as the pre-onload phase, and the event-driven phase, denoted as the post-onload phase.
+The two numbers in each table cell represent the data for the pre-onload and post-onload phases, respectively.
+The data in the second row of the table gives the total number of DJS instances identi ed in the two execution phases for the four di erent techniques.
+The data in the third row of the table gives the total number of webpages on which those DJS instances are identi ed.
+The IPP in the last three rows of the table stands for the  Instance Per Page .
+Table 4: onload/Post-onload Phases.
+Summary eval-DJS Instance Summary for Pre-total number of DJS instances total number of pages mean value of IPP maximum value of IPP standard deviation of IPP write-generated generated
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ innerHTML-
+generated generated
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ It is evident that the eval() function generates the largest number of DJS instances in both phases (194,676 in the pre-onload phase and 22,632 in the post-onload phase).
+The mean value of IPP for eval-generated DJS instances is 65.2
+
+
+
+ d e t a r e n e g   e t i r w h t i w s e g a p f o n o i t c a r
+
+
+
+
+ pre onload post onload pre onload post onload
+
+
+
+
+
+ IPP for eval generated DJS instances
+
+
+
+
+
+
+
+
+
+
+
+
+ IPP for write generated DJS instances (a) (b)
+
+
+
+ d e t a r e n e g  
+
+
+ h t i w s e g a p f o n o i t c a r
+
+
+
+
+ pre onload post onload pre onload post onload
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ IPP for innerHTML generated DJS instances (c) IPP for DOM generated DJS instances (d) Figure 5: Cumulative distribution of the webpages in terms of IPP (Instance Per Page) for (a) eval-generated, (b) write-generated, (c) innerHTML-generated, and (d) DOM-generated DJS instances.
+in the pre-onload phase and 62.3 in the post-onload phase.
+The maximum value of IPP for eval-generated DJS instances reaches 2,543 in the pre-onload phase and 6,350 in the post-onload phase.
+These numbers indicate that eval() may be misused or abused.
+The document.write() method also generates a large number of DJS instances in the pre-onload phase, but it only generates 519 DJS instances on 63 pages in the post-onload phase.
+Calling document.write() in post-onload phase is usually not desirable because it will overwrite the current document with the written content.
+In both phases, the innerHTML property also generates a large number of DJS instances, while DOM methods generate much fewer DJS instances.
+For the four JavaScript dynamic generation techniques, Figures 5(a) to 5(d) further illustrate the cumulative distribution of the webpages in terms of IPP.
+In each of these four  gures, the  o  curve is for the pre-onload phase and the   curve is for the post-onload phase.
+Note that the total number of pages is di erent for the two phases (as shown in the third row of Table 4), and we present the two curves together for ease of comparison.
+We can see that the indication of misuse or abuse is especially evident for the eval() function.
+While the majority (about 60%) of webpages have 10 or less eval-generated DJS instances, nearly 17% and 11% of webpages have 100 or more eval-generated DJS instances for the pre-onload phase and the post-onload phase, respectively.
+The prevalence of DJS on various categories of webpages and the high IPP values motivate us to further understand the use purposes of the large number of DJS instances.
+Using our JavaScript code classi cation tools, we now uncover the use purposes of eval-generated DJS instances in terms of programming language functionality.
+From the total 217,308 (both the pre-onload phase and the post-onload phase) eval-generated DJS instances, 217,308 e e r t
+
+
+ f o n o i t c a r
+
+
+
+
+
+
+
+
+
+
+
+
+ The DJS instances in these 14 categories all have speci c use purposes in terms of programming language functionality.
+Only 1.2% of the DJS instances have mixed programming language functionalities, and they are classi ed into the last category of mixed statements.
+The generated DJS instances in the last 15 categories are either various expressions (from simple expression to other expression) or various statements (from variable declarations to mixed statements).
+In general, a JavaScript expression is used only to produce a value, while a JavaScript statement normally has side e ects and is often used to accomplish some tasks.
+The Height of an Abstract Syntax Tree
+ Figure 6: Cumulative distribution of the AST trees in terms of the height of an AST tree.
+AST trees are extracted by our AST tree extraction tool.
+The maximum height of these AST trees is 19.
+Figure 6 shows the cumulative distribution of the AST trees in terms of the height of an AST tree.
+Nearly 90% of AST trees have a height less than or equal to 4.
+Therefore, we selected N = 4 as the input parameter (Figure 2) and used the top-four level structure of AST trees to create and match AST signatures.
+A total number of 647 AST signatures are created and matched from the 217,308 AST trees.
+These 647 AST signatures capture the essential structural information of the 217,308 AST trees, and they greatly facilitate our further analysis.
+Using more levels of AST tree structure is unnecessary because lower-level AST tree nodes only contain less important structural information.
+Finally, AST signatures with the same programming language functionality are merged into the same category by using our AST signature categorization tool.
+For example, two AST signatures representing two types of function calls with di erent number or type of parameters are merged into the same function calls category.
+Table 5 lists the  nal 17 categories of DJS instances classi ed from the 647 AST signatures, and in turn from the 217,308 DJS instances.
+Table 5: The 17 categories of eval-generated DJS instances.
+Category Number of parse error empty content simple expression
+ arithmetic expression
+ relational expression
+ logical expression
+ object/array literal
+ other expression
+ variable declarations function declarations
+ assignment statements 1289(42.6%)
+ function calls
+ method calls
+ object/array creations conditional statements
+
+ try-catch statements mixed statements
+ Presence Average in Pages DJS instances DJS length
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ We can see that 0.05% of the DJS instances have parse error when AST trees are extracted, and 0.13% of the DJS instances have empty content.
+The majority (around 98.6%) of the eval-generated DJS instances are classi ed into the 14 categories from simple expression to try-catch statements.
+To further understand whether using eval() is necessary in these di erent categories, we randomly sampled and inspected both the content and the calling context of 700 DJS instances.
+We sampled 200 DJS instances from the simple expression category and 200 DJS instances from the assignment statements category.
+These two categories have the largest numbers of DJS instances, accounting for 61.8% and
+ The remaining 300 DJS instances are sampled from the other 15 categories, with each of them contributing 20 instances.
+In at least 70% of the sampled cases, the eval() function is misused or abused while safe alternatives can be easily iden-ti ed.
+Here we illustrate three representative sampled cases.
+The  rst one is: this.homePos = eval( 0  + this.dirType + this.dim), in which a string simple expression  0-500  is generated.
+Indeed, such a kind of string concatenation directly generates a string value, and using eval() is redundant.
+The second one is: var   nav=eval( nav  +tt[i][1]), in which a variable name  nav 20912  is dynamically accessed.
+A safe alternative is using the JavaScript window object to directly access the variable: var   nav=window[ nav  +tt[i][1]].
+The third one is: var responses = eval(o.responseText), in which the response content of an XMLHttpRequest [50] is directly evaluated.
+This practice is used in many of our sampled cases to convert a responseText into a JSON object.
+However, since malicious JavaScript code could be injected into the responseText, it would be better to use a JSON parser rather than the eval() function to perform such a transformation [42].
+The other 30% of the sampled cases usually have complex calling context, so we do not further identify their safe alternatives.
+We suggest that eval() should be avoided if at all possible.
+In addition to the safe alternatives exempli ed above, DOM methods can be generally used to generate and execute various JavaScript statements.
+As mentioned before, the DJS instances generated by the document.write method() and the innerHTML property are identi ed from three di erent sources.
+We use jscode to present a DJS instance identi ed between a pair of <script> and </script> tags, use eventhandler to represent a DJS instance identi ed in an event handler, and use jsprotocol to represent a DJS instance identi ed in a javascript:protocol URL.
+The DJS instances generated by the DOM methods are speci ed in either the src attribute or the text attribute of a script element.
+Table 6 gives the structural analysis results of the DJS instances generated by these three dynamic generation techniques.
+The main usage of each type of DJS instance is summarized in the last column of the Table 6.
+ated by the document.write() method, innerHTML property, and DOM methods.
+Technique and Type Presence Number of Avg.
+Main usage in Pages DJS instances length jscode write eventhandler jsprotocol jscode innerHTML eventhandler
+ jsprotocol src text
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ function call
+
+ function call
+ function call
+ function call
+ -JS inclusion 623 assignment
+ ument.write() and innerHTML For the eventhandler and jsprotocol DJS instances generated by document.write() and innerHTML, their usages are relatively safe.
+When new content is added to a document, event handlers are directly speci ed on various elements of the newly-added content to respond to various events.
+The javascript:protocol scripts are often used on links to execute some statements without loading a new document.
+What we emphasize is that generating jscode using doc-ument.write() and innerHTML is not desirable.
+For docu-ment.write(), the generated jscode is immediately executed.
+Multiple document.write() calls can be used to construct a jscode, and document.write() calls can be nested.
+All these factors make the  ltering of write-generated malicious JavaScript code a very challenging task [32].
+However, our results show that 26,125 instances of write-generated jscode are identi ed on a large number of 4,000 homepages.
+For in-nerHTML, the generated jscode is recognized by a browser, but it is not necessarily executed.
+For example, Firefox does not directly execute a jscode generated by innerHMTL.
+In Internet Explorer, the defer attribute and some tricks need to be used to execute an innerHTML-generated jscode, but this practice is also not recommended due to potential script-injection attacks [44].
+Fortunately, only 503 instances of this practice are identi ed on 120 pages as shown in Table 6.
+The best practice is to use DOM methods to dynamically generate JavaScript code.
+Using DOM methods (such as cre-ateElement() and createTextNode()) to create JavaScript elements explicitly declares that the new elements are scripts.
+This practice can enable potential Web content protection mechanisms such as those presented in [13, 25, 32] to accurately de ne security policies and weed out potential malicious JavaScript code.
+Unfortunately, only 1,927(1,866 plus 61) instances of this practice are identi ed.
+Our results show that the main usage of jscode generated by document.write() and innerHTML is for including other JavaScript  les (denoted as JS inclusion in Table 6).
+Indeed, by specifying the src attribute of a script element, DOM methods  t well for such a usage.
+By specifying the text attribute of a script element, DOM methods can also be used to generate and execute various statements such as assignment statements or function calls, thus safely replacing the relatively insecure practices of jscode generation via document.write() and innerHTML.
+Our measurement results show that event handler registrations occurred on 6,451(94.9%) pages in the pre-onload phase, with an average of 108.2 registrations per page and a maximum of 5,074 registrations per page.
+Event handler registration occurred on 1,767(26.0%) pages in the post-onload phase, with an average of 61.4 registrations per page and a maximum of 2,229 registrations per page.
+These results include majority event types (e.g., event attributes of HTML tags, timer events, and XMLHttpRequest events) and event registration techniques supported in Firefox.
+The execution of event handlers may trigger further JavaScript inclusion and dynamic generation, implying that our captured insecure JavaScript practices are likely conservative estimates.
+To the best of our knowledge, there is no directly related work on characterizing the insecure practices of JavaScript inclusion and dynamic generation.
+Therefore, we only brie y review some JavaScript related measurement studies.
+Krish-namurthy and Wills [16] measured the homepages of 1,158 unique sites selected from Alexa.com [36] to study the content delivery tradeo s in Web access.
+The focus of their study is on the performance impact of extraneous content, and their results show that JavaScript is often used on popular webpages to retrieve extraneous content such as images and advertisements.
+In the investigation of malware, several execution-based measurement studies [20, 24, 28] have been conducted to identify malicious webpages that contain code (in many cases, JavaScript code) for exploiting Web browser vulnerabilities and installing malware.
+Instead of targeting at malicious sites, our focus in this work is on legitimate websites  insecure JavaScript practices.
+In this paper, we presented the  rst measurement study on insecure practices of using JavaScript on the Web.
+We focused on investigating the severity and nature of insecure JavaScript inclusion and dynamic generation.
+Through an instrumented Mozilla Firefox 2 Web browser, we visited the homepages of 6,805 popular websites in 15 di erent categories.
+We found that at least 66.4% of the measured websites have the insecure practices of including JavaScript  les from external domains into the top-level documents of their homepages.
+Our in-depth analysis on the domain name relationship between JavaScript  le inclusion sites and hosting sites further reveals the severity and nature of those insecure practices.
+Our measurement results on JavaScript dynamic generation show that the  evil  function eval() was called on 44.4% of the measured homepages, and the doc-ument.write() method and the innerHTML property were also used to generate JavaScript code.
+Our AST-based structural analysis on various DJS instances further uncovers their usages with respect to programming language functionality.
+Our analysis indicates that in common cases, safe alternatives do exist for both the insecure JavaScript inclusion and insecure JavaScript dynamic generation.
+Since Web-based attacks have become more common and damaging in recent years, we suggest website developers and administrators pay serious attention to these insecure JavaScript practices and use safe alternatives to avoid them.
+In the future, we will measure insecure JavaScript practices on more speci c types of websites and webpages.
+We will also investigate whether other insecure JavaScript practices exist on the Web.
+The authors thank anonymous reviewers for their valuable comments and suggestions.
+This work was partially supported by NSF grants CNS-0627339 and CNS-0627340.

@@ -1,0 +1,465 @@
+The World Wide Web has rapidly evolved from a network providing access to static webpages to a highly interactive experience.
+Web-based social networking services connect millions of people and have deeply changed the way we communicate with each other.
+Graphs are the natural data structure to represent social networks.
+The swift growth of social networking services fueled with further developments in the Web (e.g., Semantic Web) has led to a rising interest in graph databases and related query languages.
+Today, SPARQL [33], the W3C1 query language for RDF [27], is probably the most widely known query language for graph-structured data.
+SPARQL and many other graph query languages allow users to retrieve nodes based on conjunctive queries (CQs).
+A simple CQ for  nding persons who are friends with Adam and Eve could be expressed as x f riendof Adam ^ x f riendof Eve.
+An extension called regular path queries (CRPQs) allows querying for nodes that are connected by a path satisfying a regular expression rather than relying solely on static paths.
+CRPQs have been thoroughly studied and form the basis for many query languages [15, 13, 2, 20, 10, 26, 37] including SPARQL 1.1 [1].
+1http://www.w3.org/ Copyright is held by the International World Wide Web Conference Committee (IW3C2).
+IW3C2 reserves the right to provide a hyperlink to the author s site if the Material is used in electronic media.
+With CRPQs, however, it is not possible to query sets of nodes.
+For instance, Adam and Eve might not just want to  nd their common friends, but a group of common friends that are connected between them.
+Finding sets of nodes that satisfy certain characteristics is of general interest for graph-structured data, and particularly important for social networks.
+Let us consider a graph representing the skills and relationships of developers of open source projects.
+With CRPQ-based query languages it is, for instance, not possible to  nd socially coherent teams capable of conducting a certain project.
+While groups are a fundamental concept in social networks they are not well supported by current graph query languages.
+In this paper we propose an elegant and simple, but at the same time expressive, extension - conjunctive set regular path queries (CSRPQs), which extends CRPQs with the notion of sets of nodes.
+Using the example of SPARQL, we show how CSRPQs can be integrated into existing graph query languages.
+We show that data complexity of CSRPQ queries is in PTIME, and propose a novel algorithm for e -cient query evaluation, which leverages structure of the db-graph and the query itself for search space minimization.
+Experiments show that query evaluation is feasible even for real-world social networks of large scale.
+In the remainder of this paper, we  rst give a motivating scenario in Section 2 and discuss related work in Section 3.
+After recapturing CRPQs in Section 4, we present CSRPQs in Section 5, and demonstrate their expressivity in Section 6.
+Section 7 presents our algorithms for CSRPQ evaluation and reasons about its complexity.
+An evaluation based on real-world datasets is presented in Section 8.
+Section 9 concludes the paper and gives a future work outlook.
+The importance of social ties in software engineering is often emphasized in literature [29, 17].
+Conway s law suggests that  organizations which design systems [...] are constrained to produce designs which are copies of the communication structures of these organizations  [14].
+We can rephrase it as: organization s social network structure in u-ences its systems architecture.
+Also, Peopleware [32] claims the main reason for project failures to be the human factor, i.e., lack of communication or bad social environment, and not the technology factor.
+Taking into account these two postulates, a proper process of project team selection can be de ned as a selection of a subgraph, which exhibits certain structural characteristics, from social and organizational overlay networks.
+For example, when assembling a 761project team it is preferable to maximize social coherence within the team as well as to maintain good social connections with other project teams.
+In social network analysis a number of characteristics and patterns have been de ned to characterize social coherence of a group, such as geodesics, n-clique, n-clan, n-club, k-core, k-plex, and so on [36].
+Also, ef- cient coordination and integration of project teams requires selection of special actors with certain structural properties, such as closeness, degree, or betweenness centralities.
+Let us consider now a motivating scenario with a few examples.
+An organization wants to start a new open source software (OSS) project, consisting of a number of sub projects.
+For this purpose it uses a social network comprised of independent software engineering experts as well as its own employees.
+In the social network two software engineering experts are considered to be connected if they either worked on the same software engineering project in the past or they are connected in a social networking site.
+Now, let us consider few examples of queries the organization may want to issue in order to select project teams:
+ of a core component, it may be needed to select a project team that has good social connections to all the other teams, i.e. located in an intersection of their neighborhoods.
+Moreover, the project team can be either implicitly or explicitly connected.
+A team is implicitly connected if it forms a connected graph.
+Otherwise, if team members are connected via external nodes, the team is considered to be implicitly connected.
+Closeness to other teams improves inter-team communication, while explicit connectedness improves communication within the team itself.
+tion of a monolithic component (i.e., a component with a lot of interdependencies between its parts) one might want to select a clique (complete graph).
+This is necessary to maximize, again, communication within the team and ensure that everyone is aware of all the changes introduced by other team members.
+However, in practice cliques of required size and comprised of necessary experts can rarely be found.
+Therefore, one may want to relax the requirement by selecting a k-plex, where k-plex is de ned as a graph G where every vertex has a degree |G|   k.
+ware systems a valid practice to minimize probability of failures is to execute several mutually replaceable components in parallel.
+In order to mitigate failures introduced by a human factor (software defects), it is important that such mutually replaceable components are developed by teams isolated from each other.
+This is necessary to avoid propagation of erroneous approaches.
+being developed by project teams that have no direct social relations it may be helpful to search for a liaison/broker between two teams.
+Such a liaison would facilitate communication and increase chances for successful integration.
+pert, that recently left a project, it is necessary to  nd a structurally equivalent expert, i.e. an expert that has almost the same social neighborhood as the former expert with respect to dependent project teams.
+This would decrease on-boarding time and restore structural characteristics of the team.
+Also, if it is not possible to  nd such a replacement, we may want to  nd a group of people that is structurally equivalent.
+Figure 1 shows an exemplary snippet from a graph representing relations among developers of OSS.
+Developers are represented as nodes, and two of them are connected by an edge if they are socially connected.
+One possible solution to each of the  ve aforementioned queries is highlighted in the  gure.
+Figure 1: Simpli ed graph representing social relationship among open source software developers.
+Possible answers for OSS example queries are highlighted: 1) Closeness Centrality: yellow nodes, 2) Cluster: green nodes (and blue nodes in case of 1-plex), 3) Independent teams: green nodes for  rst team and blue nodes for second team, 4) Liaison: red node, 5) Structural equivalence: the two black nodes connected with bold edge can replace each other In the next section we discuss existing graph query languages and show their shortcomings with respect to the query examples enlisted above.
+In this section we discuss existing graph query languages and consider their capabilities of expressing the queries outlined in the previous section.
+A comprehensive overview of existing graph query languages can be found in [38] and [4].
+Functionality of canonical Conjunctive Regular Path Queries (CRPQs) has been employed in many graph query languages, such as G [15], GraphLog [13], Lorel [2], StruQL [20], UnQL [10], NAGA [26], Cypher [37], and SPARQL 1.1 [1].
+Query 1 in the motivating scenario de ned in CRPQs would search for a disconnected set of nodes satisfying the neighborhood condition, thus being incapable of  nding a tightly connected subgraph in a neighborhood.
+Queries expressed in CRPQ-based (and not only) languages typically return node tuples, and are not able to return groups of varying size.
+One exception here is NAGA, whose queries return graphs.
+Extended Conjunctive Regular Path Queries [5] can return paths along with nodes, which is somewhat similar to returning groups.
+Another interesting exception is SQL-based PQL [28] language, which can return nodes with their neighborhoods.
+Query 2 is  exible in the sense that it does specify neither exact number of nodes in a group to be found, nor its exact topology, but rather general characteristics.
+In literature there were a number of approaches employed for de nition of  exible  topologies in query languages.
+Even canonical CRPQs allow number of nodes to vary in paths.
+GraphQL [22] with repetition of graph mo-762tifs allows to de ne not only paths, but also, for example, cycles and trees being thus more expressive in this matter than regular path expressions.
+Approach studied in [19] relaxes constraints on topology of returned graphs in favor of performance.
+This approach is the most extreme with respect to allowed relaxations on topologies, and can lead to completely irrelevant results.
+Queries specifying  exible  topologies are quite the opposite approach to approximate graph matching [25, 21, 23], where queries de ne precise graph structure, and returned results may not match but rather be  close  to the query graph by means of edit operations (insert/delete/substitute).
+In the domain of social networks there are several dedicated graph query languages, such as SoQL [35], BiQL [16], SocialScope [3], SNQL [30], QGraph [7], as well as extensions of SPARQL for social network analysis [18].
+SoSQL is the only one of them that can specify  exible selection of groups of nodes with SELECT FROM GROUP queries.
+Its expressivity, however, is limited with respect to graph patterns used in social network analysis, as it is not capable, for example, to select groups exhibiting characteristics of k-plex, n-clique, n-club, etc.
+Also, it does not have groups as  rst-class citizens, i.e., it is not possible to specify paths or connections between two or more groups.
+For instance, in Query
+ of actors, as in Query 4 and Query 5, is also not supported.
+Finally, SoSQL provides no algorithm for query evaluation, which seems to be a complex computational problem.
+BiQL [16] suggests integration of external tools for  nd-ing graphs with certain characteristics, e.g., quasi-cliques or clusters.
+Its distinguishing feature is uni cation of nodes and edges, which makes it possible, though with integration of external tools and algorithms, to  nd clusters of edges and not only clusters of nodes.
+Integration of external tools for querying certain graph patterns, however, reduces  exi-bility of a query language with respect to de nition of possible graph patterns.
+SocialScope [3] de nes an algebraic language with node and link selection operators, union, dis-junction, subtraction and composition of graphs, as well as set and numerical aggregations.
+Node and link selection can utilize an optional scoring function.
+SNQL [30] is a query language of similar functionality, as it has been claimed to cover SocialScope [34].
+SNQL is intended for data management in social networks.
+It extends GraphLog with Skolem functions to create new nodes as part of the output.
+Both languages do not allow  exible selection of groups and actors exempli ed in the motivating scenario.
+Extension of SPARQL [18] for social network analysis can examine global metrics of a graph, such as density and diameter.
+However, it is not capable to search for groups exhibiting speci c metrics.
+QGraph [7] is a visual query language employed in a tool called Proximity [24], which is used for data mining in social networks.
+QGraph queries graph patterns can have numeric annotations, e.g.,  Find all directors that had at least 2 movies each of them winning at least 3 awards .
+Such annotations resemble basic quantitative conditions needed for k-plex, e.g., each node has at least N neighbors in the group.
+However, QGraph does not have notion of groups to succeed in such selection.
+Many e cient algorithms (e.g., [9, 12]) were proposed for selection of social formations exhibiting certain structural characteristics (e.g., regular equivalence, n-clique, k-plex, n-club), and implemented in such popular social network analysis tools as Pajek [6] and Ucinet [8].
+Being capable of handling some examples in the motivating scenario, these algorithms, however, are limited to speci c problems they address and are not as  exible and expressive as a query language might be.
+While o ering far greater expressivity, a query language requires a complete and generalized query interpretation algorithm capable of solving mixed and combined problems.
+The overview of related work shows that no existing language is able to fully cope with the queries enumerated in Section 2.
+In the next section we provide de nition of CR-PQs, and then, in Section 5, we present our extension.
+A database is de ned as a directed graph K   pV, Eq labeled over the  nite alphabet  .
+If there is a path between node a and node b labeled with p1, p2, ..., pn we write   b.
+In the remainder of this section we give de ni-a p1p2...pn tions of (conjunctive) regular path queries, similar to other works, like [11].
+De nition 1 (Regular Path Queries).
+A regular path query (RPQ) QR   R is de ned by a regular expression R over  .
+The answer anspQR, Kq is the set connected by a path that conforms to the regular language LpRq de ned by R: anspQR, Kq   tpa, bq P V   V | a p  b for p P LpRqu.
+Conjunctive regular path queries allow to create queries consisting of a conjunction of RPQs, augmented with variables.
+De nition 2 (Conjunctive Regular Path Queries).
+A conjunctive regular path query (CRPQ) has the form QCpx1, ..., xnq   y1R1y2 ^ ... ^ y2m 1Rmy2m, where x1, .
+.
+.
+, xn, y1, .
+.
+.
+, ym are node variables.
+The variables xi are a subset of yi (i.e., tx1, .
+.
+.
+, xnu   ty1, .
+.
+.
+, ymu), and they are called distinguished variables.
+The answer anspQC , Kq for a CRPQ is the set of tuples pv1, ..., vnq of nodes in K such that there is a total mapping   to nodes, with  pxiq   vi for every distinguished variable, and p pyiq,  pyi`1qq P anspQR, Kq for every RPQ QR de ned by the term yiRiyi`1.
+In this section we describe how CRPQs can be extended to overcome their shortcoming for  nding sets of nodes.
+Our extensions allow to express all queries presented in the motivating scenario.
+The proposed extensions can be used to augment any graph query language that employs CRPQs, like SPARQL.
+Before we introduce set regular path queries (SRPQs), which extend RPQs, we introduce a set of generalized quan-ti ers.
+SRPQs allow to make statements about which fraction of a set is a ected by a path query.
+For giving SRPQs the expressiveness necessary to handle sets we allow quan-ti ers beyond the standard quanti ers @ and D, similar as proposed in [31].
+All extended quanti ers refer to a certain set.
+In the following we de ne the quanti ers we use by showing the mapping they signify with relation to some arbitrary set M .
+edge base for some simple queries.
+Nodes represent persons and edges represent the friendship relation.
+Since we assume that this is a symmetric relation, arrows have been omitted.
+  Universal quanti cation @M   tMu   Existential quanti cation DM   tA   M : A   Hu   Counting quanti cation: DMpdnq   tA   M : |A| d nu, where d P t , , , , u and n P N   Fractional quanti cation: DMpdpq   tA   M : |A| d p|M|u, where d P t , u and p P r0, 1s We use capital Greek letters   and   as placeholders for one of the above de ned quanti ers.
+SRPQs are similar to RPQs, but extend them with the notion of sets.
+They come in di erent  avors since we distinguish between paths from a single node to a set of nodes, paths from a set to a single node, and paths from a set of node to another set of nodes.
+Like RPQs, all SRPQs are de ned by a regular expression R over  .
+De nition 3 (SRPQ: Node   Set).
+A set regular path query Q    R describes a relation between a single node and a set, based on a regular expression R together with a quan-ti er  .
+The quanti er de nes to how many nodes from the set the single node must be connected by a path conforming to the regular language LpRq.
+The respective answer set anspQ , Kq is de ned as tpa, Bq P V   2V : a p  b for b P  B , p P LpRqu.
+Example.
+The following example queries refer to graph K, as de ned in Figure 2.
+SRPQ Q @   f riendof requires that a node is connected to all nodes within a set.
+Thus, a partial answer set is tpn1,tn2uq,pn2,tn1, n3, n4, n5uqu   anspQ @, Kq.
+The query Q D 3   f riendof f riendof ?
+requires that the node is connected to less than three nodes within the set.
+Nodes are connected when there is a  friendof  path of length one or two.
+A partial answer set of this query is tpn1,tn2, n5, n6, n8uq,pn2,tn1, n8uqu   anspQ D 3, Kq.
+De nition 4 (SRPQ: Set   Node).
+A set regular path query Q    R describes a relation between a set and a single node, based on a regular expression R together with an quanti er  .
+The quanti er de nes how many nodes within the set must be connected to the single node by a path conforming to the regular language LpRq.
+The respective answer set anspQ , Kq is de ned as tpA, bq P 2V   V : a p  b for a P  A, p P LpRqu.
+Example.
+The following example queries refer to graph K, as de ned in Figure 2.
+Query QD    f riendof f riendof de nes that there must be at least one node in the set that is connected to the single node by a  friendof  path of length two.
+A partial answer set is tptn1, n2u, n5q,ptn4u, n1qu   anspQD , Kq.
+The second example query de ned as QD 50%    f riendof requires that more than half of the nodes within the set are directly connected to the single node.
+A partial answer would be the set tptn1, n4, n7u, n2q,ptn1u, n2qu   anspQD 50% , Kq.
+De nition 5 (SRPQ: Set   Set).
+A set regular path query Q    R describes a relation between two sets, based on a regular expression R together with two quanti ers   and  .
+The quanti ers de ne how many nodes from within the  left  set must be connected to how many nodes from the  right  set by a path conforming to the regular language LpRq.
+The respective answer set anspQ , Kq is de ned as tpA, Bq P 2V   2V : a p  b, a P  A, b P  B, p P LpRqu Example.
+As before, the following example queries refer to graph K, as de ned in Figure 2.
+Query Q@@   f riendof requires that all nodes within the  rst set are friends with all nodes in the second set, for which a partial query answer is tptn5, n6u, tn7, n8uq,ptn1u,tn2uqu   anspQ@@, Kq.
+Query QD,D 2   f riendof f riendof ?
+determines that there must be at least one element in the  rst set that is connected to more than two elements in the second set by a path of length one or two.
+Thus, a partial query answer would be the set tptn1, n5u,tn6, n7, n8uqu   anspQD,D 2, Kq.
+Through introduction of set variables SRPQs extend RPQs in a similar way as Monadic Second-Order Logic (MSOL) extends First-Order Logic (FO).
+Along with set variables MSOL introduces an atomic formula t P S, where t is a  rst-order term and S is a set variable.
+Next, we show how this atomic formula can be expressed in SRPQs.
+Empty string K is a valid regular expression.
+However, it is never used in RPQs, as K path does not convey any functional K  B means that node load.
+In SRPQs it does: the query a K  B de nes the subset relation.
+a is an element of B, and A In RPQs paths between nodes are speci ed over the input graph G. Speci cation of more advanced structural properties, like explicitly connected groups, requires greater  ex-ibility on this matter.
+Therefore, we de ne the following query type.
+De nition 6 (SRPQ Closure).
+For the above de ned query  avors Q  and Q  the closures  Q  and  Q  further restrict the answer set by requiring that paths connecting A and B{b stay within A, i.e., ansp  Q  , Kq   tpA, bq P 2V   V : a p  b for a P  A, p P LpRq and p1...pi  c   c P A, for p   p1 .
+.
+.
+pnu @i P t1, .
+.
+.
+, n   1u a and ansp  Q , Kq   tpA, Bq P 2V   2V : a p  b for a P  A, b P  B, p P LpRq and p1...pi  c   c P A, for p   p1 .
+.
+.
+pnu.
+@i P t1, .
+.
+.
+, n   1u a Example.
+The following example queries again refer to graph K, as de ned in Figure 2.
+Query  QD    f riendof f riendof de nes that there must be at least one node in the set that is connected to the single node by a  friendof  path of length two.
+A partial answer set is tptn1, n2u, n5qu   ansp  QD , Kq, but ptn1u, n5q R ansp  QD , Kq.
+n1n2n3n4n5n6n7n8764De nition 7 (Set Size Query).
+A set size query Q| |   pf rom, toq describes an unary relation.
+The variables f rom, to P N, with f rom   to, de ne minimum and maximum allowed set sizes.
+The respective answer set is de ned as the sets of subsets of sizes from f rom to to.
+anspQ | | , Kq   tA P 2V : |A| P tf rom, .
+.
+.
+, touu Example.
+The following example queries refer to graph K, as de ned in Figure 2.
+Query Q| |   t2, 3u requires that all sets have size 2 or 3.
+A partial query answer is ttn1, n2u, tn1, n3u,tn1, n2, n3uu   anspQ| |, Kq.
+De nition 8 (Conjunctive Regular Set Path Query).
+A conjunctive regular set path query (CSRPQ) has the form QSpx1, ..., xnq    y1rpR1q 1
+
+
+ ^ Z1rf1, t1s ^ ... ^ Zlrfl, tls
+ 2 sy2m where x1, .
+.
+.
+, xn, y1, .
+.
+.
+, ym are either node or set variables.
+Z   tZ1, ..., Zlu represents all set variables among yi, i.e., there is no set variable yk such that yk R Zi.
+The variables xi are among yi.
+The   symbol may be either empty or  ; the latter case is only possible if yi is a set and de nes a SRPQ closure.
+Each of the   is either a quanti er, or  .
+Each Ri is a regular expression.
+The answer set anspQS, Kq for a CSRPQ is the set of tuples pv1, ..., vnq of nodes and sets of nodes in K such that there is a total mapping   to nodes and sets of nodes with  pxiq   di for every distinguished variable, and p pyiq,  pyi`1q in the set of the answer set of the respective query type; i.e., if y2i 1 and y2i represent both nodes, then y2i 1Riy2i represents QR.
+If y2i 1 is node and y2i is set, then Q .
+If y2i 1 is set and y2i is node, then Q .
+If y2i 1 is set and y2i is set, then Q .
+And  nally, Zirfi, tis denotes set size queries.
+In this section we demonstrate the expressiveness of CSR-PQs via formal speci cation of the use cases from the motivating scenario.
+For this purpose we use the formal notation de ned in the previous section.
+Also, we exemplify ease of CSRPQs integration into CRPQ-based languages by showing how the same queries could be implemented in CSRPQ-enhanced version of SPARQL 1.1.
+Goal.
+Given the three prede ned organizational groups Team1, Team2, and Team3, we need to assemble an explicitly connected team of three to  ve members with a maximum diameter of two.
+The team should have a connection to every group.
+Formal speci cation.
+In knowledge graphs organizational groups are usually represented as single nodes, e.g., Sales Department or Human Resources Department, and a liation of a person to a group is represented as a connection between the corresponding nodes.
+We use the same approach and assume there are three prede ned nodes: Team1, Team2, and Team3.
+A liation of a person to a team is represented with the inteam edge, and social connection is represented with the knows edge in the semantic graph.
+Question mark applied to an atom, e.g., knows?, in regular expression speci es that the edge is optional.
+QSpAq   A rpknows   inteamqDsteam1 ^ A rpknows   inteamqDsteam2 ^ A rpknows   inteamqDsteam3 ^  A rpknows   knows?q@@sA ^ Ar3, 5s SPARQL.
+In the formal notation we used capital letters to de ne variables representing groups.
+In SPARQL we use two question marks (??)
+for this purpose in analogy with single question marks (?)
+that precede node variables.
+ALL and SOME keywords are used to denote universal and existential quanti cation respectively, and CLOSURE keyword denotes a query closure.
+To conform to SPARQL semantics we put group size operator in the FILTER clause.
+SOME ?
+?A knows/inteam  Team1 .
+SOME ?
+?A knows/inteam  Team2 .
+SOME ?
+?A knows/inteam  Team3 .
+ALL CLOSURE(?
+?A) knows{1,2} ALL ?
+?A .
+Expressiveness.
+This example shows how explicitly connected teams can be de ned with CSRPQs.
+Note, that implicitly connected teams can be de ned by removing the query closure.
+Goal.
+Find a socially coherent group of people of size 10, which exhibits property of 2-plex.
+Formal speci cation.
+In contrast to the previous example, for the sake of simplicity we omit speci cation of neighborhoods.
+According to the de nition of 2-plex, we need to  nd a team, where every team member has at least 8   10   2 connections to other team members.
+SPARQL.
+In this query parameterized version of SOME keyword denotes F OpCOU N Tq quanti cation.
+This goes in line with previous example, where SOME keyword without parameters denotes existential quanti cation.
+QSpAq   A rpf riendofq@,D 8sA ^ Ar10, 10s
+
+ ALL ?
+?A knows SOME(>=8) ?
+?A.
+Expressiveness.
+This example shows succinctness of CSRPQs with respect to de nition of structures with relaxed coherence.
+Goal.
+Find two independent teams of experts, i.e., no inter-team social connections exist.
+Formal speci cation.
+Here we specify neither any search space, nor structural constraints for the teams A and B.
+The interesting peculiarity is that negation expressed in the query goal (i.e., no inter-team social connections exist) can be expressed with countable quanti ers.
+extensions to SPARQL and simply reuses keywords already de ned in the previous examples.
+QSpAq   A rpknowsq@,D 0sB ^ B rpknowsq@,D 0sA ^ Ar3, 5s ^ Br3, 5s
+
+ ALL ?
+?A knows SOME(=0) ?
+?B ALL ?
+?B knows SOME(=0) ?
+?A
+ } Expressiveness.
+This example shows expressivity of CSR-PQs with respect to de nition of multiple groups.
+Also, it shows how nonexistence can be expressed with extended quanti ers.
+Goal.
+Find a liaison between Operational Department and a team of three external consultants C in order to foster adoption of new practices.
+The liaison should know at least two out of the three consultants, and at least 70% of Operational Department members.
+Formal speci cation.
+In this example, in contrast to the previous ones, it is necessary to  nd an actor, not a group.
+The group T used in the example should represent the whole department.
+Therefore, in order to avoid selection of subgroups we  x size of T to the known size of Operational Department, which is retrieved as an additional query expressed in canonical CRP Qagg (CRPQs extended with aggregation).
+SPARQL.
+This example shows that notion of groups also allows speci cation of prede ned constant groups, i.e., group of four consultants.
+For this purpose we use syntax reminiscent to many mainstream programming languages.
+In order to retrieve size of Operational Department we use a nested SPARQL query.
+C :  tjill, jade, jacku Qcountptq   t rpinteamqsoptdept QSpaq
+ ^ T rpinteamq@soptdept ^ ^ a rpknowsq 2sC TrQcount, Qcounts a rpknowsq 0.7sT SELECT ?a
+ ?a knows SOME(>70%) ?
+?T.
+ALL ?
+?T inteam  OptDept .
+?a knows SOME(>2) { jill ,  jade ,  jack }.
+{ SELECT COUNT(?t) as ?c WHERE {?t inteam  OptDept } } FILTER ( ?
+?T{?c,?c} ) } Expressiveness.
+This example shows how CSRPQs can de ne selection of single nodes based on relations to groups.
+Goal.
+In order to replace a coordinator John we need to  nd a structurally equivalent person, i.e., a person that has the same social and organizational connections as John.
+Sometimes, however, it may not be possible to  nd a single person ful lling this requirement, and a group of persons may be needed.
+Formal speci cation.
+This example is somewhat similar to the previous one as we want to consider the whole neighborhood of a prede ned node, e.g., group (T) in both examples.
+Therefore, for the sake of clarity, we omitted the aggregation query as it can be, with a small adjustment, reused from the previous example.
+SPARQL.
+Again, to keep the de nition succinct, in SPARQL implementation we also omitted the nested aggregation query.
+QSpEQq   john rpworkswithq@sT ^ EQ rpworkswithq@sT ^ ^ TrQcount, Qcounts EQr1, 3s
+
+  john  workswith ALL ?
+?T.
+SOME ?
+?EQ workswith ALL ?
+?T.
+?
+?T{?count,?count})} Expressiveness.
+This query exempli es an opposite approach to the one employed in the previous example.
+In the previous example we allowed to neglect certain connections in favor of the size of the resulting group (single node), while in this example we relax the constraint on the resulting group size in order to preserve all connections.
+In this section we discuss complexity of CSPRQs evaluation, optimization techniques enabled by the design of CSR-PQs, and propose an algorithm for the purpose of query evaluation.
+Greater expressiveness always comes at a price, and CSRPQ extension is no exception here.
+The problem of SRPQ evaluation contains a variant of a subset selection problem, e.g.,  nd a subgraph connected to a node a, incurring thus high complexity.
+In the next two subsections we discuss upper bounds for the problem of CSRPQ evaluation.
+We  x query Q over a  nite alphabet  , and K to be the maximum of upper bounds for all the groups speci ed in the query.
+Now, to show data complexity of CSRPQs we consider the following decision problem:
+
+ A  labeled db-graph G of size N , a tuple of nodes v, and a tuple of groups V QUESTION: Does pv, V q belong to QpGq Since number of groups is  xed in the query, let us denote it as some constant C. Similarly, let us de ne c as a number of nodes in the query.
+In order to answer the problem we need to traverse N c`K C possible solutions.
+Since c, C, and K are all  xed, we can see that data complexity of CSRPQ evaluation is in PTIME.
+We turn now to query complexity, i.e., where a query Q is an input parameter, while  labeled graph G is  xed.
+QUESTION: Does pv, V q belong to QpGq A CSRPQ query Q over  , a tuple of nodes v, and a tuple of groups V
+ in Q, where l is number of groups.
+Let us also de ne c as number of nodes in the query graph.
+In order to answer the problem we need to traverse N c`k1`...`kl possible solutions.
+Given that N is  xed we can see that query complexity of CSRPQ evaluation is in EXPTIME.
+The key observation behind CSRPQ evaluation is the mandatory presence of constraints on the group size.
+A candidate for inclusion in a set should not only preserve structural characteristics of the set, but also enable other potential candidates to be added later in order to satisfy the set size constraints.
+This approach enables for e cient search space pruning techniques.
+For example, a node with degree 5 cannot be selected as a candidate for a clique of size 10.
+Without the loss of generality we can consider CSRPQs with any number of prede ned node/set constants and only one set variable speci ed.
+Such an CSRPQ technically can be represented as a composite  lter FpG, S, Kq that selects potential candidates from the search space S for inclusion in assembled so far set G with target set size upper bound K. Given queries Q  const, where the left operand is the single set variable and the right operand is a constant node c, and queries
+ self , where both operands are the single set variable itself, let us consider several examples of  lters FpG, S, Kq:   QD 5  const   R: FQpG, S, Kq :  fpsq   |G |   5 _ K   pPLpRq  c, where G    tg  P G|g  pPLpRq  cu.
+pPLpRq 
+ self   R. FQpG, S, Kq :  fpsq   @g P G : g pPLpRq  g ^ dpsq   K  |G|, where dpsq denotes an s^ s out degree of a node s.
+  Q@D m self   R. FQpG, S, Kq :  fpsq   @g P G : pPLpRq  sq ^ dGpsq   pdGpgq   mintm,|G|   m ` 1u _ g mintm,|G| m`1u, where dGpsq denotes an out degree of a node s towards elements of a set G.
+self   R. FQpG, S, Kq :  fpsq   Dp P LpRq,|p|  
+ each u there exists a physical path corresponding to u that resides within G.
+Algorithm 1 sketches basic inductive routine for CSRPQ evaluation.
+Given a set G, we say that it does not violate CSRPQ Q, if it is possible to add nodes to G, such that all SRPQs in Q are satis ed including the set size query.
+The algorithm takes set G of size L, and tries to build a set G  of size L ` 1, G   G .
+The core of the algorithm,  lter function FQ represents conditions of CSRPQ Q violation.
+FQ returns a set of nodes from the search space, such that the set G , induced by adding any of them to G, does not violate Q.
+Then, the algorithm traverses through each of the nodes returned by FQ outputting all solutions.
+As a basis for CSRP QEV AL algorithm we took the algorithm proposed by Chiba and Nishizeki [12], which has been designed for search of complete subgraphs (cliques) of pre-de ned size k. They have shown that the algorithm has time complexity OpkapGqk 2mq, where G is an input graph, m is number of edges and apGq is arboricity of the graph.
+The arboricity of a graph is a measure of how dense the graph Algorithm 1: CSRPQ evaluation CSRP QEV AL Input: Search space S,group size K; program stack G, list of already processed nodes P ;
+ Result: List of graphs if K = 0 then output G */ end /* initialize the neighborhood function fNpsq   FQpS, G, Kq ; /* filter the neighborhood N   tsi P S{P|fNpsiqu; for neighbor P N do G    G Y tneighboru; CSRP QEV ALpS, K   1, G , P Y tneighboru, Qq; P   P Y tneighboru; */ end is: graphs with many edges have high arboricity, and graphs with high arboricity must have a dense subgraph.
+As it can be seen, performance of CSRP QEV AL heavily depends on the e cient reduction of the search space at each step.
+Therefore, given a query graph Q, graphs containing high number of subgraphs that satisfy Q, or are close to Q within small edit distance, result in longer execution times.
+CSRP QEV AL algorithm can be easily converted to a greedy algorithm.
+Indeed, instead of traversing in unde ned order all nodes in N , it can  rst choose the  ttest one in order to come up with a  rst solution faster.
+Randomization approaches are also possible to balance query evaluation time.
+Greedy and randomization approaches are crucial when it is enough to return only one result.
+Also, similarly to the subset selection problem, our problem exhibits natural data parallelism, making thus applicable parallel data processing techniques.
+So far we discussed only evaluation of queries de ning groups with structural constraints, i.e., constraints that specify relations within the group.
+Absence of such constraints may introduce high space complexity incurred by large result set.
+For example, a CSRPQ query specifying selection of a group F without any prede ned structure from a  nite search space S could yield |P |F|pSq| possible results, where |P |F|pSq| is a power set of S of cardinality |F|.
+The result set, however, can be represented as a single element describing a commutative monoid corresponding to the power set.
+This approach would discard time required to enumerate possible answers as well as minimize space needed for the output.
+Query evaluation performance is one of the key attributes of database query language success.
+In Section 7 we have shown that data complexity of CSRPQ evaluation is in PTIME.
+Since data complexity of CRPQ evaluation is in NLogspace and N LOGSP ACE   P T IM E it is hard to reason about actual query evaluation times.
+Therefore, we quantify the evaluation time of CSRPQ queries by conducting experiments.
+In the remainder of this section we compare the time of CSRPQ evaluation based on our approach (Algorithm 1)
+ CSRPQ evaluation time.
+Our evaluation is based on two real-world data sets from the social networks Slashdot2 and Friendster3.
+Both data set graphs consist of anonymous users represented as nodes and social relationships represented as edges.
+Friendster is a social gaming web site and Slashdot is a community-enabled news website.
+Table 8.1 depicts main structural characteristics of the two data set graphs.
+Due to the large size of the Friendster graph, which exceeded our evaluation computer s physical memory constraints, we extracted a subgraph consisting of around 11 million nodes out of the full graph, which contains almost 120 million nodes.
+#Nodes #Edges Avg Node Degree Node Degree Dev Max Node Degree Avg Clustering Clustering Dev Friendster
+
+
+
+
+
+
+ Slashdot
+
+
+
+
+
+
+ Table 1: Main characteristics The queries chosen for evaluation try to cover a large spectrum of CSRPQs by varying structural constraints (e.g., how tightly connected the group should be), the search space size (e.g., in what neighborhood the group should be searched for), and the size of the group de ned by the query.
+Query 1 represents a query with strict structural constraints (com plete subgraph), while Query 2 looks for less strictly de ned groups (k-plex).
+For each query the group size is provided as input parameter, while the search space size is varied by both input parameter rand and its neighborhood depth.
+Query 1 selects a complete graph A of size n in the neighborhood of input node rand.
+The neighborhood includes friends of the prede ned node, as well as friends of friends.
+Q1pAq   randrpf riendOf f riendOf ?q@sA ^ Arpf riendOfq@@sA ^ randrpf riendOfqDsA ^ Arn, ns Query 2 selects a 2-plex B from the neighborhood of input node rand.
+Here numeral n not only speci es group size, but also its structural characteristics.
+Q2pBq   randrpKqDsB ^ Brpf riendOfq@Dp n 2qsB ^ Brn, ns Strictness of structural constraints in uences the number of results: Query 1 above describes more rigid structural constraints than Query 2, e.g., there might be no cliques in a graph, but many 2-plexes.
+For the input parameter n, which de nes the group size, we choose values 5, 10, 15, and 20, as they seem to be reasonable for real life group selection tasks.
+For the input node rand we randomly chose evenly distributed non-isolated nodes, 200 nodes for Friendster and
+ All CSRPQ evaluation scenarios are implemented in Java 1.7.0 x64, and time values are measured using the standard API s System.nanotime() method.
+The system con gura-tion used for the tests is: Intel Core i7 2840QM (2GHz, Sandy Bridge), 8GB DDR3 1333MHz RAM, Windows 7 x64.
+Even though Algorithm 1 is inherently parallel, we execute all experiment runs in a single thread in order to show the real running time.
+The baseline algorithm is based on transforming CSRPQ to SPARQL queries and evaluating them using Apache Jena4.
+Only the pure SPARQL evaluation time is measured, without query transformation overhead.
+The transformation is necessary because SPARQL does not support queries for group patterns.
+However, it is possible to rewrite a  xed query expressing strict structural constraints (complete graph) as a conjunction of terms, i.e., as a series of CRPQs.
+Relaxation of structural constraints (k-plex) can be expressed as a disjunction of CRPQs, where each single term represents a possible group pattern.
+This can be seen as a demonstration of the problem CSRPQ tries to solve, because with growing complexity and size of the queried groups, length and complexity of the SPARQL query increases exponentially.
+This is the reason the group size in baseline evaluation was set to 5 only, as bigger group sizes resulted in immersive queries impossible to be handled by the SPARQL evaluation engine.
+The code we use for evaluation along with baseline query examples is publicly available5, and can be compiled and executed to verify the published results.
+Algorithm 1 is compared to the baseline algorithm by executing Query 1 and Query 2 for di erent input nodes and data sets.
+Each single dot in Figure 3 represents the execution on particular query instance, i.e., with  xed input node.
+The horizontal axis re ects the size of the search space that is relevant for executing the de ned queries, i.e., accumulation of node degrees of input nodes  direct neighbors.
+Query evaluation times for our approach are shown as red triangles, valid query evaluations for the baseline are depicted as blue diamonds, and green   stand for instances, for which the baseline failed to deliver the result within 30 minutes.
+In such timeout cases we discontinued query evaluation.
+Figure 3 demonstrates that our approach outperforms the baseline in orders of magnitude.
+There are many timeouts for the baseline algorithm; in contrast, our algorithm is always able to return the query result without timeout violations.
+Thus, CSRPQ extension proves to be not only more expressive, but obviously also enables e cient search space pruning and traversal that marks already visited nodes, as discussed in the previous section.
+In this section we illustrate how varying groups sizes in u-ence the evaluation time of Algorithm 1, together with information about the corresponding sizes of result sets.
+In particular, Figure 4 depicts dependencies between the queried group size and resulting average query evaluation times ((a) for Query 1 and (c) for Query 2), and between the group size and average number of results ((b) for Query 1 and (d) for Query 2).
+3http://archive.org/details/friendster-dataset-201107 4http://jena.apache.org/ 5http://www.infosys.tuwien.ac.at/prototypes/csrpq
+ (b) Friendster Query 2 (a) Average Query 1.
+runtime for (b) Average number of results for Query 1.
+(c) Slashdot Query 1 (d) Slashdot Query 2 Figure 3: Performance of CSRPQ evaluation algorithm versus CRPQ SPARQL-based implementation.
+Each dot denotes a single query evaluation.
+  and   symbols stand for regular and timed-out CRPQ baseline evaluations respectively,   symbols denote CSRPQ-based evaluations.
+The evaluation results show that the group size exponentially in uences query evaluation time only up to some limit.
+We can see that group sizes greater than 10 do not result in substantial increase of evaluation time.
+As per design of our CSRPQ evaluation algorithm, further increasing of the group size will eventually lead to zero evaluation time as it will not be possible to  nd a single node with high enough degree, so that query evaluation can be stopped immediately with empty result set.
+As for the amount of results, we notice that a big number of results guarantees high query evaluation time.
+But vice versa does not hold, i.e., absence of results does not guarantee fast evaluation.
+This con rms our observation that the key aspect of query evaluation time is the similarity of the underlying search space graph structure to the query graph structure.
+A big number of subgraphs structurally similar to the query graph, i.e., with small edit distances, would result in increased evaluation times.
+Overall, the evaluation results prove the feasibility of Algorithm 1 for solving CSRPQs, even for large, real world data sets.
+It is much more e cient compared to solving a corresponding SPARQL query with a state of the art evaluation engine.
+Evaluation times of our algorithm depends on the query and the dataset, and how e ectively pruning can be applied.
+Being able to query groups based on structural properties and relations to other entities is an important asset for languages working on graph-structured data.
+However, to the best of our knowledge, there is no query language backed by an evaluation engine able to express such queries.
+We present CSRPQs, which extend CRPQs with such group selection capabilities.
+Being more expressive, CSRPQs also enable e cient evaluation techniques, outperforming thus (c) Average Query 2.
+runtime for (d) Average number of results for Query 2.
+Figure 4: In uences of queried group size and size of result set on the evaluation time.
+CRPQ-based implementations.
+Experiments show that our CSRPQ-based implementation is capable of  nding groups in orders of magnitude faster than the state-of-the-art CRPQ-based SPARQL query evaluation engine.
+As discussed in Section 3, there exist many algorithms for selecting social formations exhibiting speci c structural characteristics (e.g., clique, k-plex).
+Being more restrictive, these special-purpose algorithms might be more e -cient than the general-purpose query evaluation algorithm at hand.
+By operating with the notion of a set, however, CSRPQs enable the evaluation algorithm to recognize special cases and fall back to the special-purpose algorithms, which is to be considered in the future work.
+Also, application of approximation approaches to CSRPQs is an interesting topic to investigate.

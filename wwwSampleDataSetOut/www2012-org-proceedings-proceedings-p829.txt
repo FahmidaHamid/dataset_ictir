@@ -1,0 +1,1373 @@
+OPAL: Automated Form Understanding for the Deep Web∗
+
+Tim Furche, Georg Gottlob, Giovanni Grasso, Xiaonan Guo, Giorgio Orsi, Christian Schallhart
+
+Department of Computer Science, Oxford University, Wolfson Building, Parks Road, Oxford OX1 3QD
+
+ﬁrstname.lastname@cs.ox.ac.uk
+
+ABSTRACT
+Forms are our gates to the web. They enable us to access the deep
+content of web sites. Automatic form understanding unlocks this
+content for applications ranging from crawlers to meta-search en-
+gines and is essential for improving usability and accessibility of
+the web. Form understanding has received surprisingly little at-
+tention other than as component in speciﬁc applications such as
+crawlers. No comprehensive approach to form understanding exists
+and previous works disagree even in the deﬁnition of the problem.
+In this paper, we present OPAL, the ﬁrst comprehensive approach
+to form understanding. We identify form labeling and form inter-
+pretation as the two main tasks involved in form understanding. On
+both problems OPAL pushes the state of the art: For form labeling,
+it combines signals from the text, structure, and visual rendering
+of a web page, yielding robust characterisations of common design
+patterns. In extensive experiments on the ICQ and TEL-8 bench-
+marks and a set of 200 modern web forms OPAL outperforms previ-
+ous approaches by a signiﬁcant margin. For form interpretation, we
+introduce a template language to describe frequent form patterns.
+These two parts of OPAL combined yield form understanding with
+near perfect accuracy (> 98%).
+
+Categories and Subject Descriptors
+H.3.5 [Information Storage and Retrieval]: On-line Information
+Services—Web-based services
+
+General Terms
+Languages, Experimentation
+
+Keywords
+form understanding, web interfaces, deep web
+
+1.
+
+INTRODUCTION
+
+Are you looking for a house? Are you tired of ﬁlling registra-
+tion forms with your search criteria on the websites of hundreds of
+local agencies? You fear to miss the site with the very best offer?
+Wouldn’t you wish to automatize these tiresome tasks? Web forms
+∗The research leading to these results has received funding from the
+European Research Council under the European Community’s Sev-
+enth Framework Programme (FP7/2007–2013) / ERC grant agree-
+ment DIADEM no. 246858. Giorgio Orsi has been supported by
+the Oxford Martin School, Institute for the Future of Computing.
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2012, April 16–20, 2012, Lyon, France.
+ACM 978-1-4503-1229-5/12/04.
+
+are the gates of all these websites. Gates designed for human ad-
+mission, leaving programs in the conundrum of web design ambi-
+guity: Even web forms within a single domain denote search crite-
+ria differently, e.g., “address”, “city”, “town”, and “neighborhood”
+all refer to locations, while other terms denote different criteria am-
+biguously, e.g., “tenure” might refer to the choice either between
+“freehold” vs. “leasehold” or between “buy” vs. “rent”. Moreover,
+web forms present their criteria in different manners, e.g., for a
+choice among several options, a form may contain either a drop-
+down lists or a set of radiobuttons. Automatically understanding
+these variants is key for programs to pass these gates as needed
+by a broad range of applications: crawling and surfacing the deep
+web [14, 10, 5], classifying the domain of web databases [2] for
+web site classiﬁcation, sampling the contents of web databases [11,
+1], and matching interfaces across domains [4, 15]. In web engi-
+neering, automated form understanding contributes e.g. to web ac-
+cessibility and usability [7], web source integration [6], automated
+testing on form-related web applications.
+
+(3) Heuristics are translated into monolithic algorithms limiting
+maintainability and adaptability. For example, [15] and [13] en-
+code speciﬁc assumptions on the spatial distance and alignment of
+ﬁelds and labels, [8] employs hard-coded token classes for certain
+concepts such as “min”, “from” vs. “max”, “to”.
+
+To overcome these limitations, we present OPAL (ontology based
+web pattern analysis with logic), a domain-aware form understand-
+ing system that combines visual, textual, and structural features
+with a thin layer of domain knowledge. The visual, textual, and
+structural features are used in a domain-independent analysis to
+produce a highly accurate form labeling. However, for most appli-
+cations what is actually needed is a form model consistent with a
+given domain schema, where all the ﬁelds are associated with given
+types. In OPAL, the domain schema is not only used to classify the
+
+Form understanding has attracted a number of approaches [16,
+15, 6, 13, 8], for a recent survey see [9]. These approaches turn
+observations on common features of web forms (in general, across
+domains) into speciﬁcally tailored algorithms and heuristics, but
+generally suffer from three major limitations:
+
+(1) Most approaches are domain independent and thus limited to
+observations that hold for forms across all domains. This limitation
+is acknowledged in [16, 13, 8], but addressed only through domain
+speciﬁc training data, if at all. Our evaluation supports [8] in that
+a set of generic design rules underlies all domains, but that spe-
+ciﬁc domains parameterise or adapt these design patterns in ways
+uncommon to other domains.
+
+(2) Most approaches are limited in the classes of features they
+use in their heuristics and often based on a single sophisticated
+heuristics based on one class of features, e.g., only visual features
+[6] or textual and ﬁeld type features in [8].
+
+WWW 2012 – Session: Web Engineering 1April 16–20, 2012, Lyon, France829(a) web page
+
+(b) form
+
+(c) ﬁeld labeling
+
+(d) segment labeling
+
+(e) classiﬁcation
+
+Figure 1: OPAL on Colin Mason
+
+ﬁelds and segments of the form model, but also to improve the form
+model based on a set of structural constraints that describe typical
+ﬁelds and their arrangement in forms of the domain, e.g., how price
+ranges are presented in forms. To ease the development of these
+domain schemata, OPAL extends Datalog, a staple for declarative
+ontology and schema speciﬁcation, with templates to enable reuse
+of generic form, e.g., how ranges (of any type) are presented in
+forms. With this approach, OPAL achieves nearly perfect analysis
+results (> 98% accuracy).
+Contributions. OPAL’s main contributions are:
+
+(1) Multi-scope domain-independent analysis (Section 3) that
+combines structural, textual, and visual features to associate labels
+with ﬁelds into a form labeling using three, sequential “scopes”
+increasing the size of the neighbourhood from a subtree to every-
+thing visually to the left and top of a ﬁeld.
+(i) At ﬁeld scope, we
+exploit the structure of the page between ﬁelds and labels; (ii) at
+segment scope, observations on ﬁelds in groups of similar ﬁelds,
+and (iii) at layout scope, the relative position of ﬁelds and texts in
+the visual rendering of the page. We impose a strict preference
+on these scopes to disambiguate competing labelings and to reduce
+the number of ﬁelds considered in later scopes, as the complexity of
+the analysis increases from earlier to latter scopes (though overall
+bounded by O(n2) where n is the page size).
+
+(2) Domain awareness. (Section 4) OPAL is domain-aware while
+being as domain-independent as possible without sacriﬁcing ac-
+curacy. This is based on the observation that generic rules con-
+tribute signiﬁcantly to form understanding, but nearly perfect accu-
+racy is only achievable through a thin layer of domain knowledge.
+To this end, we add an optional, domain-dependent classiﬁcation
+and form model repair stage after the domain-independent analy-
+sis. Driven by a domain schema OPAL classiﬁes form ﬁelds based
+on textual annotations of their labels and values assigned in the
+domain-independent form labeling, as well as the structure of that
+form labeling. This classiﬁcation is often imperfect due to miss-
+ing or misunderstood labels. OPAL addresses this in a repair step,
+where structural constraints on the domain types, such as price, are
+used to disambiguate and complete the classiﬁcation and reshape
+the form segmentation.
+
+(3) Template Language OPAL-TL. (Section 4.1) To specify a do-
+main schema, we introduce OPAL-TL. It extends Datalog to express
+common patterns as parameterizable templates, e.g., describing a
+
+group consisting of a minimum and maximum ﬁeld for some do-
+main type. Together with some convenience features for annota-
+tion queries and access to the ﬁeld labeling, OPAL-TL allows for
+very compact, declarative speciﬁcation of domain schemata. We
+also provide a template library of common phenomena, such that
+the adaption to new domains often requires only instantiating these
+templates with domain speciﬁc types. OPAL-TL preserves the poly-
+nomial data complexity of Datalog.
+
+(4) Extensive Evaluation. (Section 5) In an evaluation on over
+700 forms of four different datasets, we show that OPAL achieves
+highly accurate (>93%) form labelings for any domain and, with a
+suitable domain schema, near perfect accuracy in form classiﬁca-
+tion (> 98%). To compare with existing approaches (which only
+perform form labeling), we show that OPAL’s domain-independent
+analysis achieves 94− 100% accuracy on the ICQ benchmark and
+92− 97% on TEL-8. Thus, even without domain knowledge OPAL
+outperforms existing approaches by at least 5%.
+
+At [17], we presented a preliminary version of OPAL, only demon-
+strating the relevance of the domain awareness, for a single domain
+with a limited ontology, not only lacking OPAL-TL but also missing
+the visual analysis, and the extensive evaluation we provide now.
+1.1 Motivating Example
+
+We present the OPAL approach to form understanding using the
+form from the UK real estate agency Colin Mason (cmea.co.uk/
+properties.asp). Figure 1a presents the web page with its sim-
+pliﬁed CSS box model. The page contains two forms: one for de-
+tailed search and the other for quick search. OPAL is able to iden-
+tify, separate, label, and classify both forms correctly yielding two
+real-estate form models. The following discussion focuses on the
+detailed search form (Figure 1b), in which each of the components
+(1)-(10), each of the ﬁelds (3)-(7) and the two groups of checkboxes
+in (2) are enclosed in a table, tr, or td element. Labels for each
+of the components such as “Bedrooms:” appear in separate tr’s.
+
+Field scope. (Section 3.1) OPAL starts by analysing individual
+ﬁelds assigning labels that explicit reference the ﬁeld (using the
+for attribute) or have a common ancestor that has no other ﬁelds
+as descendant. In our example, no explicit references occur, but the
+second approach correctly labels all ﬁelds except the checkboxes
+in (2). In Figure 1c we show this initial form labeling using same
+color for ﬁelds and their labels.
+
+Segment scope. (Section 3.2) We increase the scope of the anal-
+
+WWW 2012 – Session: Web Engineering 1April 16–20, 2012, Lyon, France830ysis from the elements to groups of similar elements, called seg-
+ments. OPAL constructs these segments from the HTML structure,
+but eliminates segments that likely have no semantic relevance and
+are only introduced, e.g., for formatting reasons. This elimination
+is primarily based on similarity between elements approximated
+via semantic attributes such as class and visual similarity. In our
+example, components (2)-(7) become segments, with (2) further di-
+vided into two segments for each of the vertical checkbox groups.
+In each of the segments, OPAL identiﬁes repeated patterns of in-
+terleaving ﬁelds and texts. Here, each check box in (2) is labeled
+with the text appearing after it as shown in Figure 1d. OPAL also
+associates text nodes to segments to create segment labels. Seg-
+ment labels can be useful to verify the form model and to classify
+ﬁelds that have no labels otherwise. In this example, OPAL assigns
+the text in bold face appearing atop each segment as the label, e.g.,
+“Price:” becomes the label for (4).
+
+Layout scope. (Section 3.3) In the layout scope, OPAL further
+enlarges the scope of the analysis to all ﬁelds visually to the left and
+above a ﬁeld. The primary challenge in this scope is “overshadow-
+ing”, i.e., if other ﬁelds appear to in the quadrants to the left and
+above a ﬁeld. In this example the layout scope is not needed.
+
+The result of the layout scope is the form labeling derived with-
+
+out using domain knowledge.
+
+Domain scope.
+
+If a classiﬁcation and semantic grouping of
+the form ﬁelds is desired, the ﬁnal step in OPAL produces a form
+model that is consistent with a given domain schema. It uses do-
+main knowledge to classify and verify the labeling and segmenta-
+tion from the form labeling. In the classiﬁcation step, OPAL an-
+notates ﬁelds and segments with types based on annotation on the
+text labels. The veriﬁcation step repairs and veriﬁes the domain
+model if needed. For both steps, OPAL uses constraints speciﬁed
+in OPAL-TL. These constraints model typical patterns of forms in
+the domain. E.g., the ﬁrst ﬁeld in (4) is classiﬁed as MIN_PRICE as
+we recognise this segment as an instance of a price range pattern.
+These constraints also disambiguate between multiple annotations,
+e.g., ﬁelds in (6) are annotated with order_by and price, but the price
+annotation is disregarded due to the group label. Even without the
+group label, price would be disregarded as the domain schema give
+precedence to order_by over price due to the observation that if both
+occur as labels of a ﬁeld, that ﬁeld will likely be about the order
+of the returned results rather than about the actual price. In this
+case, only one repair is performed: We collapse the two checkbox
+segments in (2) as they are the only children of their parent seg-
+ment and both of the same type. Figure 1e shows the ﬁnal ﬁeld
+classiﬁcation as produced by OPAL.
+
+2. THE OPAL APPROACH
+
+OPAL constructs a conceptual model of a form consistent with
+a domain schema. A domain schema describes the form patterns
+occurring in a given domain, such as the UK real estate domain.
+OPAL divides the general form understanding problem into form la-
+beling and form interpretation. The form labeling identiﬁes forms
+and their ﬁelds, arranges the ﬁelds into a tree, and labels the found
+ﬁelds, segments, and forms with text nodes from the page. The
+form interpretation aligns a form labeling with the given domain
+schema and thereby classiﬁes the form ﬁelds based on their labels.
+2.1 Problem Deﬁnition
+
+Form Labeling. A web page is a DOM tree P =(cid:0)(U)U∈Unary,
+(cid:1) where (U)U∈Unary are unary type and label
+
+Rchild,Rnext-sibl,Rattribute
+relations, Rchild is the parent-child, Rnext-sibl the direct next sibling,
+and Rattribute the attribute relation. Further XPath relations (such as
+
+descendant) are derived from these basic relations as usual [3]. U
+contains relations for types as in XPath (element, text, attribute,
+etc.) and two kinds of label relations, namely labell for text nodes
+containing string l, and boxb for elements with bounding box b in
+the canonical rendering of the page. To normalize the representa-
+tion of textual content, we represent the value of an attribute as text
+child node of the attribute (thus, labell also applies to attributes).
+
+DEFINITION 1. A form labeling of a web page P is a tree F
+with mappings φ and ψ, such that φ maps the nodes of F into
+P. Leafs in F are mapped to form ﬁelds and inner nodes to form
+segments, that is an element grouping a set of ﬁelds. Each node n
+in F is also mapped to a set ψ(n) of text nodes, the labels of n.
+
+A node can be labeled with no, one, or many labels. The form
+labeling contains a representative for each form. A representative
+contains all ﬁelds (and segments) of that form. This allows us to
+distinguish multiple forms on a single page, even if no form ele-
+ment is present or multiple forms occur in a single form element.
+
+DEFINITION 2. Given a DOM tree P, the form labeling prob-
+lem (or schema-less form understanding problem) asks for a form
+labeling F where for each form f in P (i) there is a node r ∈ F such
+that φ (r) is a suitable representative of f and (ii) for each ﬁeld e in
+f , there exists a leaf node ne ∈ F such that ne is a descendant of r
+and φ (ne) = e where ψ(ne) is a suitable label set for e.
+
+We call a form labeling complete for a web page, if, for all e,
+ψ(ne) contains all text nodes suitable as labels for e and deﬁne the
+corresponding complete form labeling problem.
+
+The suitability of a form representative φ (r) and a label set ψ(ne)
+cannot be deﬁned formally, but needs to be evaluated by human
+annotators. Our evaluation (Section 5) shows that OPAL produces
+form labelings Ff that match the gold standard in nearly all cases
+(> 95% without using any domain knowledge).
+Form Interpretation. To deﬁne the form interpretation prob-
+lem, we formalize the notion of schema and introduce a form model
+as a form labeling extended with type information consistent with
+a given domain schema. First, we deﬁne an annotation schema that
+provides the necessary knowledge to interpret text nodes.
+
+DEFINITION 3. An annotation schema Λ =(cid:0)A, <,≺, (isLabela,
+isValuea : a ∈ A)(cid:1) deﬁnes a set A of annotation types, a transitive,
+
+reﬂexive subclass relation <, a transitive, irreﬂexive, antisymmet-
+ric precedence relation ≺, and two characteristic functions isLabela
+and isValuea on text nodes for each a ∈ A.
+For each annotation type a ∈ A, we distinguish proper labels
+and values, with isLabela and isValuea as corresponding character-
+istic functions. Proper labels are text nodes, such as “Price:”,
+describing the ﬁeld type, values, such as “more than £500”, con-
+tain possible values of the ﬁeld. Hence isLabelprice(“Price:”) and
+isValueprice(“more than £500”) hold.
+The < relation holds for subtypes, e.g., postcode < location, and
+the ≺ relation deﬁnes precedence on annotation types used to dis-
+ambiguate competing annotations. For example, an unlabeled se-
+lect box with options “Choose sorting order”, “By price”, and
+“By postcode” is annotated with order-by, price, and postcode.
+If
+order-by ≺ price and order-by ≺ postcode, we pick order-by.
+
+DEFINITION 4. A domain schema Σ = (Λ,T ,CT ,CΛ) deﬁnes
+an annotation schema Λ, a set of domain types T , and CT and CΛ
+that map domain types to classiﬁcation and structural constraints.
+For example, CΛ(PRICE) requires an annotation price and pro-
+hibits order-by annotations for a ﬁeld to be typed as PRICE. The struc-
+tural constraint set CT (PRICE-RANGE) for a PRICE-RANGE segment re-
+quires a MIN-PRICE and MAX-PRICE ﬁeld or a PRICE-RANGE ﬁeld. We
+
+WWW 2012 – Session: Web Engineering 1April 16–20, 2012, Lyon, France831n ← f ;
+while n has a parent do
+
+Algorithm 1: FieldScopeLabelling(DOM P)
+1 foreach ﬁeld f in P do
+2
+3
+4
+5
+6
+
+if n is already coloured then colour n red; break;
+colour n orange;
+n ← parent of n;
+7 F ← empty form labeling ;
+8 foreach ﬁeld f in P do
+n ← new leaf node in F;
+9
+φ (n) ← f ;
+10
+if ∃l ∈ P with for attribute referencing f then
+11
+12
+
+assign all text node descendants of l as labels to n ;
+
+p ← parent of f ;
+while p not coloured red do
+f ← p; p ← parent of f ;
+
+13
+14
+15
+
+16
+
+assign all text node descendants of f as labels to n ;
+
+Finally, in the (4) domain scope (Section 4) we turn the form
+labeling produced by the ﬁrst three scopes into a form model con-
+sistent with a given domain schema. (i) The labeling model is ex-
+tended with (domain-speciﬁc) annotations on the textual content of
+proper labels and values.
+(ii) Fields and segments of the form la-
+beling are classiﬁed according to classiﬁcation constraints in the
+domain schema.
+(iii) Finally, violations of structural schema con-
+straints are repaired in a top-down fashion.
+
+Types and constraints of the domain schema are speciﬁed using
+OPAL-TL, an extension of Datalog that combines easy querying of
+the form labeling and of annotations with a rich template system.
+Datalog rules already ease the reuse of common types and their
+constraints, but the template extension enables the formulation of
+generic templates for such types and constraints that are instanti-
+ated for concrete types of a domain. An example of a type template
+is the range template, that describes typical patterns for specifying
+range values in forms. In the real estate domain it is instantiated,
+e.g., for price and various room ranges. In the used car domain,
+we also ﬁnd ranges for engine size, mileage, tax band, etc. Thus,
+creating a domain schema is in many cases as easy as importing
+common types and instantiating templates.
+
+3. FORM LABELING
+
+In OPAL, form labeling is split into three scopes. Each scope is
+focused on a particular class of input features (e.g., visual, struc-
+tural, textual). By combining form labeling approaches for these
+different features, OPAL captures the diverse range of form de-
+sign patterns and eases extensions, such as the introduction of new
+scopes that future web design trends might require. This contrasts
+with previous approaches that rely on one or two such feature classes.
+The form labeling scopes, ﬁeld, segment, and layout scope, use
+domain-independent labeling techniques to associate form ﬁelds
+or segments with textual labels, building a form labeling F. If a
+domain schema is available, the form labeling is extended to a form
+model in the domain-dependent analysis (Section 4).
+
+The form labeling F is constructed bottom-up, applying each
+scope’s technique in sequence to yet unlabelled ﬁelds. Whenever a
+ﬁeld is labelled at a certain scope level, further scopes do not con-
+sider this ﬁeld again. This application order reﬂects higher conﬁ-
+dence in earlier scopes and addresses competing label assignments.
+3.1 Field Scope
+
+Based on the DOM tree of the input page, the ﬁeld scope assigns
+text nodes in unique structural relation to individual ﬁelds as labels
+to these ﬁelds (see Algorithm 1). To that end, OPAL (1) colours
+
+Figure 2: OPAL Overview
+
+write S |= C, if a constraint set C is satisﬁed by a set S of annotation
+or domain types. The empty constraint set is always satisﬁed.
+Formally, a form interpretation (F,τ) is a form labeling F with
+a partial type-of relation τ, relating nodes in F with the types T of
+Σ. Given a node n in F, we denote with A(n) = {a ∈ AΛ : ∃l ∈
+sociated with n via its labels, and with child-T (n) =(cid:83)
+ψ(n) with isValuea(l) or isLabela(l)} the set of annotation types as-
+(n,n(cid:48))∈F τ(n(cid:48))
+
+the set of domain types of the children of n.
+
+DEFINITION 5. A form interpretation (F,τ) is a form model for
+Σ, iff A(n) |= CΛ(t) and child-T (n) |= CT (t) for all n ∈ F, t ∈ τ(n).
+DEFINITION 6. Given a domain schema Σ and a form labeling
+F, the form interpretation problem asks for a form model (F(cid:48),τ)
+for Σ such that F(cid:48) differs from F only in inner nodes.
+Thus, form representatives, ﬁelds, and labels are shared between F
+and F(cid:48), but the form segments may be rearranged to conform with
+form patterns prescribed by the structural constraints of Σ.
+Form Understanding
+
+DEFINITION 7. Given a domain schema Σ and a DOM tree
+P, the form understanding (or schema-based form understanding)
+problem asks for a form model (F,τ) of P under Σ, such that F is a
+solution of the complete form labeling problem for P and for each
+form ﬁeld e in P, there is a leaf node ne in F with φ (ne) = e and
+τ(ne) is a suitable concept from Σ for e.
+
+2.2 System Overview
+
+OPAL is divided in two parts, a domain-independent part to ad-
+dress the form labeling problem and a domain-dependent part for
+form interpretation according to a domain schema.
+
+OPAL produces form labelings in a novel multi-scope approach
+that incrementally constructs a form labeling combining textual,
+structural, and visual signals (Figure 2). Each of the three labeling
+scopes considers signals not considered in prior scopes:
+
+(1) In ﬁeld scope, we consider only ﬁelds and their immediate
+
+neighbourhood and thus use only the DOM tree as input.
+
+(2) In segment scope, we detect and arrange form segments into
+
+a segment tree to interleave the contained text nodes and ﬁelds.
+
+(3) In layout scope, we broaden the potential labels of a ﬁeld by
+searching in the layout tree, i.e., the visual rendering of the page,
+and assign text nodes to ﬁelds, given a strong visual relation.
+
+Each scope builds on the partial form labeling of the previous
+scope and uses the information from the additional input to ﬁnd
+labels for previously unlabeled ﬁelds (or segments). Only the seg-
+ment scope adds nodes, namely form segments, whereas ﬁeld and
+layout scope only add labels.
+
+Form LabelingForm ModelDOM treeSegment treeLayout treeSchema treeSegment ScopeLayout ScopeDomain ScopeInputOutputField ScopeField ScopeWWW 2012 – Session: Web Engineering 1April 16–20, 2012, Lyon, France8323
+
+Algorithm 2: SegmentTree(DOM P), ⊥ (cid:54)∼ n for any n
+1 P(cid:48) ← P;
+
+2 while ∃n ∈ P(cid:48) : n not a ﬁeld ∧(cid:0)(cid:54) ∃d : Rdescendant(d,n) ∈ P(cid:48) ∧ d a ﬁeld(cid:1) do
+
+delete n and all incident edges from P(cid:48);
+
+delete n from P(cid:48) and move its child to the parent of n;
+
+4 while ∃n ∈ P(cid:48) : |{c ∈ P(cid:48) : Rchild(c,n) ∈ P(cid:48)}| = 1 do
+5
+6 foreach inner node n in P(cid:48) in bottom-up order do
+7
+8
+9
+10
+11
+12
+
+C ← { f : Rchild( f ,n) ∈ P(cid:48) ∧ f is a ﬁeld};
+C ← C∪{Representative(n(cid:48)) : Rchild(n(cid:48),n) ∈ P(cid:48)}} ;
+choose r ∈ C arbitrarily ;
+if ∀r(cid:48) ∈ C : r ∼ r(cid:48) then
+Representative(n) ← r;
+delete all non-ﬁeld children of n and move their children to n;
+
+else Representative(n) ← ⊥ ;
+
+13
+
+14 return P(cid:48);
+
+(lines 1–6) all nodes in P that are ancestors of a ﬁeld and do not
+have other form ﬁelds as descendants in orange. The least ancestor
+that violates that condition is coloured red. (2) It identiﬁes (line
+7–10) all form ﬁelds and initialises the form labeling F with one
+leaf node for each such ﬁeld. (3) It considers (lines 11–12) explicit
+HTML label elements with direct reference to a form ﬁeld. (4) It
+labels (lines 13–16) each ﬁeld f with all text nodes t whose least
+common ancestor with f has no other form ﬁeld as descendant.
+This includes all text nodes in the content of f . We ﬁnd these text
+nodes in linear time with the tree colouring. Each value v of a ﬁeld
+f (in select, input, or textarea element) becomes a label for f ,
+as the least common ancestor of f and v is f .
+3.2 Segment Scope
+
+At segment scope, the labeling analysis expands from individual
+ﬁelds to form segments, i.e., groups of consecutive ﬁelds with a
+common parent. These segments are then used to distribute text
+nodes to unlabeled ﬁelds in that segment.
+Segmentation tree. We observe that the DOM is often a fair
+approximation of the semantic form structure, as it reﬂects the way
+the form author grouped ﬁelds into segments. Therefore, we start
+from the DOM structure to ﬁnd the form segments, but we elim-
+inate all nodes that can be safely identiﬁed as superﬂous: nodes
+without ﬁeld descendants, nodes with only one child, and nodes n
+where all ﬁelds in n are style-equivalent to the ﬁelds in the siblings
+of n. Two ﬁelds are style-equivalent (∼) if they carry the same
+class attribute (used to indicate a formatting or semantic class) or
+the same type attribute and CSS style information.
+
+If all ﬁeld descendants of the parent of an inner node n are style-
+equivalent, then n should be eliminated from the segment tree, as it
+artiﬁcially breaks up the sequence of style-equivalent ﬁelds and is
+thus referred to as equivalence breaking.
+
+(1) (cid:12)(cid:12){c ∈ P(cid:48) : Rchild(c,n)}(cid:12)(cid:12) > 1,
+
+DEFINITION 8. The segment tree P(cid:48) of a form page P is the
+maximal DOM tree included in P (i.e., obtained by collapsing nodes)
+such that the leafs of P(cid:48) are all ﬁelds and for all its inner nodes n
+(2) ∃d ∈ P(cid:48) : Rdescendant(d,n)∧ d is a ﬁeld, and
+(3) n is not equivalence breaking.
+
+As an example, consider the DOM tree on the left of Figure 3,
+where diamonds represent ﬁelds and style-equivalent ﬁelds carry
+the same colour. On the right hand side, we show OPAL’s segment
+tree for that DOM. Nodes 1 and 3 from the original DOM are elim-
+inated as they have only one child, and node 2 as it is equivalence
+breaking. Nodes 4 and 5 are retained due to the red ﬁeld.
+
+THEOREM 1. The segment tree P(cid:48) of a DOM tree P can be
+
+computed in O(n× d) where n is the size and d the depth of P.
+
+Figure 3: Example DOM and Segment Tree
+
+Algorithm 3: SegmentScopeLabeling(DOM P,Form Labeling F)
+1 S ← SegmentTree(P) ;
+2 foreach inner node s in S in bottom-up order do
+3
+4
+5
+6 foreach segment n in F do
+7
+8
+9
+10
+11
+12
+13
+
+create a new segment ns in F;
+φ (ns) ← s;
+create an edge (ns,cs) in F for every φ (cs) child of s;
+Nodes, Labels ← new List();
+textGrp ← /0 ;
+foreach c : Rdescendant(c,φ (n)) ∈ P in document order do
+
+if textGrp (cid:54)= /0 then Labels.add(textGrp); textGrp ← /0;
+Nodes.add(c);
+skip all descendants of c in the iteration ;
+
+if ∃ f ∈ F : φ ( f ) = c then
+
+14
+15
+
+16
+17
+18
+19
+
+20
+21
+
+else if c is a text node ∧ (cid:54) ∃d ∈ F : c ∈ ψ(d) then
+
+textGrp ← textGrp∪{c};
+
+if textGrp (cid:54)= /0 then Labels.add(textGrp); textGrp ← /0;
+if Labels.size() = Nodes.size() + 1 then
+
+add Labels[0] to ψ(n);
+delete Labels[0] from Labels;
+
+if Labels.size() = Nodes.size() then
+
+foreach i do add Labels[i] to ψ(Nodes[i]);
+
+PROOF. Algorithm 2 computes the segment tree P(cid:48) for any DOM
+tree P. Its leafs are ﬁelds (as any non ﬁeld leafs are eliminated in
+line 2–3) and any inner node must have more than 1 child (due to
+line 4–5), a ﬁeld descendant (due to line 2–3), and not be equiv-
+alence breaking (due to lines 6–13). In lines 6–13, we compute
+a Representative for each inner node in a bottom-up fashion: If all
+ﬁeld children (line 7) and the representatives of all inner children
+(line 8) are style-equivalent (line 9–10; since ∼ is an equivalence
+relation it sufﬁces to compare a representative to each of the ele-
+ments in C), we choose an arbitrary representative and collapse all
+inner children of that node. Otherwise, we assign ⊥ as represen-
+tative, which is not style-equivalent to any node or to itself. Thus
+it prevents this node (and its ancestors) from ever being collapsed.
+This can not introduce new violations to condition (1) and (2), as
+we never decrease the number of children, turn a leaf into a inner
+node, or remove ﬁelds. P(cid:48) is maximal: Any tree P(cid:48)(cid:48) that includes P(cid:48)
+but is included in P must contain at least one node from P that has
+been deleted by one of the above conditions. Such a node, however,
+violates at least one of the conditions for a segment tree and thus
+P(cid:48)(cid:48) is not a segment tree. This holds because the order of the node
+deletions does not affect the nodes deleted. Algorithm 2 runs in
+O(n×d): Lines 2–3 are in O(n). Lines 4–5 and lines 6–13 are both
+in O(n× d) as they are dominated by the collapsing of the nodes.
+In the worst case, we collapse d − 2 inner nodes and thereby move
+O(n) leafs d − 2 times.
+Segment Labeling. We extend the existing form labeling F of
+the ﬁeld scope with form segments according to the structure of
+the segment tree and distribute labels in regular groups, see Algo-
+rithm 3. First (lines 2–5), we create a form segment node s in the
+form labeling for each inner node ns in the segment tree and choose
+
+Segment TreeDOM Tree12345WWW 2012 – Session: Web Engineering 1April 16–20, 2012, Lyon, France833Figure 4: Example for Segment Scope Labeling
+
+ns as representative for s (φ (s) = ns). For each segment with reg-
+ular interleaving of text nodes and ﬁeld or segment nodes, we use
+those text nodes as labels for these nodes, preserving any already
+assigned labels and ﬁelds (from ﬁeld scope). In detail, we iterate
+over all descendants c of each segment in document order, skip-
+ping any nodes that are descendants of another segment or ﬁeld
+itself contained in n (line 13). In the iteration, we collect all ﬁeld or
+segment nodes in Nodes, and all sets of text nodes between ﬁeld or
+segment nodes in Labels, except those text nodes already assigned
+as labels in ﬁeld scope (line 14), as we assume that these are outliers
+in the regular structure of the segment. We assign the i-th text node
+group to the i-th ﬁeld, if the two lists have the same size (possibly
+using the ﬁrst text node as labels of the segment, line 17–19).
+
+Figure 4 illustrates the segment scope labeling with triangles
+denoting text nodes, diamonds ﬁelds, black circles segments, and
+white circles DOM nodes not in the segment tree. The numbers in-
+dicate which text nodes are assigned as labels to which segments or
+ﬁelds. E.g., for the left hand segment, we observe a regular struc-
+ture of (text node+, ﬁeld)+ and thus we assign the i-th group of
+text nodes to the i-th ﬁeld. For the right hand segment (4), we ﬁnd
+a subsegment (5) and ﬁeld 8 that is already labeled with text node
+8 in the ﬁeld scope. Thus 8 is ignored and only one text node re-
+mains directly in 4, which becomes the segment label. In 5, we ﬁnd
+one more text node group than ﬁelds and thus consider the ﬁrst text
+node group as a segment label. The remaining nodes have a regular
+structure (ﬁeld, text node+)+ and get assigned accordingly.
+3.3 Layout Scope
+
+At layout scope, we further reﬁne the form labeling for each
+form ﬁeld not yet labelled in ﬁeld or segment scope, by exploring
+the visible text nodes in the west, north-west, or north quadrant,
+if they are not overshadowed by any other ﬁeld. To this end, OPAL
+constructs a layout tree from the CSS box labels of the DOM nodes:
+DEFINITION 9. The layout tree of a given DOM P is a tuple
+(NP, , w, nw, n, ne, e, se, s, sw, aligned) where NP is the set of DOM
+nodes from P, , w, nw, n, . . . the “belongs to” (containment), west,
+north-west, north, . . . relations from RCR [12], and aligned(x,y)
+holds if x and y have the same height and are horizontally aligned.
+We call w, nw, . . . the neighbour relations. The layout tree is at
+most quadratic in size of a given DOM P and can be computed
+in O(|P|2). For convenience, we write, e.g., w-nw-n to denote the
+union of the relations w, nw, and n.
+
+In cultures with left-to-right reading direction, we observe a strong
+preference for placing labels in the w-nw-n region from a ﬁeld. How-
+ever, forms often have many ﬁelds interspersed with ﬁeld labels and
+segment labels. Thus we have to carefully consider overshadowing.
+Intuitively, for a ﬁeld f , a visible text node t is overshadowed by
+another ﬁeld f (cid:48) if t is above f (cid:48) or also visible from, but closer to f (cid:48).
+In the particular case of aligned ﬁelds, the former would prevent
+any labeling for these ﬁelds and thus we relax the condition.
+
+DEFINITION 10. Given a text node t, a ﬁeld f (cid:48) overshadows
+another ﬁeld f if (1) f and f (cid:48) are unaligned, w-nw-n( f (cid:48), f ), and
+
+Figure 5: Layout Scope Labeling
+
+w-nw-n-ne-e(t, f (cid:48)) or (2) f and f (cid:48) are aligned and (i) w(t, f (cid:48)) or
+(ii) nw-n(t, f (cid:48)) and there is a text node t(cid:48) not overshadowed by an-
+other ﬁeld with ne-e(t(cid:48), f (cid:48)) and w-nw-n(t(cid:48), f ).
+
+To illustrate this overshadowing, consider the example in Fig-
+ure 5. For ﬁeld F1, T2 and T4 are overshadowed by F2 and T3 by F3,
+only T1 is not overshadowed, as there is no other text node that is
+south-east or south from T3 not overshadowed by another ﬁeld.
+
+The layout scope labeling is then produced as follows: For each
+ﬁeld f , we collect all text nodes t with w-nw-n(t, f ) and add them
+as labels to f if they are not overshadowed by another ﬁeld and not
+contained in a segment that is no ancestor of f . The latter prevents
+assignment of labels from unrelated form segments.
+
+4. FORM INTERPRETATION
+
+There is no straightforward relationship between form ﬁelds for
+domain concepts, such as location or price, and their structure within
+a form. Even seemingly domain-independent concepts, such as
+price, often exhibit domain speciﬁc peculiarities, such as “guide
+price”, “current offers in excess”, or payment periods in real es-
+tate. OPAL’s domain schemata allow us to cover these speciﬁcs.
+We recall from Section 2 that a form model (F(cid:48),τ) for a schema Σ
+is derived from a form labeling F by extending F with types and
+restructuring its inner nodes to ﬁt the structural constraints of Σ.
+
+OPAL performs form interpretation of a form labeling F in two
+steps: (1) the classiﬁcation of nodes in F according to the domain
+types T to obtain a partial typing τP. This step relies on the anno-
+tation schema Λ and its typing of labels in F; (2) the model repair
+where the segmentation structure derived in the segmentation scope
+(Section 3.2) is aligned with the structure constraints of Σ.
+4.1 Schema Design: OPAL-TL
+
+OPAL provides a template language, OPAL-TL, for easily speci-
+fying domain schemata reusing common concepts and their con-
+straints as well as concept templates. To implement a new do-
+main, we only need to provide (1) a set of annotators implementing
+isLabela and isValuea and (2) an OPAL-TL speciﬁcation of the do-
+main types and their classiﬁcation and structural constraints.
+
+OPAL-TL extends Datalog with templates and predeﬁned predi-
+cates for convenient querying of annotations and DOM nodes. An
+OPAL-TL program is executed against a form labeling F and a DOM
+P. Relations from F and P are mapped in the obvious way to OPAL-
+TL. We only use child (descendant, resp.) for the child (descen-
+dant, resp.) relation in F. We extend document and sibling order
+from P to F: follows(X,Y ) for X,Y ∈ F, if Rfollowing(φ (X),φ (Y )) ∈
+P and no other node in F occurs between X and Y in document or-
+der; adjacent(X,Y ), if Rnext-sibling(φ (X),φ (Y )) ∈ P or vice versa.
+Finally, we abbreviate labell(φ (X)) as l(X).
+Annotation types and their queries. Annotations (instances
+of annotation types) are characterised by an external speciﬁcation
+of the characteristic functions isLabela and isValuea for each a ∈ A.
+In the current version of OPAL, these functions are implemented
+with simple GATE (gate.ac.uk) gazetteers and transducers, that
+
+11123234485567876F3F2T4T2T3T1WESNSENENWSWF1WWW 2012 – Session: Web Engineering 1April 16–20, 2012, Lyon, France834Figure 6: Example Form Labeling
+
+are either provided by human domain experts or derived from ex-
+ternal sources such as DBPedia and Freebase. The current OPAL
+version contains a large set of such artefacts for common domain
+types such as price, location, or date.
+
+DEFINITION 11. Given a form labeling F on a DOM P and an
+annotation schema Λ, an OPAL-TL annotation query is an expres-
+sion of the form: X@A{d, p,e} where X is a ﬁrst-order variable,
+A ∈ A, and d, p, and e are annotation modiﬁers. An annotation
+
+query X@Aµ with µ ⊆ {d, p,e} holds for all X ∈(cid:74)Aµ(cid:75) with
+(cid:74)@Aµ(cid:75) = {n ∈ P : Allowµ (n)∩ Matchµ (A) (cid:54)= /0}\ Blockµ (A)
+otherwise. Matchµ (A) is to {l :(cid:83)
+with Allowµ (n) set to ψ(n) for d ∈ µ, and ψ(n) ∪ ψ(parent of n)
+{l :(cid:83)
+A(cid:48)<∗A isLabelA(cid:48) (l)} for p ∈ µ, and
+A(cid:48)<∗A(isLabelA(cid:48) (l)∨isValueA(cid:48) (l))} otherwise. Blockµ (A) equals
+{n : ∃A(cid:48) ≺ A,|Matchµ (A)| < |Matchµ (A(cid:48))|} if e ∈ µ, and /0 otherwise.
+Intuitively, an annotation query X@A returns all nodes labeled
+with a label that is annotated with A. If the modiﬁer d (direct) is
+not present, we also consider the (direct) segment parents, other-
+wise only direct labels are considered. If the modiﬁer p (proper) is
+present, only isLabelA is used, otherwise also isValueA. If the modi-
+ﬁer e (exclusive) is present, a node that fullﬁls all other conditions
+is still not returned, if there are more labels with annotations of a
+type that has precedence over A.
+Consider the form labeling of Figure 6 under a schema with
+C < B and B ≺ A. Labels are denoted with triangles, ﬁelds with
+diamonds, segments with circles. Labels are further annotated with
+matching annotation types (here always only one). If value labels
+are drawn as outlines. Then, X@A{} matches 2,3,4; X@A{e,d}
+matches 2,4, but not 3 as 3 has more labels of B (or one of its sub-
+classes) than of A and the exclusive modiﬁer e is present; X@A{e, p}
+matches 2,3, but not 4 as the proper modiﬁer p prevents the value
+labels in white to be considered. The latter matches 3 despite the
+presence of e, as we consider also the labels of the parent of 3 (since
+the direct modiﬁer d is absent) and thus there are two A labels.
+OPAL-TL templates. OPAL-TL extends Datalog¬ (Datalog with
+stratiﬁed negation) by templates to deﬁne reusable patterns for do-
+main concepts. Examples of such patterns are basic classiﬁcation
+patterns that derive a domain type from a conjunction of annotation
+types or min-max range patterns where we look for multiple ﬁelds
+with related annotations in a group and some clue that they repre-
+sent a range. In general, there are two types of template patterns,
+one for classiﬁcation constraints, one for structural constraints. The
+former specify patterns for relationships between domain and an-
+notation types, the latter the abstract structure of domain concepts.
+DEFINITION 12. An OPAL-TL template is an expression
+TEMPLATE N<D1, . . . ,Dk> { p ⇐ expr } where N names the template,
+D1, . . . ,Dk are template parameters, p is a template atom, expr
+a conjunction of template atoms and annotation queries. A tem-
+plate atom p<C1, . . . ,Ck>(X1, . . . ,Xn) consists of ﬁrst-order predi-
+cate name p, template variables C1, . . . ,Ck, and ﬁrst-order vari-
+ables X1, . . . ,Xn.
+Multiple rules with the same head express union as usual. For con-
+venience, we use ∨ and ¬ over conjunctions, which are translated
+to pure Datalog¬ rules as usual (not effecting data complexity).
+
+TEMPLATE basic_concept<C,A> { concept<C>(N)⇐ N@A{d,e,p} }
+TEMPLATE concept_by_segment<C,A> { concept<C>(N)⇐ N@A{e,p} }
+
+2
+
+4
+
+TEMPLATE concept_minmax<C,CM,A> {
+6 concept<CM>(N1)⇐ child(N1,G),child(N2,G),adjacent(N1,N2),
+8 concept<CM>(N2)⇐ child(N1,G),child(N2,G),follows(N2,N1),
+10 concept<CM>(N1)⇐ child(N1,G),child(N2,G),adjacent(N1,N2),
+
+N1@A{e,d},(concept<C>(N2) ∨ N2@A{e,d})
+concept<C>(N1),N2@range_connector{e,d},¬(A1 ≺ A, N2@A1{d})
+
+N1@A{e,p},N2@A{e,p},(cid:0)(N1@min{e,p},N2@max{e,p})
+∨ (N1@max{e,p},N2@min{e,p})(cid:1)
+
+12
+
+Figure 7: OPAL-TL classiﬁcation templates
+
+As an example, the following template deﬁnes a family of con-
+straints that associate the domain type D to a node N whenever N
+is labeled by an exclusive direct and proper annotation of type A.
+TEMPLATE basic_concept<D,A> { concept<D>(N) ⇐ N@A{e,d,l} }
+
+A template tpl is instantiated to produce a family of rules where
+the formal template variables D1, . . . ,Dk are instantiated using val-
+ues vi
+k from a template instantiation expression of the form
+
+1, . . . ,vi
+
+INSTANTIATE tpl<D1, . . . ,Dk> using { <v1
+
+k > }
+
+1, . . . ,v1
+
+k > . . . <vn
+
+1, . . . ,vn
+
+For example, the following expression instantiates basic_concept
+
+replacing D with type RADIUS and A with annotation type radius
+
+INSTANTIATE basic_concept<D,A> using {<RADIUS, radius>}
+
+and produces the following instantiated rule:
+concept<RADIUS>(N)⇐ N@radius{e,d,l}
+
+PROP. 1. OPAL-TL has the same data complexity as Datalog¬.
+
+4.2 Classiﬁcation
+
+Classiﬁcation is based on the classiﬁcation constraints of the do-
+main schema. In OPAL these constraints are speciﬁed using OPAL-
+TL to enable reuse of domain concepts and concept patterns. In the
+real estate and used car domains, we identify three patterns that suf-
+ﬁce to describe nearly all classiﬁcation constraints. These patterns
+effectively capture very common semantic entities in forms and are
+parametrized using domain knowledge. The building blocks are a
+domain type (or concept) C and an annotation type A that is used to
+deﬁne a classiﬁcation constraint for C. None of these patterns uses
+more than one annotation type as template parameter, though many
+query additional (but ﬁxed) annotation types in their bodies.
+
+Figure 7 shows the classiﬁcation templates for real-estate and
+used car: (1) Basic concept. The ﬁrst template captures direct clas-
+siﬁcation of a node N with type C, if N matches X@A{d,e,p}, i.e.,
+has more proper labels of type A than of any other type A(cid:48) with
+A(cid:48) ≺ A. This template is used by far most frequently, primarily for
+concepts with unambiguous proper labels. (2) Concept by segment.
+The second template relaxes the requirement by considering also
+indirect labels (i.e., labels of the parent segment). In the real estate
+and used car domains, this template is instantiated primarily for
+control ﬁelds such as ORDER_BY or DISPLAY_METHOD (grid, list, map)
+where the possible values of the ﬁeld are often misleading (e.g.,
+an ORDER_BY ﬁeld may contain “price”, “location”, etc. as values).
+(3) Min-max concept. Web forms often show pairs of ﬁelds repre-
+senting min-max values for a feature (e.g., the number of bedrooms
+of a property). We specify this pattern with three simple rules (line
+5–12), that describe three conﬁgurations of segments with ﬁelds as-
+sociated with value labels only (proper labels are captured by the
+
+AAAABBC3421WWW 2012 – Session: Web Engineering 1April 16–20, 2012, Lyon, France8352
+
+4
+
+6
+
+8
+
+10
+
+12
+
+14
+
+TEMPLATE segment<C>{
+
+segment<C>(G)⇐ outlier<C>(G),child(N1,G),¬(cid:0)child(N2,G),
+¬(concept<C>(N2) ∨ segment<C>(N2))(cid:1) }
+
+TEMPLATE segment_range<C,CM> {
+
+segment<C>(G)⇐ outlier<C>(G),concept<CM>(N1),concept<CM>(N2),
+
+N1 (cid:54)= N2,child(N1,G),child(N2,G) }
+
+TEMPLATE segment_with_unique<C,U> {
+
+segment<C>(G)⇐ outlier<C>(G),child(N1,G), concept<U>(N1,G),
+
+¬(cid:0)child(N2,G),N1 (cid:54)= N2,¬(concept<C>(N2)∨segment<C>(N2))(cid:1). }
+
+TEMPLATE outlier<C>{
+
+outlier<C>(G)⇐ root(G)∨child(G,P),child(G(cid:48),P),¬(segment<C>(G(cid:48))) }
+
+Figure 8: OPAL-TL structural constraints
+
+ﬁrst two templates). It is the only template with two concept tem-
+plate parameters, C and CM where CM < C is the “minmax” variant
+of C. The ﬁrst locates, adjacent pairs of such nodes or a single such
+node and one that is already classiﬁed as C. The second rule locates
+nodes where the second follows directly the ﬁrst (already classiﬁed
+with C), has a range_connector (e.g., “from” or “to”), and is not anno-
+tated with an annotation type with precedence over A. The last rule
+also locates adjacent pairs of such nodes and classiﬁes them with
+CM if they carry a combination of min and max annotations.
+
+In addition to these templates, there is also a small number of
+speciﬁc patterns. In the real estate domain, e.g., we use the follow-
+ing rule to describe forms that use a links for submission (rather
+than submit buttons). Identifying such a link (without probing and
+analysis of Javascript event handlers) is performed based on an an-
+notation type for typical content, title (i.e., tooltip), or alt at-
+tribute of contained images. This is mostly, but not entirely domain
+independent (e.g., in real estate a “rent” link).
+concept<LINK_BUTTON>(N1)⇐ form(F),descendant(N1,F),link(N1),
+
+N1@LINK_BUTTON{d},¬(cid:0)descendant(N2,F),
+(concept<BUTTON>(N2) ∨ follows(N1,N2))(cid:1)
+
+4.3 Model Repair
+
+With ﬁelds and segments classiﬁed, OPAL veriﬁes and repairs
+the structure of the form according to structural constraints on the
+segments, such that it ﬁts to the patterns prescribed by the domain
+schema. As for classiﬁcation constraints, we use OPAL-TL to spec-
+ify the structural constraints. The actual veriﬁcation and repair is
+also implemented in OPAL-TL, but since it is not domain indepen-
+dent, it is not exposed to the user for modiﬁcation. Here, we ﬁrst
+introduce typical structural constraints and their templates and then
+outline the model repair algorithm, but omit the OPAL-TL rules.
+Structural constraints. The structural constraints and templates
+in the real estate and used car domains are shown in Figure 8 (omit-
+ting only the instantiation as in the classiﬁcation case). All segment
+templates require that there is an outlier among the siblings of the
+segment: outlier<C>(G) holds if at least one of G’s siblings is not
+a C segment. (1) Basic segment. A segment is a C segment, if its
+children are only other segments or concepts typed with C. This
+is the dominant segmentation rules, used, e.g., for ROOM, PRICE, or
+PROPERTY_TYPE in the real estate domain. (2) Minmax segment. A
+segment is a C segment, if it has at least two ﬁeld children typed
+with CM where CM < C is the minmax type for C. This is used, e.g.,
+for PRICE and BEDROOM range segments. (3) Segment with mandatory
+unique. A segment is a C segment, if its children are only segments
+or concepts typed with C except for one (mandatory) ﬁeld child
+typed with U where U (cid:54)< C. This is used for GEOGRAPHY segments
+where only one RADIUS may occur.
+
+Repairing form interpretations. The classiﬁcation yields a
+form interpretation F, that is, however, not necessarily a model un-
+der Σ, and may contain violations of structural constraints. We
+adapt the types of ﬁelds and segments and the segment hierarchy
+of F with the rewriting rules described below to construct a form
+model compliant with Σ. OPAL performs the rewriting in a strati-
+ﬁed manner to guarantee termination and introduces at most n new
+segments where n is the number of ﬁelds in the form.
+(1) Under Segmentation: If there is a segment n with type t such
+that CT (t) requires additional child segments of type t1, . . . ,tk (cid:54)∈
+child-T (n), we try to partition the children of n into k +1 partitions
+P1, . . . ,Pk,Pn such that Pi |= CT (ti) and Pn ∪{t1, . . . ,tk} |= CT (t).
+For each Pi we add a new segment node as child of n, classify it
+with ti, and move all nodes assigned to Pi from n to that segment.
+In practice, few cases of multiple under segmentations occur at the
+same node and we can limit the search space using a total order
+on T . Though in general this would require value invention, the
+number of segments is actually bounded by the number of ﬁelds in
+the form, which is typically between 2–10. Therefore, we provide
+a pool of unused segments in the segmentation.
+
+children c1, . . . ,ck such that (cid:83)child-T (ci) ∪(cid:83)
+
+(2) Over Segmentation: If there is a segment n of type t with
+n(cid:48)∈C τ(n(cid:48)) |= CT (t)
+where C is the set of children of n without c1 . . .ck, then we move
+the children of each ci to n and delete all ci.
+
+with child c typed t1 and t2 such that {t1}∪(cid:83)
+
+(3) Under Classiﬁcation: If there is a segment n of type t with
+untyped children c1, . . . ,ck and corresponding types t1, . . . ,tk such
+that child-T (n)∪{t1, . . . ,tk}|=CT (t) and, for each ci, child-T (ci)|=
+CT (ti) holds, then we type ci with ti.
+(4) Over Classiﬁcation: If there is a segment node n of type t
+c(cid:48)∈C τ(c(cid:48)) |= CT (t)
+where C is the set of children of n without c, we drop t2 from τ(c).
+(5) Miss Classiﬁcation: If there is a node n of type t where
+child-T (n) (cid:54)|= CT (t), then we delete the classiﬁcation of n as t.
+
+5. EVALUATION
+
+We perform experiments on several domains across four differ-
+ent datasets. Two datasets are randomly sampled from the UK real
+estate and UK used-car domains, respectively. We compare with
+existing approaches via ICQ and TEL-8, two public benchmark
+sets, on which we only evaluate OPAL’s form labeling for fair com-
+parison to existing approaches, as they only label forms and do not
+use domain knowledge. Even with these limitations, OPAL outper-
+forms these approaches in most domains by at least 5%. We also
+perform an introspective analysis of OPAL to show (1) the impact
+of ﬁeld, segment, layout, and domain scope and (2) OPAL’s perfor-
+mance and scalability with increasing page size.
+
+For the evaluation, we evaluate the proper assignment of text
+nodes to form ﬁelds using precision, recall and F1-score (harmonic
+mean F1 = 2PR/(P + R) of precision and recall). Precision P is
+deﬁned as the proportion of correctly labeled ﬁelds over total la-
+beled ﬁelds, while recall R is the fraction of correctly labeled ﬁelds
+over total number of ﬁelds. For all considered datasets, we com-
+pare the extracted result to a manually constructed gold standard.
+We evaluate segmentation through their impact on classiﬁcation,
+see Figure 10b and the improved performance on the two datasets
+where we perform form interpretation (UK real estate and used car)
+versus the ICQ and TEL-8 datasets.
+Datasets. For UK real estate domain, we build a dataset ran-
+domly selecting 100 real estate agents from the UK yellow pages
+(yell.com). Similarly, we randomly pick 100 used-car dealers
+from the UK largest aggregator website autotrader.co.uk. The
+forms in these two domains have signiﬁcantly different characteris-
+
+WWW 2012 – Session: Web Engineering 1April 16–20, 2012, Lyon, France836(a) OPAL on 734 forms
+
+(b) ICQ results
+
+Figure 9: OPAL comparison
+
+(c) TEL-8 results
+
+tics than the ones in ICQ and TEL-8, mainly due to changes in web
+technology and web design practices. The usage of CSS stylesheets
+for layout and AJAX features are among the most relevant.
+
+The ICQ and TEL-8 datasets cover several domains. ICQ presents
+forms from ﬁve domains: air traveling, car dealer, book, job, real
+estate. There are 20 web pages for each of the domains, but two of
+them are no longer accessible and thus excluded from this evalua-
+tion. TEL-8, on the other hand, contains forms of eight domains:
+books, car rental, jobs, hotels, airlines, auto, movies and music
+records. The dataset amounts to 477 forms, but only 436 of them
+are accessible (even in the cached version).
+Field Labeling Accuracy. In our ﬁrst experiment we evaluate
+the accuracy of OPAL’s ﬁeld labeling on all four datasets, but only
+in the UK real estate and used car domain we employ the form in-
+terpretation to further improve the ﬁeld labeling. Figure 9a shows
+the results. The ﬁrst two bars are for the random sample datasets.
+For the real estate domain, OPAL classiﬁes ﬁelds with perfect pre-
+cision and 98.6% recall. Overall we obtain a remarkable 99.2%
+F-score. The result is similar for the used car domain, where OPAL
+obtain 98.2% precision and 99.2% recall, that amount to 98.7% F-
+score. OPAL achieves lower precision than recall in the used car
+domain due to the fact that web forms in this domain are more in-
+teractive: certain ﬁelds are enabled only when some other ﬁeld is
+ﬁlled properly. However, instead of the HTML attribute disabled,
+a placeholder is used with text displaying the original ﬁeld’s value
+label. This introduces noise to ﬁeld labeling and thus classiﬁcation.
+For the real estate domain, our domain schema consists of a few
+dozen element and segment types and about 40 annotation types.
+Similarly, in the used car domain, there are about 30 annotation
+types. In our experience, creating an initial domain schema (in-
+cluding gazetteers and testing) for a domain takes a single person
+familiar with the domain and OPAL-TL roughly 1 week.
+
+The other two bars in Figure 9a regard ﬁeld labeling on ICQ and
+TEL-8 datasets. On these, OPAL applies only its domain-independent
+scopes (ﬁeld, segment, scope) as no domain schema is available
+for these domains. Nonetheless, OPAL reports very high accuracy
+also on these forms, conﬁrming the effectiveness of our domain-
+independent analysis. However, not unexpected, OPAL performs
+signiﬁcantly better in presence of domain knowledge.
+Cross Domain Comparison. We use ICQ and TEL-8 to com-
+pare ﬁeld labeling in OPAL against existing approaches, on a wide
+set of domains. Figure 9b details the result of OPAL on each domain
+of the ICQ dataset. It shows perfect F-score values for the jobs do-
+main (100%) as well as auto and air travelling (99.3% and 98.3%).
+For comparison, [6] reports 92% F-score for labeling on ICQ on
+average, which we outperform even in the most difﬁcult domain
+(books). [15] reports slightly better precision and recall than [6],
+but OPAL still outperforms it by several percents.
+
+(a) Time
+
+(b) Scopes
+
+Figure 10: OPAL evaluation
+
+The results for the TEL-8 dataset are depicted in Figure 9c. Here,
+the overall F-score is 96.3%, again mostly affected by the perfor-
+mance in the books domain. Note that, especially on TEL-8, OPAL
+obtains very high precision compared to recall. Indeed, lower re-
+call means OPAL is not able to assign labels to all ﬁelds, miss-
+ing some of them. For comparison, [6] reports 88 − 90% over-
+all F-score, which we outperform by a wide margin. [13] reports
+F-scores between 89% and 95% for four domains in the TEL-8
+dataset. Though they perform slightly better on books, we signiﬁ-
+cantly outperform them on the three other domains included in their
+results, as well as on average.
+Contributions of Scopes. We demonstrate the effectiveness of
+combining different types of analysis by measuring to what extent
+each of our four scopes contributes to the overall quality of form
+understanding. We use again the two domain datasets from the pre-
+vious experiment. For both we show the results for recall (though
+the picture is similar for precision and F-score). As illustrated in
+Figure 10b, for the ﬁeld labeling in the real-estate dataset, the ﬁeld
+scope already contributes signiﬁcantly (67%). The Segment scope
+increases recall by 18%, page and domain scope add together an-
+other 13%. Note that, the contribution of the domain scope is more
+signiﬁcant than that of the layout scope, indicating the importance
+of domain knowledge to achieve very high accuracy form under-
+standing. In the used car domain, ﬁeld scope alone is even more
+signiﬁcant 85% (as many of the websites use modern web tech-
+nologies and frameworks with reasonable structure).
+Scalability. As discussed in Sections 3 and 4, overall the anal-
+ysis of OPAL is bounded by O(n2) due to the layout scope. As
+expected actual performance follows a quadratic curve, but with
+very low constants. There is a signiﬁcant amount of outliers, par-
+tially due to long page rendering time and partially due to variance
+in the depth and sophistication of the HTML structure. Figure 10a
+reports OPAL performance on all 534 forms in the combined TEL-8
+and ICQ datasets. The highlight area covers 80% of the forms with
+2200 nodes. OPAL requires at most 30s for the analysis (including
+page rendering) of these forms. Further analysis on the effect of in-
+
+1PrecisionRecallF-score0980.990.970.980.960.950930.940.93UK Real Estate (100)UK Used Car (100)ICQ (98)Tel-8 (436)0.940.950.960.970.980.991PrecisionRecallF-score0.90.910.920.930.94AirfareAutoBookJobUS R.E.0.940.950.960.970.980.991PrecisionRecallF-score0.90.910.920.93AirfaresAuto-mobilesBooksCar RentalsHotelsJobsMoviesMusic Records 0 50 100 150 200 0 2000 4000 6000 8000Total Computation time [s]Number of nodesReal-estate Used-car 0.6 0.8 1 domain  layout  segment !eld WWW 2012 – Session: Web Engineering 1April 16–20, 2012, Lyon, France837creasing ﬁeld or form numbers conﬁrms that these have little effect
+and page size is the dominant factor.
+
+6. RELATED WORK
+
+Current approaches to form understanding roughly fall into two
+categories: rule and heuristic approaches, such as MetaQuerier [16],
+ExQ [15], and SchemaTree [6], and machine learning approaches,
+such as LabelEx [13] and HMM [8], cf. [9] for a general survey.
+
+Aside of system design, OPAL primarily differs from these ap-
+proaches in two aspects: (1) They mostly incorporate only one or
+two of OPAL’s scopes (and feature classes): MetaQuerier,ExQ, and
+SchemaTree mostly ignore the HTML structure (and thus ﬁeld and
+segmentation scope) and rely on visual heuristics only; LabelEx ig-
+nores ﬁeld grouping; HMM visual information. (2) None of the ap-
+proaches provides a proper form model classifying the form ﬁelds
+according to a given schema. Furthermore, no domain knowledge
+is used to improve the labeling, though LabelEx analyses domain
+speciﬁc term frequencies of label texts and HMM checks for generic
+terms, such as “min”. As evident in our evaluation, each of the
+scopes in OPAL considerably affects the quality of the form label-
+ing and classiﬁcation. The fact, that each of these approaches omits
+at least one of the domain-independent scopes, explains the signiﬁ-
+cant advantage in accuracy OPAL exhibits on Tel-8 and ICQ. Notice
+also that not using domain knowledge keeps these approaches out
+of reach of the nearly perfect ﬁeld classiﬁcation achieved by OPAL.
+Rule and heuristic approaches. Most closely related in spirit
+to OPAL, though very different in realisation and accuracy, is Meta-
+Querier [16]. It is built upon the assumption that web forms follow
+a “hidden syntax” which is implicitly codiﬁed in common web de-
+sign rules. To uncover this hidden syntax, MetaQuerier treats form
+understanding as a parsing problem, interpreting the page a se-
+quence of “atomic visual elements”, each coming with a number
+of attributes, in particular with its bounding box. In a study cov-
+ering 150 forms, the authors of MetaQuerier identiﬁed 21 common
+design patterns. These patterns are captured by production rules in
+a 2P grammar. In contrast, the domain independent part of OPAL
+achieves nearly perfect accuracy with only 6 generic patterns by
+combining visual, structural, and textual features. Metaquerier is not
+parameterisable for a speciﬁc domain.
+
+ExQ [15] is similarly based primarily on visual features such as
+a bias for the top-left located labels comparable to OPAL, but disre-
+gards most structural clues, such as explicit for attributes of label
+tags and does not allow for any domain speciﬁc patterns.
+
+Also [6] uses only visual features (and the tabindex and for
+attributes for ﬁelds and labels).
+It follows nine observations on
+form design, e.g., that query interfaces are organized top-down and
+left-to-right or that ﬁelds form semantic groups. It uses a hierar-
+chical alignment between ﬁelds and text nodes similar to OPAL’s
+segment scope and a “schema tree” where the nine observations
+are observed. Again no adaptation to a speciﬁc domain is possible.
+Machine Learning Approaches. In contrast to the above ap-
+proaches, the following machine learning approaches can be triv-
+ially adapted to a speciﬁc domain using domain-speciﬁc training
+data. The evaluation in [8], however, shows little effect of domain-
+speciﬁc training data: a training set from the biological domain out-
+performs domain-speciﬁc training set in four out of ﬁve domains.
+LabelEx [13] uses limited domain knowledge when considering
+the occurrence frequencies of label terms. Domain relevance of the
+terms occurring in a label, measured as the occurrence frequency in
+previous forms, is one signal used to score ﬁeld-label candidates.
+Field-label candidates are otherwise created primarily using neigh-
+bourhood and other visual features, as well as their HTML markup.
+However, LabelEx does not consider ﬁeld groups and thus is unable
+
+to describe segments of semantically related ﬁelds or to align ﬁelds
+and labels based on the group structure and does not use any do-
+main knowledge aside of term frequency.
+
+HMM [8] uses predeﬁned knowledge on typical terms in forms,
+such as “between”, “min”, or “max”, but does not adapt these for
+a speciﬁc domain. HMM employs two hidden Markov models to
+model an “artiﬁcial web designer”. During form analysis, the HMMs
+are used to explain the phenomena observed on the page: The state
+sequences, that are most likely to produce the given web form, are
+considered explanations of the form. Compared to OPAL, HMM uses
+no visual features and no domain knowledge.
+
+7. CONCLUSION
+
+As premise of this paper, we assume that form understanding has
+been limited by overly generic, domain independent, monolithic al-
+gorithms relying on narrow feature sets. With OPAL we present a
+system that addresses these limitations without requiring an inordi-
+nate effort in domain engineering. This is achieved through a very
+accurate domain independent form labeling, exploiting visual, tex-
+tual, and structural features, by itself already outperforming exist-
+ing approaches. We complement the domain independent part with
+a domain dependent form ﬁeld classiﬁcation that signiﬁcantly im-
+proves the overall quality of the form understanding in verifying the
+labeling, classiﬁcation, and segmentation with domain constraints.
+To minimize the efforts in domain engineering, we provide a tem-
+plate language that facilitates compact domain knowledge speciﬁ-
+cations and enables signiﬁcant cross domain reuse.
+
+8. REFERENCES
+[1] Z. Bar-Yossef and M. Gurevich. Random Sampling from a Search
+
+Engine’s Index. J. ACM, 55(5), 2008.
+
+[2] L. Barbosa and J. Freire. Combining Classiﬁers to identify Online
+
+Databases. In WWW, 2007.
+
+[3] M. Benedikt and C. Koch. XPath leashed. CSUR, 2007.
+[4] A. Bilke and F. Naumann. Schema Matching using Duplicates. In
+
+ICDE, 2005.
+
+[5] M. J. Cafarella, E. Y. Chang, A. Fikes, A. Y. Halevy, W. C. Hsieh,
+A. Lerner, J. Madhavan, and S. Muthukrishnan. Data Management
+Projects at Google. SIGMOD Rec., 37(1), 2008.
+
+[6] E. C. Dragut, T. Kabisch, C. Yu, and U. Leser. A Hierarchical
+
+Approach to Model Web Query Interfaces for Web Source
+Integration. In VLDB, 2009.
+
+[7] O. Kalijuvee, O. Buyukkokten, H. Garcia-Molina, and A. Paepcke.
+
+Efﬁcient Web Form Entry on PDAs. In WWW, 2001.
+
+[8] R. Khare and Y. An. An Empirical Study on using Hidden Markov
+
+Model for Search Interface Segmentation. In CIKM, 2009.
+
+[9] R. Khare, Y. An, and I.-Y. Song. Understanding Deep Web Search
+
+Interfaces: A Survey. SIGMOD Rec., 39(1), 2010.
+
+[10] J. Madhavan, D. Ko, L. Kot, V. Ganapathy, A. Rasmussen, and
+
+A. Halevy. Google’s Deep Web Crawl. In VLDB, 2008.
+
+[11] A. Maiti, A. Dasgupta, N. Zhang, and G. Das. HDSampler:
+
+Revealing Data behind Web Form Interfaces. In SIGMOD, 2009.
+
+[12] I. Navarrete and G. Sciavicco. Spatial Reasoning with Rectangular
+
+Cardinal Direction Relations. In ECAI, 2006.
+
+[13] H. Nguyen, T. Nguyen, and J. Freire. Learning to Extract From
+
+Labels. In VLDB, 2008.
+
+[14] S. Raghavan and H. Garcia-Molina. Crawling the Hidden Web. In
+
+VLDB, 2001.
+
+[15] W. Wu, A. Doan, C. Yu, and W. Meng. Modeling and Extracting
+Deep-Web Query Interfaces. In Adv. in Inf. & Intelligent S., 2009.
+[16] K. Chang, Z. Zhang, B. He. Understanding Web Query Interfaces:
+
+Best-Effort Parsing with Hidden Syntax. In SIGMOD, 2004.
+
+[17] T. Furche, G. Gottlob, G. Grasso, X. Guo, G. Orsi, C. Schallhart.
+
+Real understanding of real estate forms. In WIMS ’11, 2011
+
+WWW 2012 – Session: Web Engineering 1April 16–20, 2012, Lyon, France838

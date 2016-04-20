@@ -1,0 +1,1491 @@
+SCAD: Collective Discovery of Attribute Values
+
+∗
+Anton Bakalov
+U. Mass., Amherst
+
+abakalov@cs.umass.edu
+Partha Pratim Talukdar
+
+†
+Microsoft Research
+
+Ariel Fuxman
+
+Microsoft Research
+
+arielf@microsoft.com
+Soumen Chakrabarti
+
+IIT Bombay
+
+soumen@cse.iitb.ac.in
+
+ABSTRACT
+Search engines today oﬀer a rich user experience, no longer
+restricted to “ten blue links”. For example, the query “Canon
+EOS Digital Camera” returns a photo of the digital camera,
+and a list of suitable merchants and prices. Similar results
+are oﬀered in other domains like food, entertainment, travel,
+etc. All these experiences are fueled by the availability of
+structured data about the entities of interest.
+
+To obtain this structured data, it is necessary to solve
+the following problem: given a category of entities with its
+schema, and a set of Web pages that mention and describe
+entities belonging to the category, build a structured repre-
+sentation for the entity under the given schema. Speciﬁcally,
+collect structured numerical or discrete attributes of the en-
+tities.
+
+Most previous approaches regarded this as an information
+extraction problem on individual documents, and made no
+special use of numerical attributes. In contrast, we present
+an end-to-end framework which leverages signals not only
+from the Web page context, but also from a collective anal-
+ysis of all the pages corresponding to an entity, and from
+constraints related to the actual values within the domain.
+Our current implementation uses a general and ﬂexible
+Integer Linear Program (ILP) to integrate all these signals
+into holistic decisions over all attributes. There is one ILP
+per entity and it is small enough to be solved in under 38
+milliseconds in our experiments.
+
+We apply the new framework to a setting of signiﬁcant
+practical importance: catalog expansion for Commerce search
+engines, using data from Bing Shopping. Finally, we present
+experiments that validate the eﬀectiveness of the framework
+and its superiority to local extraction.
+Categories and Subject Descriptors
+H.3.3 [Information Systems]: Information Search and Re-
+trieval; I.2.7 [Artiﬁcial Intelligence]: Natural Language
+Processing
+
+General Terms
+Algorithms, Experimentation
+
+∗Work done while at Microsoft Research.
+†On contract.
+
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2011, March 28–April 1, 2011, Hyderabad, India.
+ACM 978-1-4503-0632-4/11/03.
+
+Keywords
+Weak Supervision, Collective Information Extraction, Inte-
+ger Linear Program, Commerce Search, Attribute Discovery
+
+1.
+
+INTRODUCTION
+
+Search engines today oﬀer a rich user experience far be-
+yond “ten blue links”. For example, a query such as “canon
+rebel eos” produces a result that includes a photo of the
+digital camera, and a list of suitable merchants and prices.
+Similar results are oﬀered for queries in domains such as en-
+tertainment, travel, etc. All these experiences are fueled by
+the availability of structured data about the entities of inter-
+est (restaurants, consumer products, etc.) In some cases, the
+structured data is obtained via data feeds from specialized
+providers, and constructed with extensive manual input. In
+other cases, wrappers are used to extract information from
+Web pages.
+
+However, these data acquisition models have inherent lim-
+itations. Manual techniques cannot scale to the large num-
+ber of entities that need to be supported, and cannot keep
+pace with the constant emergence of new entities (e.g., new
+products released to the market). Wrapper-based techniques
+[19] are sometimes an eﬀective solution; but they are site-
+speciﬁc, and applicable only to sites whose structure and
+format is quite predictable. As a result, they tend to be
+brittle and require continual maintenance [7]. These limita-
+tions suggest the need for systems that satisfy the following
+requirements. First, structured data acquisition should be
+done in a fully automated way. Second, the techniques must
+be site-independent and should not make strong assump-
+tions about Web page formatting or structure.
+
+In this paper, we present SCAD1, a system designed to
+address these requirements. SCAD learns to acquire struc-
+tured data for entities of a given category (e.g., digital cam-
+eras). For each category, it is given a) a schema (including
+a set of attribute names), b) a small set of seed entities to-
+gether with their values for the attributes in the schema,
+and c) a set of related Web pages (e.g., merchant oﬀer pages
+for a product). SCAD then learns to automatically extract
+the values of attributes in the schema for other entities in
+the category. SCAD imposes very little cognitive burden on
+the trainer: in our experiments, we show that it suﬃces to
+provide seed sets with as few as 20 entities per category.
+
+Our work is related to previous eﬀorts in named entity
+
+1SCAD stands for “Structured Collective Attribute Discov-
+ery”. Discovery from scads of unstructured pages.
+
+WWW 2011 – Session: Information ExtractionMarch 28–April 1, 2011, Hyderabad, India447recognition (NER) [19]. However, with rare exceptions that
+we discuss later, NER depends exclusively on modeling the
+local left and right contexts of mentions of entities in un-
+structured text. SCAD goes beyond the local context mod-
+eling of NER systems, and incorporates various global sig-
+nals into the extraction process. The ﬁrst signal is that we
+ﬁnd entity-level consensus among the candidate attribute
+values across multiple pages. E.g., even if we have an ex-
+traction error from one Web page, we may be able to recover
+by leveraging extractions for the same attribute from other
+Web pages. Second, we exploit category-level (i.e., across
+multiple entities) value distributions to reduce spurious ex-
+tractions. Third, SCAD can eﬀortlessly incorporate a wide
+variety of constraints from world knowledge, e.g., a value on
+a Web page is unlikely to refer to more than one attribute
+in the schema, or the disk capacity of a laptop is larger than
+RAM size.
+
+Our current implementation uses a general and ﬂexible
+integer program to integrate these global signals with local
+context information from the Web pages. Although it is a
+combinatorial optimization at an entity level, the number of
+constraints is modest and optimization takes only dozens of
+milliseconds per entity.
+
+Figure 1: Sample snippets describing the tennis rac-
+quet Wilson BLX Khamsin-Five.
+
+To illustrate the worth of these signals, consider the fol-
+lowing example. Suppose that our goal is to produce struc-
+tured data for consumer products. (This is a fundamental
+task in consumer product search engines like Yahoo! Prod-
+uct Search and Bing Shopping.) In this context, an entity
+is a product, such as the Wilson BLX Khamsin-Five, which
+belongs to the product category Tennis racquets. Salient at-
+tributes for this category would be “Brand”, “Manufacturer”,
+“Head Size”, “Strung Weight”, “Unstrung Weight”, etc. As-
+sume that we are given a set of Web pages that correspond
+to this racquet. (We will explain later how Commerce search
+engines typically gather this information.) In Figure 1, we
+show an excerpt of such a page.
+
+Suppose that the schema contains (among others) the fol-
+lowing attributes: “Strung Weight” and “Unstrung Weight”;
+and that we would like to obtain their values for the racquet
+Wilson BLX Khamsin-Five. SCAD would start by spotting
+that “12 oz.” and “11.7 oz.” are values that might be as-
+sociated to an attribute (for example, because the schema
+contains numeric attributes). It would then construct snip-
+pets of text centered around the values. The snippets for the
+values “12 oz.” (snippet s1) and “11.7 oz.” (snippet s2) are
+highlighted with rectangles in Figure 1. A local extractor
+will produce, for a given snippet, a probability distribution
+φ over the attributes in the input schema. In our example,
+the local extractor will be highly conﬁdent that snippet s2 is
+
+about unstrung weight (φ(s2,“unstrung weight”) = 1, say),
+but it will be less certain about the attribute corresponding
+to s1 (both “strung weight” and “unstrung weight” will have
+comparable probabilities). Since the local model is certain
+that snippet s2 should be associated to “unstrung weight”,
+it is reasonable to assume that its value (11.7 oz.) is the
+right value for this attribute. But the local model is not
+conclusive about the strung weight of the racquet.
+
+Now, let us show how the entity and category-level con-
+straints help to reduce the uncertainty of the local model.
+Consider two of the entity-level constraints of our frame-
+work: (C1) each snippet should be assigned exactly one at-
+tribute; (C2) each attribute should be assigned at most one
+value. Since s2 has been assigned “unstrung weight”, due
+to constraint C1, it cannot be assigned any other attribute.
+Furthermore, due to constraint C2, “unstrung weight” can-
+not be assigned the value “12oz”. (Otherwise, the same at-
+tribute would have multiple values.) Thus, s1 cannot be
+assigned to the attribute “unstrung weight”. Since the only
+other plausible candidate for s1 is “strung weight” and its
+value is 12 oz., we can now conclude that the value of “strung
+weight” should be 12 oz.
+
+Notice that there is some chance that 12 vs 11.7 oz. is just
+precision variation, and both are unstrung weights. This is
+a valid conﬁguration considered by SCAD, but in this case
+it is ruled out due to the fact that there is signal from the
+local model φ about the fact that 11.7 oz.
+is associated to
+“unstrung weight”. Another example of an entity-level con-
+straint that can help us decide how to assign attributes to
+values is that “strung weight” should be greater than “un-
+strung weight.” Thus, assigning “11.7 oz.” and “12 oz.” to
+“strung weight” and “unstrung weight”, respectively, is not
+allowed. In the paper, we refer to these constraints as inter-
+attribute constraints.
+
+To understand how the category-level constraints work,
+consider the snippet s3 shown in Figure 1 – “which adds
+only 0.1 oz. to the racquet’s”. From the textual content of
+s3, the local model might assign it some probability of be-
+ing associated to “strung weight”. However, from an under-
+standing of the value domain for this attribute, it is obvious
+that the quantity 0.1 oz. cannot be associated to the weight
+of a tennis racquet.
+
+The rest of the paper is organized as follows. In Section
+2, we present related work; and in Section 3 we give an
+overview of our framework.
+In Section 4, we provide the
+details of the global assignment optimization problem solved
+by SCAD, and in Section 5 we present SCAD’s local model.
+The experimental results are presented in Section 6.
+
+2. RELATED WORK
+
+Creating a structured entity description involves locating
+a mention of the entity, mentions of structured attributes,
+and evidence of suitable associations between the entity and
+attributes. Detecting mentions of entities is a well-developed
+ﬁeld [19], as is detecting mentions of relations (not necessar-
+ily attribute relations) between entities [3]. However, there
+is relatively little work on attribute extraction that is col-
+lective across attribute mentions in a document and that
+aggregates evidence over multiple documents. (The quan-
+tity consensus query system [1] does only the latter.)
+
+Several methods for incorporating non-local information
+for Information Extraction have been previously proposed
+[2, 10, 20]. These methods try to enforce label consistency
+
+Product FeaturesWeight: 12 oz.Head Size: 115 sq. in.Product DescriptionThis racquet features a new patented technology. It provides great touch and added spin, with ultimate power and control. It has a head size of 115 sq. in., and weighs 11.7 ounces (unstrung). Comes with a remarkably light VibreX Scorpion vibration dampener, which adds only 0.1 oz. to the racquet's weight.S1S2S3WWW 2011 – Session: Information ExtractionMarch 28–April 1, 2011, Hyderabad, India448where the same token mentioned multiple times in a doc-
+ument is assumed to have the same label. Unfortunately,
+this assumption is not valid in our application setting. For
+example, in a document from the Washing Machines cat-
+egory with multiple mentions of the token 3, one mention
+may correspond to the “number of cycles” attribute, while
+another to the “number of doors”.
+
+As noted earlier, wrapper induction techniques [19] re-
+quire sites (or documents) to be template-based [11], and
+they are expensive to maintain [7]. SCAD does not induce
+wrappers and it does not require documents to be template-
+based, and hence it is applicable more generally.
+
+Whereas SCAD seeks to collectively extract attributes of
+entities, a large body of work, including KnowItAll [9] dis-
+cover instances of types starting with a few seed instances.
+These are very diﬀerent problems, and the building blocks
+from entity discovery (e.g., PMI [21]) are not necessarily ap-
+plicable to our scenario. The work that is closest to ours is
+Kylin [23], since it also focuses on building structured rep-
+resentations (in their case, for Wikipedia infoboxes). Kylin
+extracts each attribute value in isolation, compared to the
+collective extraction in SCAD. One of the critical diﬀerences
+between SCAD and Kylin is that SCAD aggregates attribute
+evidence across multiple documents, while Kylin does not.
+As demonstrated through experiments in Section 6, we ﬁnd
+such aggregation to be very eﬀective in practice.
+
+A semi-supervised method for extraction of attribute-value
+pairs from product descriptions is presented in [17]. In con-
+trast to that work, SCAD not only assigns attributes to
+values in context, but it also constructs an entity-speciﬁc
+record consisting of attribute-value pairs, with one (or more)
+value(s) per attribute. We note that this is a harder task as
+it involves an additional step of resolving value ambiguity for
+a given attribute. While attribute extraction itself (without
+value) is the goal of [16], SCAD focuses on the extraction of
+values of attributes. Field compabilities learned by [22] can
+be used as Entity-level constraints in SCAD (Section 4.3.1).
+Unlike [22], we do not assume the availability of quantity-
+attribute mapping as input, and instead estimate it from the
+data by using a local model, as described in Section 4.4.
+
+Some earlier work [1, 8, 15, 24] focused on quantity queries.
+Some of these exploited associative reinforcement between
+similar quantities, but not simultaneously the dissociative
+nature of quantities within a discourse/page (i.e., that two
+quantities within a discourse tend to pertain to diﬀerent at-
+tributes).
+
+As a global assignment problem between attributes and
+values, it is natural to express our problem using integer pro-
+grams, and this has been done in the past, e.g., in the CCM
+framework [4] for NLP tasks. However, existing instantia-
+tions of the CCM framework [4, 18] appear not to handle all
+the constraints we would like to impose, including consensus
+and constraints involving quantitative attributes. For ex-
+ample, we cannot see how to express in CCM that assigning
+0.3 pounds to battery weight forbids us from assigning 0.2
+pounds to gross weight. Therefore, we use additional special
+variables in SCAD’s integer program (see Section 4.2).
+
+Like SCAD, most collective information extraction algo-
+rithms must reconcile local and global evidence, and aggre-
+gate them. EntityRank [5] extracts records with structured
+ﬁelds (e.g., email and phone number of a researcher) from
+multiple pages, and ranks tuples using a majority vote from
+source pages weighted by their PageRank. However, Enti-
+
+tyRank does not exploit constraints involving value distri-
+butions or involving multiple attributes.
+
+3. FRAMEWORK OVERVIEW
+
+Attribute inference can be modeled as ﬁlling in an in-
+complete table. Each row corresponds to an entity, and
+the whole table is expected to pertain to a coherent cate-
+gory of entities. While the framework allows any kind of
+entities, in this paper we will usually draw examples from
+Commerce search, so entities will often be consumer prod-
+ucts. Tennis racquets and laptop computers are examples of
+categories. The Wilson BLX Khamsin-Five and the Lenovo
+X300 Thinkpad are entities belonging to those respective
+categories. Entities have attributes, such as string ten-
+sion, strung weight, and battery life. These attributes are
+represented as columns in the table for the category.
+
+We will regard the cell values of the tables as structured
+data, either categorical or quantitative attributes of the en-
+tity represented by the row. While our framework can sup-
+port both categorical and numeric attributes, our experi-
+ments will often focus on the latter. For simplicity we will
+also assume that there are no multivalued attributes.
+3.1 Training phase overview
+
+In the beginning, a few rows in the table have all columns
+In addition, each of these rows has associated
+ﬁlled out.
+with it a set of contexts. A context is an extent of text
+that provides evidence of the attribute values for the entity.
+For example, in the domain of consumer products, it is often
+easy to ﬁnd Web pages that are dedicated to a product and
+come from merchants, manufacturers, reviewers, users, etc.
+(For sources that are grossly heterogeneous or have a lot of
+site boilerplate, we will assume that suitable page segmen-
+tation and key content panel extraction techniques exist.)
+
+As Figure 2 shows, we collected contexts (where entities
+are mentioned together with attributes) from two sources:
+Web pages and oﬀer pages. We used suitable keyword queries
+and the Bing Web search API2 to collect Web pages, and
+oﬀer pages were collected from online merchants. (More de-
+tails on the collection of both kinds of pages in Section 6).
+The pages are ﬁrst passed through a snippet extractor that
+locates text around attributes of desired types.
+
+Figure 2: Training phase.
+
+Our framework uses a local model of compatibility be-
+tween a snippet and an attribute. The local model has to
+be trained using ground truth to associate snippets with at-
+tributes. The ground truth consists of structured, correct
+
+2http://www.bing.com/developers
+
+Ground TruthAttributesBing APIWeb PagesOffer PagesSnippetExtractionAutomaticLabelingClassiﬁerTrainingDensity EstimationLocal ModelCategory Level ConstraintsHandcraftedQueriesUnlabeled SnippetsLabeled SnippetsWWW 2011 – Session: Information ExtractionMarch 28–April 1, 2011, Hyderabad, India449values for attributes. We look for these values in the col-
+lected snippets (see Section 5.2) to automatically generate
+training data. Similar mechanisms have been used in Kylin
+[23], and other systems. One novelty of our framework is
+that we also use the “gold data” to build density estimates
+(Section 4.3.3) of attributes, which is then used in our global
+optimization.
+3.2 Deployment phase overview
+
+Continuing with the incomplete table metaphor, the re-
+maining rows have available unstructured contexts, but all
+of their cells are empty. Our task during the deployment
+phase, sketched in Figure 3, is to collectively mine the con-
+texts in order to ﬁll in the empty cells.
+
+Figure 3: Deployement phase.
+
+Context Web pages are obtained and snippets extracted
+as before. However, the local model now provides only one
+form of input to a global optimizer. Other inputs come from
+entity-level assignment constraints, as well as the densities
+estimated during the training phase.
+
+In our current implementation of the framework, all these
+signals and constraints are input into a ﬂexible and general
+integer linear program (ILP), which is then solved using the
+Microsoft Solver Foundation 3.
+
+4. GLOBAL ASSIGNMENT OPTIMIZATION
+
+In this section, we explain in detail the global optimization
+problem solved by SCAD. We ﬁrst present terminology and
+notation, and then discuss the diﬀerent constraints used for
+collective extraction. Finally, we introduce the objective
+function, and illustrate it with an example.
+4.1 Terminology and notation
+
+A context c is an extent of text that pertains to an entity
+and provides evidence for its attribute values. A context
+may span a page or a region of a page. A snippet c.s is a
+segment of text in a context c which contains a value c.s.v
+that is a candidate to be associated with an attribute of the
+entity. In general, a context can contain multiple snippets.
+For example, the Web page region shown in Figure 1 is a
+context. In that Figure, we can see snippets such as “Weight:
+12 oz.” and “and weighs 11.7 ounces (unstrung)”. The value
+
+3http://code.msdn.microsoft.com/solverfoundation
+
+for the former snippet is 12 ounces, while the value for the
+latter is 11.7 ounces. (Note that these are no longer con-
+sidered as strings, but are converted into numbers with as-
+sociated units; in particular, units can be converted.) We
+use the following rules to create snippets. Once we detect
+an attribute value, we consider the six words to the left and
+right of it. If there is a number, or some distinctive HTML
+tags (such as <tr>, <li>, <title>), then we include all the
+words up until that token. If we come across a mention of
+an attribute name that we know about, then we include it
+in the snippet and disregard everything beyond it.
+
+Each category is associated to a table. The table has a
+schema, consisting of a set of typed attributes. We will
+denote an attribute with a. The types of the attributes
+are domain-speciﬁc, and have units associated with them.
+For example, “strung weight” and “head size” are attributes
+of the Tennis Racquets category, whose types are “weight”
+and “area”, respectively. Example of a units for weight and
+area are “lbs.” and “square inches”, respectively. Strictly
+speaking, an attribute is just an unambiguous column ID in
+the table, but it is described by one (or more, synonymous)
+names.
+
+Let e be an entity and a1, . . . , an be the attributes of its
+category’s schema. The goal of SCAD is to produce a tuple
+(cid:104)v1, . . . , vn(cid:105) such that each vi is associated to its correspond-
+ing ai. We will talk about a snippet c.s being assigned to
+an attribute a, or vice versa. This will mean that c.s.v is a
+candidate value for attribute a. The reported value/s of an
+attribute depend on candidate values and other considera-
+tions such as global (exact or approximate) agreement.
+
+Not all mentioned quantities will map to attributes in the
+schema. For those, we create a special background/no
+attribute na (similar to “no assignment” [12]).
+
+Our approach is to encode assignment decisions as 0/1
+variables in a suitable integer linear program (ILP). Con-
+straints for the ILP will come from some natural snippet
+and value assignment considerations. The objective will be
+designed using a measure of local compatibility between a
+snippet and an attribute.
+4.2 Decision variables
+
+We use two types of variables. The ﬁrst type models
+the assignment of snippets to attributes. The assignment
+of snippet c.s to attribute a is recorded in the binary vari-
+able x(c.s, a) ∈ {0, 1}.
+It is equal to 1 if attribute a is
+assigned snippet c.s; and 0 otherwise. Here a ranges over all
+attributes, including na.
+
+While the x variables associate snippets to attributes, the
+actual goal of catalog expansion is to associate values to
+attributes. This is denoted with the second type of deci-
+sion variables: z(v(cid:48), a) ∈ {0, 1}. It is set to 1 if attribute a is
+assigned any context c.s with value c.s.v = v(cid:48), and to 0, oth-
+erwise. Because na has no associated value, here a ranges
+over all attributes except na. In contrast to current instan-
+tiations of the CCM framework [4, 18], these additional z
+variables enable SCAD to be more expressive and enforce
+additional domain-speciﬁc constraints.
+4.3 Constraints
+
+We introduce two kinds of constraints: entity-level con-
+straints that keep the assignment of values to attributes
+globally consistent, and category-level constraints that pre-
+vent gross outlier values from being assigned to an attribute.
+
+Bing APIWeb PagesOffer PagesSnippetExtractionLocal ModelEntity Level ConstraintsCategory Level ConstraintsGlobal Optimization(Integer Program)Global Attribute AssignmentHandcraftedQueriesUnlabeled SnippetsWWW 2011 – Session: Information ExtractionMarch 28–April 1, 2011, Hyderabad, India450Entity-level constraints themselves come in two ﬂavors:
+consensus constraints and inter-attribute constraints. The
+former model the agreement between multiple sources of ev-
+idence for the same attribute, and they are generic in the
+sense that the same constraints are used for all attributes
+and categories. The latter model relationships that can be
+enforced between values of diﬀerent attributes using domain
+knowledge.
+4.3.1 Entity-level consensus constraints
+The following are the consensus constraints we use.
+
+x(c.s, a) = 1 ∀c ∀q
+
+(OneTargetAttr)
+
+X
+
+a
+
+This constraint ensures that each snippet c.s is assigned at
+most one attribute from the schema. We have a strict equal-
+ity because the sum is over all attributes, including na. The
+intuition is that when the author of a Web page writes a
+value, she has a single attribute in mind. Even if the same
+value appears multiple times on a page, each mention (snip-
+pet) is associated to a diﬀerent attribute. For example, sup-
+pose that a table (furniture) is square and both its depth
+and width are 3 feet. The value 3 feet might appear multi-
+ple times on the page. However, a snippet “Depth: 3 feet”
+is associated exclusively to the depth of the table.
+
+For many attributes we can also assert:
+
+z(v, a) ≤ 1 ∀a
+
+(NoValueConﬂict)
+
+X
+
+v
+
+This constraint says that an attribute should be assigned
+at most one distinct value. (NoValueConﬂict) will not be
+appropriate if the product ID is insuﬃciently diﬀerentiated,
+as in a DVD player available in diﬀerent colors, all of which
+are assigned the same product ID. In such cases, we can
+replace 1 on the rhs with a suitable upper bound to the
+number of distinct values we expect.
+
+Snippet assignments induce value assignments, which we
+
+model as follows:
+
+(cid:48)
+
+, a) ≥ x(c.s, a) ∀a, ∀v
+
+(cid:48)
+
+, ∀c.s : c.s.v = v
+
+(cid:48)
+
+z(v
+
+(ValueAssignment)
+
+This constraint ensures that if snippet c.s is assigned to
+attribute a, then this attribute should be assigned the value
+c.s.v embedded in the snippet. Essentially, it transfers the
+agreement from the snippets to the attributes.
+
+Finally, we need to make sure that the assignments of
+values to attributes are sound: they must be backed up by
+at least one evidence snippet. This is done with the following
+constraint:
+
+x(c.s, a) ∀a, v
+
+(cid:48)
+
+(ValueEvidence)
+
+, a) ≤ X
+
+(cid:48)
+
+z(v
+
+c.s:c.s.v=v(cid:48)
+
+This constraint ensures that if attribute a is assigned value
+v(cid:48), then attribute a should be assigned at least one snippet
+c.s whose value c.s.v is equal to v(cid:48).
+4.3.2 Entity-level inter-attribute constraints
+While the consensus constraints are generic, the inter-
+attribute constraints are assumed to be given together with
+the schema. For example, a reasonable constraint for the
+category Tennis Racquets is that the strung weight is al-
+ways larger than the unstrung weight. Similarly, the hard
+
+disk capacity of a laptop is almost always (much) larger than
+the RAM size. Such domain knowledge can be modeled as
+
+follows.X
+v · z(v,“strung weight”) ≥X
+
+v
+
+v
+
+v · z(v,“unstrung weight”)
+
+(AttribValueComparison)
+
+This is just one example of a very general constraint tem-
+plate. If we know that hard disks are at least 20 times larger
+than RAM sizes, or that the battery life of a laptop is at least
+2 hours, or the weight of a laptop is at least one pound more
+than the battery weight, (AttribValueComparison) can be
+easily adapted to represent such domain knowledge. Any
+such constraint has the potential to eliminate spurious as-
+signments and improve accuracy.
+
+Inequality (AttribValueComparison) has a problem as posed
+
+we wantedP
+
+v vz(ab, v) ≥P
+
+above. For brevity, let ab and as be the “big” and “small” at-
+tributes, with decision variables z(ab, v) and z(as, v), where
+v vz(as, v). The problem arises
+when ab is not assigned, i.e., all z(ab, v) = 0. Then, the lhs
+is 0 and so the rhs is also forced to be 0. Consequently, as
+is not assigned either.
+
+To address this problem we add more constraints:
+
+vmax[1 −X
+
+X
+
+vz(ab, v) ≥X
+
+z(ab, v)]+ +
+
+vz(as, v),
+
+v
+
+v
+
+v
+
+c ∈ {0, 1}, c ≥ 1 −P
+
+where [C]+ = max{0, C} and vmax is the maximum can-
+didate value for as. So if all z(ab, v) = 0, the ﬁrst term
+kicks in and allows as to be assigned. The extra constraint
+can be returned to benign linear form using another variable
+v z(ab, v) for all v, etc. It would be of
+interest to compile a catalog of such tricks for all common
+inter-attribute constraints.
+
+4.3.3 Category-level constraints
+Suppose we are expanding a catalog of steel nuts and
+bolts. The typical weight of a bolt, as seen in the training
+examples, may be between 1 and 5 grams. A human would
+unconsciously note this range. Faced with a page that oﬀers
+a nut that can hold up a weight up to 1000 kilograms, a hu-
+man would never be misled into interpreting 1000 kilograms
+as the weight of the nut itself. We can “fake” this form of in-
+telligence without deep language understanding, by instead
+modeling a distribution of values over training data for each
+attribute, and then incorporating this distribution into the
+earlier integer program.
+For a given attribute a, let Va = {va1, va2, . . . van} (|Va| =
+n) be the set of values of attribute a corresponding to prod-
+ucts in the training data. Now consider a test snippet c.s
+with its value c.s.v.
+Intuitively, if c.s.v is “close” to (the
+distribution estimated from) Va, then we should feel more
+conﬁdent assigning this value to a.
+
+We could measure the number of standard deviations by
+which c.s.v diﬀers from the average of values in Va. This
+policy is not very robust in the face of multimodal distribu-
+tions.
+
+A more robust approach is to model a (Gaussian) kernel
+density on Va, and then express the support at c.s.v as the
+density at that point:
+
+„
+
+nX
+
+k=1
+
+1p2πσ2
+
+ak
+
+exp
+
+− (c.s.v − vak)2
+
+2σ2
+ak
+
+«
+
+,
+
+S(c.s.v, Va) =
+
+1
+Z
+
+WWW 2011 – Session: Information ExtractionMarch 28–April 1, 2011, Hyderabad, India451where σ2
+ak is the variance of the kth Gaussian, and Z is
+a constant to make sure S(c.s.v, Va) ∈ [0, 1]. This is not
+necessarily desirable for multimodal data, so, for simplicity,
+we just set Z = 1 and call it unnormalized support. Also,
+we set σ2
+a, to a value computed using
+Lashkari and Golland’s [13] estimator.
+
+a2 = ··· = σ2
+
+a1 = σ2
+
+We want an assignment of c.s to a to be possible only if
+c.s.v has adequate support from (the density of) Va. We
+estimate an attribute-speciﬁc lower threshold τa of support
+below which an assignment is not allowed. This is imple-
+mented using the following simple added set of constraints:
+
+(S(c.s.v, Va) − τa) x(c.s, a) ≥ 0.
+
+The threshold τa is estimated as follows:
+
+τa = min
+
+i
+
+{S(vai − ασa, Va)}
+
+where α ≥ 0 is a constant, with α = 4 in the current set of
+experiments. Roughly speaking, we allow values that are at
+most α standard deviations away from one of the values in
+Va.
+4.4 Objective
+
+Multiple assignments will generally be feasible while satis-
+fying all the above constraints. Which one should we prefer?
+Input to this decision comes from a local model for compat-
+ibility between a snippet c.s and an attribute a, represented
+as a conditional probability model Pr(a|c.s) that we learn
+through a training process. We call this a local model be-
+cause the strength of association depends exclusively on the
+content of the snippet, without taking other snippets (or
+contexts) into account.
+
+The object of the ILP is to maximize local compatibility
+subject to all the constraints already discussed. We thus
+deﬁne the following objective function over choices of the
+binary decision variables (the sum over a includes na):
+
+x(c.s, a) log Pr(a|c.s).
+
+(Objective)
+
+X
+
+c.s,a
+
+We will sometimes shorthand φ(c.s, a) = Pr(a|c.s).
+4.5 Example
+
+Now that we have introduced all the elements of the global
+optimization problem, we can illustrate it using the exam-
+ple presented in the Introduction.
+In that example, there
+was a snippet s2 such that φ(s2,“unstrung weight”) had a
+high value of 1. Given (Objective), the ILP would have an
+incentive to set x(s2,“unstrung weight”) to 1. Once this is
+done, (OneTargetAttr) precludes any other attribute from
+being associated to snippet s2. That is, x(s2, a) = 0, for
+every attribute a such that a (cid:54)= “unstrung weight”. Since
+x(s2,“unstrung weight”) = 1 and s2.v = “11.7oz.(cid:48)(cid:48), by con-
+straint (ValueAssignment) z(“unstrung weight”,“11.7 oz.”) =
+1. Recall that, according to the local model, snippet s1
+could be associated either with “unstrung weight” or “strung
+weight”. However, by constraint (NoValueConﬂict), each
+attribute is assigned exactly one value. Thus, z(“unstrung
+weight”, “12 oz.”) = 0. By the (ValueAssignment) constraint,
+x(s1,“unstrung weight”) = 0 (it would otherwise set
+z(“unstrung weight”,“12 oz.”) to 1 and reach a contradic-
+tion). Since snippet s1 cannot be associated with “unstrung
+weight”, the objective function now has a strong incentive
+to set x(s1,“strung weight”) to 1. By (ValueAssignment),
+z(“strung weight”,“12 oz.”) = 1.
+
+5. LOCAL MODEL
+
+In this section, we present the details of the local model
+used by SCAD. In Section 5.1, we present the features used
+by the classiﬁer; and in Section 5.2 we described the ap-
+proach used for training it.
+5.1 Features
+
+In Section 4.1, we explained how the snippets are cre-
+ated.
+In order to associate a snippet to an attribute, the
+model takes into consideration various measures of matches
+between the text in the snippet and various elements such as
+word distributions in previously seen snippets, and attribute
+metadata (types, attribute name synonyms, etc.).
+Each such match signal is called a feature and becomes
+an element in a feature vector f (c.s, a) ∈ Rd for some suit-
+able vector space of d dimension. The overall compatibility
+between the context c.s and the attribute a is obtained by
+a linear combination of the features through a local model
+w ∈ Rd, and written as the dot/inner product w(cid:62)f (c.s, a).
+To combine local compatibility of various (c.s, a) pairs,
+we calibrate these to probabilities using a multiclass logistic
+regression
+
+Pr(a|c.s) =
+
+P
+
+exp(w(cid:62)f (c.s, a))
+a(cid:48) exp(w(cid:62)f (c.s, a(cid:48)))
+
+,
+
+(1)
+
+where a is regarded as the class label. Often, feature el-
+ements are non-negative. We say a speciﬁc element of f
+“ﬁres” if its value is positive, as against zero. We now de-
+scribe the actual features used in our system.
+
+Features based on attribute names.
+
+For some attributes, we may know a priori some of the
+ways that they may be referred to in Web documents. For
+example, the attribute “Model Part Number” can appear
+as “MPN” and “Manufacturer Part Number”.4 For each at-
+tribute a, we create a feature as follows. Let Names(a) be
+the set of possible names that we have identiﬁed for attribute
+a. We then create a feature function that returns 1 if the
+input snippet contains an element from Names(a), and 0
+otherwise.
+
+Features based on word distributions.
+
+The features based on attribute names need to be com-
+plemented with other features because it might be impossi-
+ble to determine a priori all the diﬀerent ways in which an
+attribute can be mentioned. Furthermore, some attribute
+values appear without any mention of an attribute name.
+Thus, we also employ softer measures of textual similarity
+between the snippet of interest c.s; and snippets from train-
+ing contexts already known to be assigned to attribute a for
+other entities.
+
+We use two type of features based on word distributions,
+using TF-IDF [14] and Jensen Shannon divergence [6] as
+measures. For the TF-IDF measure, we can consider all the
+snippet in the training data for an attribute a as a “docu-
+ment” for a. Then, we can ﬁnd the tf-idf score of a word.
+Given a snippet c.s, we compute the tf-idf value correspond-
+ing to attribute a by summing over the scores of the words
+
+4In our system, we use a method for detecting these at-
+tribute name synonyms based on distributional similarity,
+which is outside the scope of this paper.
+
+WWW 2011 – Session: Information ExtractionMarch 28–April 1, 2011, Hyderabad, India452wi in c.s. That is,
+
+tf-idf(c.s, a) =
+
+X
+
+w∈c.s
+
+tf-idf(w, a),
+
+where tf-idf(w, a) is computed with respect to the training
+snippets for attribute a.
+
+To compute the features based on Jensen Shannon diver-
+gence, we do the following. For each attribute a, collect all
+training snippets associated to a in the training data into one
+word bag and represent it as a distribution Pa over words
+(unigrams). In particular, for a word w, Pa(w) is computed
+as follows. Let x be the number of times that x appears
+in the training snippets for attribute a. Let y be the to-
+tal number of tokens in those snippets. Then Pa(w) = x
+y .
+Similarly, we compute distributions for the snippet of inter-
+est c.s and denote it Pc.s. The feature is then computed as
+JS(Pa||Pc.s).
+
+Features based on units.
+
+Additional strong local clues come from the units of quan-
+tity attributes. Most quantities of interest in a catalog have
+units like money amount, linear dimension, duration, and
+weight. As additional evidence for matching up c.s with a,
+we add features that detect the typical units in which snip-
+pet c.s is written.
+
+We start with some basic features that associated to the
+
+value c.s.v:
+
+• Is the token a (decimal) integer?
+• Does the number represented by the token have a frac-
+• Is the token alphanumeric? Note that some attribute
+
+tional part?
+
+values like 802.11n may not be purely numerical.
+
+Then we add features that draw upon the typical units in
+which a speciﬁc attribute a is expressed. Consider the di-
+mensions of cameras, speciﬁcally, width. It can be expressed
+in millimeters, centimeters, or inches. For larger objects
+like furniture, feet, meters or yards may be used. Some at-
+tributes, like the number of USB ports in a motherboard,
+are unitless counts. To capture both classes, we use these
+features:
+
+• Does the snippet contain any unit?
+• For each unit u, does the snippet contain u?
+
+5.2 Automated Training
+
+As a training set, SCAD is given a set of “gold” entities,
+together with their corresponding contexts. In order to train
+the local model classiﬁer, it is also necessary to assign at-
+tribute labels to the snippets in the contexts. Doing so in a
+manual way would be overly laborious. Thus, SCAD does
+it an automated fashion. In particular, for each document
+(context), SCAD looks at the occurrences of values, and tries
+to relate them to the gold data that it has available for the
+corresponding entity. Let us say that we have the snippet
+c.s associated to entity e. SCAD considers three cases:
+
+1. The snippet has a numerical value c.s.v whose unit is
+u. If the gold data for entity e contains an attribute
+value pair (cid:104)a, v(cid:48)(cid:105) such that v(cid:48) = c.s.v and the unit of
+v(cid:48) is u, then the snippet c.s is labeled with attribute
+a.
+
+Category
+Tennis
+Racquets
+Digital
+Cameras
+
+Washing
+Machines
+
+Computer
+Memory
+
+Attributes
+Head Size, Length, Beam Width, Unstrung
+Weight, Strung Weight
+Depth, Digital Zoom, Eﬀective Camera
+Resolution, Flash Memory, Height, Interpolated
+Resolution, Max Focal Length, Min Focal Length,
+Optical Zoom, Screen Size, UPC, Weight,
+Width
+Number of Cycles, Number of Temperature
+Settings, Tub Capacity, Energy Used, Depth,
+Height, Width, UPC, Weight, Water Used,
+Max Spin Speed
+RAM Storage Capacity, RAM Memory Speed
+
+Table 1: Representative set of product attributes
+used in the experiments.
+
+2. If c.s.v is not associated to any unit, SCAD also looks
+for occurrence of c.s.v in the gold data for e. But as
+an extra assurance SCAD looks for suitable attribute
+names in the text of snippet c.s. More speciﬁcally, sup-
+pose that there is an attribute value pair (cid:104)a, v(cid:48)(cid:105) in the
+gold data for e such that v(cid:48) = c.s.v. The extra assur-
+ance is that SCAD checks whether one of the known
+names for a appears consecutive to the value c.s.v in
+the text for snippet c.s. If that is the case, snippet c.s
+is labeled with attribute a.
+
+3. If none of the two cases above hold, then the snippet
+
+is associated to the the background class na.
+
+Since the number of snippets labeled as background usu-
+ally dominate, SCAD downsamples them, in such a way
+that, in the end, the training set contains as many back-
+ground snippets as the number the snippets for all non-
+background attributes.
+
+6. EXPERIMENTS
+6.1 Experimental Framework
+
+The experiments were conducted in the Commerce search
+domain, with the goal of building structured descriptions for
+commercial products. Each description becomes a record in
+the catalog maintained by the Commerce search engine. All
+the experiments were done using data from Bing Shopping.
+We considered seven product categories: TVs, washing
+machines, microwave ovens, refrigerators, computer mem-
+ory, digital cameras, and tennis racquets. A representative
+set of the attributes that we focused on is shown in Table 1.
+Recall that in SCAD each entity is associated to a context.
+In order to obtain the contexts for each entity (product), we
+considered two scenarios of signiﬁcant practical importance
+in Commerce search, described next.
+6.1.1 Contexts from merchant offers
+In this scenario, we make use of oﬀer feeds provided by
+merchants to Bing Shopping. For each product, there is a
+set of merchant oﬀers; and each oﬀer is associated to a Web
+page where the product can be bought. The Web pages
+pointed to by the links become the contexts for the entities
+used in SCAD.
+
+To understand why the oﬀers and merchant Web pages are
+readily available, consider the business model of Commerce
+search engines. In this model, users search for a product, and
+once they ﬁnd it, they are presented with a list of links to
+
+WWW 2011 – Session: Information ExtractionMarch 28–April 1, 2011, Hyderabad, India453merchant Web pages where they can buy it. The Commerce
+search engine is paid by the merchants for each click to their
+sites, and the merchants beneﬁt by increasing the visits to
+their site. Thus, both the Commerce search engine and the
+merchants have an strong incentive to ensure that products
+have associated oﬀers.
+6.1.2 Contexts from Web search
+In this scenario, the Commerce Search engine wishes to
+build product descriptions even before the merchants pro-
+vide oﬀers for the corresponding products. One reasonable
+way of doing so is by leveraging the results of a general
+Web search engine. For example, if we want to create a
+description for the racquet Wilson BLX Khamsin-Five, we
+can issue the query “wilson blx khamsin-ﬁve” to the search
+engine, which would return a set of results related to the
+product. We can then fetch the pages corresponding to the
+results, and consider them as the contexts for the entity. No-
+tice that the quality of the results depends on how eﬀective
+the query is in retrieving documents that are relevant to the
+product. For example, the query “wilson racquets” would
+clearly be less eﬀective than the query “wilson blx khamsin-
+ﬁve”. In our experiments, we always construct the queries
+using the name for the product, which includes identiﬁers
+such as brand and model. This approach proved to be eﬀec-
+tive in our experiments; we leave the study of other query
+constructions for context retrieval as future work.
+
+calibrated to conﬁdence and to the diverse number of at-
+tribute options a snippet can have, and this may result in
+P-R plots that do not always show smooth inverse relations.
+For presentation purposes, we sometimes report the high-
+est F 1 measure that is obtained across values of θ (i.e., the
+highest F 1θ, for 0 ≤ θ ≤ 1).
+
+Figure 4: Comparison with Classiﬁer-Max on all cat-
+egories using merchant oﬀers.
+
+In SCAD, we assume the availability of a training set of
+products within a category. In all the experiments, we used
+a training set of 20 products per category. For six cate-
+gories (TVs, washing machines, microwave ovens, refriger-
+ators, computer memory, digital cameras), the attribute-
+value pairs for the training products were obtained from
+data existing in the Bing Shopping catalog. To stress the
+fact that the training data is easy to gather, for an ad-
+ditional category (tennis racquets) we obtained the train-
+ing data directly from a site that specializes on racquets
+(www.tennisracquets.com). In the experiments, we report
+results for test sets of 60 products for each category, except
+for refrigerators and washing machines for which we used
+45 and 35 products5, respectively. When using merchant
+oﬀers, we consider products that have at least eight oﬀers
+associated to them. For Web Search results, we use the Bing
+search API to fetch top-50 results for each product/query.
+6.1.3 Metrics
+We measure the quality of the results by using the stan-
+dard precision, recall, and F 1 measure [14]. As a parametric
+knob, we use a threshold θ applied to the scores of the local
+model classiﬁer. The metrics at each value of θ are then
+computed as follows. Let E be a set of entities (products).
+Let X be the set of attribute-value pairs predicted by a sys-
+tem (either SCAD or a baseline) for the products in E, when
+the local model outputs only the predictions whose score is
+above θ. Let Y be the ground truth attribute-value pairs for
+the products in E. Then, we deﬁne precision (P), recall (R)
+and F1 at θ as follows:
+
+, Rθ =
+
+, F1θ =
+
+|X ∩ Y |
+
+|Y |
+
+Pθ =
+
+|X ∩ Y |
+
+|X|
+
+2 × Pθ × Rθ
+Pθ + Rθ
+
+We note that the local model’s prediction scores are not
+
+5This is due to the limited coverage of the catalog for the
+refrigerators and washing machines categories.
+
+Figure 5: Comparison with Classiﬁer-Max on all cat-
+egories using Web search results.
+
+6.2 Beneﬁts of Collective Extraction
+
+We now demonstrate the beneﬁts of collective extraction
+by comparing SCAD against a baseline that makes assign-
+ments without requiring consensus among snippets. We call
+this baseline Classiﬁer-Max because it uses the same local
+model (classiﬁer) as SCAD, but instead of making a col-
+lective assignment of attribute values, it chooses for each
+attribute the value in the snippet with the the highest score
+according to the local model. More speciﬁcally, for each en-
+tity (product) e and attribute a, let C be the set of con-
+texts associated to e. Then, Classiﬁer-Max chooses a
+value c.s.v such that c ∈ C and there is no c(cid:48).s(cid:48).v(cid:48) such
+that φ(c(cid:48).s(cid:48), a) > φ(c.s, a). This baseline is inspired by the
+Kylin system [23], where the same approach is taken to com-
+
+00.10.20.30.40.50.60.70.80.91F1 measure Classifier-MaxSCAD00.10.20.30.40.50.60.70.80.91F1 measure Classifier-MaxSCADWWW 2011 – Session: Information ExtractionMarch 28–April 1, 2011, Hyderabad, India454Dataset
+
+NameMatch- Classiﬁer-
+Majority
+
+Majority
+
+SCAD
+
+Web search contexts
+
+Microwave Ovens
+Computer Memory
+
+Refrigerators
+
+Digital Cameras
+
+Tennis
+
+Television
+
+Washing Machines
+
+0.39
+0.24
+0.31
+0.82
+0.59
+0.67
+0.51
+
+0.58
+0.65
+0.41
+0.86
+0.61
+0.68
+0.52
+
+Merchant oﬀer contexts
+
+Microwave Ovens
+Computer Memory
+
+Refrigerators
+
+Digital Cameras
+
+Television
+
+Washing Machines
+
+0.36
+0.06
+0.50
+0.82
+0.68
+0.67
+
+0.64
+0.98
+0.49
+0.86
+0.68
+0.70
+
+0.60
+0.66
+0.47
+0.86
+0.73
+0.69
+0.54
+
+0.66
+0.99
+0.52
+0.84
+0.68
+0.75
+
+Table 2: F1 comparison of SCAD with NameMatch-
+Majority and Classiﬁer-Majority on all conﬁgura-
+tions. Best performance is marked in bold.
+
+bine scores from a local model (although their local model
+is diﬀerent from ours).
+
+In Figures 4 and 5, we compare SCAD and Classiﬁer-
+Max on contexts from merchant oﬀers and Web search re-
+sults, respectively. For each category, we show the highest
+F 1 obtained across values of parametric knob θ. Notice that
+our system performs signiﬁcantly better than Classiﬁer-
+Max across all categories. The largest improvement is in the
+category Computer Memory on merchant oﬀers, where the
+F 1 increases by 0.52. For 10 out of the 13 category/source
+considered conﬁgurations, the increase is larger than 0.10;
+and in all cases the increase is above 0.06.
+
+Except for Computer Memory, in all other categories the
+F 1 increase on Web search results is even more pronounced
+than in merchant oﬀers. For example, for Microwave Ovens,
+the increase on merchant oﬀers is 0.06; whereas it is 0.17
+on Web search results. The reason is that pages from Web
+search results are generally noisier than merchant pages: the
+latter tend to describe exactly one product and have promi-
+nent product descriptions. When the pages are noisier, the
+local model makes more mistakes, and provides greater room
+for improvement to the collective constraints.
+
+To understand the beneﬁts of SCAD in terms of precision
+and recall, see Figures 6 and 7. These ﬁgures present the pre-
+cision/recall curves for Tennis Racquets, and Washing Ma-
+chines on oﬀers and Web search results, respectively. Notice
+that SCAD consistently outperforms Classiﬁer-Max across
+values of the parametric knob. The reason for this is that
+Classiﬁer-Max is rather brittle: a wrong local model pre-
+diction with high conﬁdence leads to an error. On the other
+hand, SCAD is able to exploit redundancy in the contexts
+to recover from local model errors.
+6.3 Justiﬁcation of design decisions
+
+We now compare SCAD against a number of baselines,
+
+where we aim for the following:
+
+1. Evaluation of the Local Model
+2. Understand the beneﬁts of our ILP-based Global Op-
+
+timization
+
+Figure 6: Precision and recall results for Tennis Rac-
+quets category.
+
+Figure 7: Precision and recall results for Washing
+Machines category on merchant oﬀers.
+
+3. Perform a constraint ablation study to show the need
+
+for the actual constraints used in the linear program
+
+4. Understand the running time of the ILP
+
+6.3.1 Evaluation of Local Model
+While in SCAD the results of the local model are adjusted
+by the collective constraints, we must ensure the local model
+produces reasonable results. We show that this is the case
+by comparing against a system where the local model is not
+classiﬁcation-based: rather, it associates value c.s.v to at-
+tribute a if the name of attribute a appears in the text of
+snippet c.s. Furthermore, it performs aggregation by ma-
+jority voting. We call this implementation NameMatch-
+Majority.
+
+In Table 2, we show the highest F 1 on all categories for
+SCAD and NameMatch-Majority. We can observe that
+SCAD consistently outperforms NameMatch-Majority.
+By examining the data, we observed that the improvement
+is more pronounced for categories where the attribute names
+do not appear explicitly on the Web pages, but SCAD’s lo-
+cal model is able to get the signal from other features. For
+example, for Computer Memory, the attributes names are
+rare on Web pages (e.g., there is an attribute “RAM Mem-
+ory Speed” but the word “RAM” never appears next to the
+
+0.450.50.550.60.650.70.750.80.850.350.450.550.650.75Precision Recall NameMatch-MajorityClassifier-MajorityClassifier-MaxSCAD0.60.650.70.750.80.850.90.30.40.50.60.70.8Precision Recall NameMatch-MajorityClassifier-MajorityClassifier-MaxSCADWWW 2011 – Session: Information ExtractionMarch 28–April 1, 2011, Hyderabad, India455attribute values). However, these attributes are easy to de-
+tect by the local model by using the distributional similarity
+features with respect to previously seen snippets (e.g., the
+term “speed” tends to appear near the memory speed) and
+features related to the units (e.g., memory speed is the only
+attribute whose unit is in Mhz.)
+6.3.2 Beneﬁts of our ILP-based Global Optimization
+To show that the aggregation approach of SCAD is ef-
+fective, we compare against an implementation that uses
+the same local model as in our system (i.e., classiﬁer-based)
+but does aggregation by majority voting (unlike our system,
+which uses an ILP). We call this implementation Classiﬁer-
+Majority. In Table 2, we show the F 1 measure on all cate-
+gories for our system and Classiﬁer-Majority. Notice that
+with the exception of one case (Cameras on merchant oﬀers),
+our system consistently outperforms Classiﬁer-Majority.
+The largest improvement is on the Tennis Racquets category,
+where the F 1 measure increases from 0.61 to 0.73. On Fig-
+ures 6, and 7, we show the precision and recall for some of the
+categories (Tennis Racquets, Washing machines on Oﬀers,
+and Washing Machines on Web search results). It can be
+seen that SCAD outperforms Classiﬁer-Majority across
+all values of the parametric knob.
+6.3.3 Constraint Ablation Study
+In order to justify the need for the actual constraints used
+in the linear program, we considered an ablation of SCAD’s
+constraints, where only the consensus constraints are used,
+but not the category-level constraints. We observed that for
+12 out of the 13 category/source conﬁgurations, SCAD out-
+performs the ablated system. Furthermore, the ablated sys-
+tem outperforms Classiﬁer-Majority. The diﬀerences are
+signiﬁcant in some cases. For example, for Tennis Rac-
+quets, the ablated system has an F1 of 0.68 while SCAD has
+an F1 of 0.73. This shows that category-level constraints
+are useful. Furthermore, the ablated system outperforms
+Classiﬁer-Majority, which has an F1 of 0.62. This shows
+that SCAD’s consensus constraints help. As another exam-
+ple, for Washing Machines on merchant oﬀers, the F1 for
+Classiﬁer-Majority is 0.70. When we use an ILP with
+consensus constraints, it jumps to 0.72. If we use the entire
+SCAD system, the F1 measure is 0.75.
+6.3.4 Running time of ILP
+Recall that in SCAD, each entity has an associated ILP.
+That is, the system solves n ILPs, where n is the number
+of entities to be processed. In the diﬀerent experiments, the
+average running time to solve an individual ILP was 37.5 ms.
+per entity. The reason we do not incur a higher cost is that
+we have one ILP per entity and the total number of variables
+per ILP is only 1323 on average. All this implies that use of
+ILP is eﬃcient and practical in our framework.
+
+7. CONCLUSIONS
+
+We have presented SCAD, a general and ﬂexible optimization-
+
+based framework for collective extraction of attributes from
+unstructured text. An important motivation for the problem
+is to expand and complete product catalogs in e-commerce
+sites. SCAD requires limited amount of supervision and
+can be bootstrapped quickly, even in the absence of data
+providers. Experimental results with several product cate-
+gories from Bing Shopping demonstrate the merits of our ap-
+
+proach. As part of future work, we plan to apply SCAD on
+more categories, exploiting diﬀerent category-speciﬁc con-
+straints, and exploring how such constraints can be esti-
+mated reliably from limited training data.
+
+8. REFERENCES
+[1] S. Banerjee, S. Chakrabarti, and G. Ramakrishnan.
+
+Learning to rank for quantity consensus queries. In SIGIR
+Conference, 2009.
+
+[2] R. Bunescu and R. Mooney. Collective information
+
+extraction with relational Markov networks. In ACL, 2004.
+
+[3] R. C. Bunescu and R. J. Mooney. A shortest path
+
+dependency kernel for relation extraction. In EMNLP
+Conference, pages 724–731. ACL, 2005.
+
+[4] M. Chang, L. Ratinov, N. Rizzolo, and D. Roth. Learning
+
+and inference with constraints. In AAAI, 2008.
+
+[5] T. Cheng, X. Yan, and K. Chang. EntityRank: searching
+
+entities directly and holistically. In VLDB, 2007.
+
+[6] T. M. Cover and J. A. Thomas. Elements of Information
+
+Theory. John Wiley and Sons, Inc., 1991.
+
+[7] N. Dalvi, P. Bohannon, and F. Sha. Robust web extraction:
+
+an approach based on a probabilistic tree-edit model. In
+SIGMOD, 2009.
+
+[8] D. Davidov and A. Rappoport. Extraction and
+
+Approximation of Numerical Attributes from the Web. In
+ACL, 2010.
+
+[9] O. Etzioni, M. Cafarella, D. Downey, S. Kok, A. Popescu,
+
+T. Shaked, S. Soderland, D. Weld, and A. Yates. Web-scale
+information extraction in knowitall:(preliminary results). In
+WWW, 2004.
+
+[10] J. Finkel, T. Grenager, and C. Manning. Incorporating
+
+non-local information into information extraction systems
+by gibbs sampling. In ACL, 2005.
+
+[11] P. Gulhane, R. Rastogi, S. Sengamedu, and A. Tengli.
+
+Exploiting content redundancy for web information
+extraction. In WWW, 2010.
+
+[12] S. Kulkarni, A. Singh, G. Ramakrishnan, and
+
+S. Chakrabarti. Collective annotation of Wikipedia entities
+in Web text. In SIGKDD Conference, 2009.
+
+[13] D. Lashkari and P. Golland. Convex clustering with
+exemplar-based models. In NIPS Conference, 2007.
+
+[14] C. Manning, P. Raghavan, and H. Sch¨utze. Introduction to
+
+Information Retrieval. Cambridge University Press, 2008.
+
+[15] V. Moriceau. Numerical data integration for cooperative
+
+question-answering. In EACL Workshop on Knowledge and
+Reasoning for Language Processing, pages 42–49, 2006.
+
+[16] M. Pa¸sca. Organizing and searching the world wide web of
+
+facts–step two: harnessing the wisdom of the crowds. In
+WWW, 2007.
+
+[17] K. Probst, R. Ghani, M. Krema, A. Fano, and Y. Liu.
+Semi-supervised learning of attribute-value pairs from
+product descriptions. In IJCAI, 2007.
+
+[18] D. Roth and W. Yih. A linear programming formulation for
+global inference in natural language tasks. In CoNLL, 2004.
+
+[19] S. Sarawagi. Information extraction. FnT Databases, 1(3),
+
+2008.
+
+[20] C. Sutton and A. McCallum. Collective segmentation and
+
+labeling of distant entities in information extraction. In
+ICML workshop on Statistical Relational Learning, 2004.
+[21] P. Turney. Mining the Web for Synonyms: PMI-IR versus
+
+LSA on TOEFL. In ECML, 2001.
+
+[22] M. Wick, A. Culotta, and A. McCallum. Learning ﬁeld
+
+compatibilities to extract database records from
+unstructured text. In EMNLP, 2006.
+
+[23] F. Wu and D. S. Weld. Automatically semantifying
+
+Wikipedia. In CIKM, pages 41–50, 2007.
+
+[24] M. Wu and A. Marian. Corroborating answers from
+
+multiple web sources. In WebDB, 2007.
+
+WWW 2011 – Session: Information ExtractionMarch 28–April 1, 2011, Hyderabad, India456

@@ -1,0 +1,1790 @@
+Scalable Techniques for Document Identiﬁer Assignment
+
+in Inverted Indexes
+
+Shuai Ding
+
+Polytechnic Institute of NYU
+Brooklyn, New York, USA
+sding@cis.poly.edu
+
+Josh Attenberg
+
+Polytechnic Institute of NYU
+Brooklyn, New York, USA
+
+josh@cis.poly.edu
+
+Torsten Suel
+
+Polytechnic Institute of NYU
+Brooklyn, New York, USA
+
+suel@poly.edu
+
+ABSTRACT
+Web search engines use the full-text inverted index data structure.
+Because query processing performance is impacted by the size of
+the inverted index, a plethora of research has focused on fast and
+effective techniques for compressing this structure. Recently, re-
+searchers have proposed techniques for improving index compres-
+sion by optimizing the assignment of document identiﬁers in the
+collection, leading to signiﬁcant reduction in overall index size.
+
+In this paper, we propose improved techniques for document
+identiﬁer assignment. Previous work includes simple and fast heuris-
+tics such as sorting by URL, as well as more involved approaches
+based on the Traveling Salesman Problem or on graph partition-
+ing. These techniques achieve good compression but do not scale
+to larger document collections. We propose a new framework based
+on performing a Traveling Salesman computation on a reduced
+sparse graph obtained through Locality Sensitive Hashing. This
+technique achieves improved compression while scaling to tens of
+millions of documents. Based on this framework, we describe new
+algorithms, and perform a detailed evaluation on three large data
+sets showing improvements in index size.
+Categories and Subject Descriptors
+H.3.3 [INFORMATION STORAGE AND RETRIEVAL]: Infor-
+mation Search and Retrieval.
+General Terms
+Algorithms, Performance
+Keywords
+Inverted Index, Index Compression, Document Reordering
+1.
+
+INTRODUCTION
+
+With document collections spanning billions of pages, current
+web search engines must be able to efﬁciently and effectively search
+multiple terabytes of data. Given the latency demands users typi-
+cally place on interactive applications, the engine must be able to
+provide a good answer within a fraction of a second, while simulta-
+neously serving tens of thousands of such requests. To perform this
+task efﬁciently, current web search engines use an inverted index,
+a widely used and extensively studied data structure that supports
+fast retrieval of documents containing a given set of terms.
+
+The scale of data involved has created on a critical dependence
+on compression of the inverted index structure; even moderate im-
+provements in compressed size can translate in savings of many GB
+Copyright is held by the International World Wide Web Conference Com-
+mittee (IW3C2). Distribution of these papers is limited to classroom use,
+and personal use by others.
+WWW 2010, April 26–30, 2010, Raleigh, North Carolina, USA.
+ACM 978-1-60558-799-8/10/04.
+
+or TB of disk space. More importantly, this reduced size translates
+into savings in I/O transfers and increases in the hit rate of main-
+memory index caches, offering an improvement in overall query
+processing throughput. In many cases, only a small fraction of the
+inverted index is held in main memory. As a result, query process-
+ing times may be dominated by disk seeks and reads for inverted
+index data. However, even if the entire index is placed in mem-
+ory, improved compression results in a reduction in the total sys-
+tem memory required. Overall, improved compression translates
+into improved query processing rates on given hardware, an impor-
+tant concern given that search engines could spend many millions
+of dollars to deploy clusters for query processing. The direct inﬂu-
+ence index size exerts on a search engine’s bottom line has inspired
+a plethora of research on compression techniques, leading to sub-
+stantial improvements in the compression ratio and speed of search
+engines. See [25, 1, 19, 14, 26, 17, 24] for some recent work.
+
+In this paper, we focus on a related but distinct approach for im-
+proving inverted index compression, the so-called Document Iden-
+tiﬁer Assignment Problem (also sometimes referred to as Docu-
+ment Reordering). In a typical inverted index structure, documents
+are referenced by a distinct integer identiﬁer– a document identi-
+ﬁer or docID. The DocID Assignment Problem is concerned with
+reassigning docIDs to documents in a way that maximizes the com-
+pressibility of the resulting inverted index. Prior work has shown
+that for many document collections, compressed index size can be
+substantially reduced through an improved assignment of docIDs,
+in some cases by more than a factor of two [23]. However, despite
+a number of recent publications on this topic [7, 20, 22, 21, 5, 6, 4,
+23], there are still many open challenges.
+
+The underlying idea in producing a good docID assignment is
+to place similar documents next to each other; this then results in
+highly clustered inverted lists, where a term occurs in “streaks” of
+multiple consecutive documents, punctuated by long gaps. Such
+clustered lists are known to be more compressible than lists pro-
+duced by random or unoptimized document assignments. Previous
+work has demonstrated the ability of solutions based on approxima-
+tions to the Traveling Salesman Problem (TSP) to produce docID
+assignments that are superior to the assignments given by many
+other approaches [6]. However, the proposed TSP-based solutions
+are limited to small data sets; they operate on a dense graph with
+O(n2) edges for n documents. Another solution based on graph
+partitioning, proposed in [7] and later evaluated in [22, 6], also per-
+form well in terms of compression, but is limited to even smaller
+data sets. Conversely, it was shown in [21] that simply assigning
+docIDs to web pages according to the alphabetical ordering of the
+URLs perform very well, and offer almost unlimited scalability.
+
+Our goal in this paper is to illustrate improved techniques for do-
+cID assignments. In particular, we are looking for techniques that
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA311scale to many millions of documents while achieving signiﬁcantly
+better compression than URL-sorting on different types of collec-
+tions. We make ﬁve main contributions to this end:
+
+1. We present a TSP-based approach for docID assignment that
+scales to tens of millions of documents while achieving sig-
+niﬁcantly better compression than the URL sorting given in
+[21]. Our approach is based on computing a sparse subgraph
+of the document similarity graph from the TSP-based ap-
+proach in [6] using Locality Sensitive Hashing [15, 13], only
+running the TSP computation on this reduced graph.
+
+2. We evaluate different edge weighting schemes for the TSP
+computation resulting in improved compression. We propose
+an extension of the TSP-based approach that can optimize the
+distribution of multi-gaps: gaps larger than 1 between term
+occurrences in an document ordering. While such gaps are
+not considered by standard TSP-based approaches, they have
+a signiﬁcant impact on the size of the resulting index.
+
+3. We study hybrid schemes that combine ideas from our ap-
+proach and the URL sorting heuristic in [21]. We show that
+selecting the edges in our reduced graph using both LSH and
+URL sorting results in improved compression while reducing
+computational cost versus the LSH-only approach.
+
+4. We perform an extensive experimental evaluation of our ap-
+proaches on several large data sets from TREC, Wikipedia,
+and the Internet Archive. Our results show signiﬁcant im-
+provements in compression over the URL sorting heuristic
+in [21], while scaling to very large data sets.
+
+5. We demonstrate improvements in the compressed size of the
+frequency and position data stored in the index in addition to
+the beneﬁts for docID compression. Furthermore, we demon-
+strate signiﬁcant speedups in query processing for memory-
+resident and disk-based indexes as a result of our techniques.
+
+2. BACKGROUND AND PRIOR WORK
+
+In this section, we provide background on inverted indexes com-
+pression techniques and IR query processing. Then we go on to
+discuss prior work on the DocID Assignment Problem in 2.3.
+2.1 Inverted Indexes and Query Processing
+Let D = {d1; : : : ; d|D|} be a set of |D| documents in a doc-
+ument collection, and let T = {t1; : : : ; t|T||ti ∈ D} be the set
+of terms present in the collection. An inverted index data struc-
+ture I is essentially a particularly useful, optimized instantiation of
+a term/document matrix M where each term corresponds to a row
+and each document to a column. Here, Mi;j represents the asso-
+ciation between term i and document j, often as a frequency, a
+TF-IDF score, or as a simple binary indicator, for all terms ti ∈ T
+and documents dj ∈ D. Clearly, this matrix is very sparse, as most
+documents only contain a small subset of the possible terms. Con-
+versely, most terms only occur in a small subset of documents. An
+inverted index exploits this by storing M in sparse format – since
+most entries are 0, it is preferable to just store the non-zero en-
+tries. More precisely, the non-zero entries in a row corresponding
+to a term ti are stored as a sequence of column IDs (i.e., document
+IDs), plus the value of the entries (except in the binary case, where
+these values do not have to be stored). This sequence is also called
+the inverted list or posting list for term ti, denoted li.
+
+Search engines typically support keyword queries, returning doc-
+uments associated with a small set of search terms. Computation-
+ally, this translates to ﬁnding the intersection or union of the rele-
+vant rows of M, i.e., the inverted lists of the search terms, and then
+evaluating an appropriate ranking function in order to sort the re-
+sult from most to least relevant. In many cases, each inverted list
+
+li contains the list of documents containing t and the associated
+frequency values, i.e., how often a document contains the term.
+
+Inverted lists are usually stored in highly compressed form, us-
+ing appropriate techniques for encoding integer values. To decrease
+the values that need be encoded, inverted lists are typically gap-
+encoded, i.e., instead of storing the list of raw docIDs of the doc-
+uments containing the term, we store the list of gaps between suc-
+cessive docIDs in the list, called d-gaps.
+
+Query processing in a search engine involves numerous distinct
+processes such as query parsing, query rewriting, and the compu-
+tation of complex ranking functions that may use hundreds of fea-
+tures. However, at the lower layer, all such systems rely on ex-
+tremely fast access to inverted lists to achieve the required query
+throughput. For each query, the engine needs to traverse the in-
+verted lists corresponding to the query terms in order to identify
+a limited set of promising documents that can then be more fully
+scored in a subsequent phase. The challenge in this ﬁltering phase
+is that for large collections, the inverted lists for many commonly
+queried terms are very long. For example, for the TREC GOV2
+collection of 25:2 million web pages used below, on average each
+query involves lists with several million postings. This motivates
+the interest in improved compression techniques for inverted lists.
+
+2.2 Inverted Index Compression Techniques
+The fundamental goal of inverted index compression is to com-
+press a sequence of integers, either a sequence of d-gaps by taking
+the difference between consecutive docIDs, or a sequence of fre-
+quency values. We now sketch some known integer compression
+techniques that we use in this paper, in particular Gamma Coding
+(Gamma) [25], PForDelta (PFD) [14, 26], and binary Interpolative
+Coding (IPC) [17]. We provide outlines of these methods to keep
+the paper self-contained; for more details, please see the references.
+Gamma Coding This technique represents a value n ≥ 1 by
+a unary code for 1 + ⌊log(n)⌋ followed by a binary code for the
+lower ⌊log(n)⌋ bits of n. Gamma coding performs well for very
+small numbers, but is not appropriate for larger numbers.
+
+PForDelta: This is a compression method recently proposed in
+[14, 26] that supports fast decompression while also achieving a
+small compressed size. PForDelta (PFD) ﬁrst determines a value b
+such that most of the values to be encoded (say, 90%) are less than
+2b and thus ﬁt into a ﬁxed bit ﬁeld of b bits each. The remaining
+values, called exceptions, are coded separately. If we apply PFD
+to blocks containing multiple of 32 values, then decompression in-
+volves extracting groups of 32 b-bit values, and ﬁnally patching the
+result by decoding a smaller number of exceptions. This process
+can be implemented extremely efﬁciently by providing, for each
+value of b, an optimized method for extracting 32 b-bit values from
+b memory words, with decompression speeds of more than a billion
+integers per second on a single core of a modern CPU.
+
+PFD can be modiﬁed and tuned in various ways by changing the
+policies for choosing b and the encoding of the exceptions. In this
+paper we use a modiﬁed version of PFD called OPT-PFD, proposed
+in [23], that performs extremely well for the types of inverted lists
+arising after optimizing the docID assignment.
+
+Interpolative Coding: This is a coding technique proposed in
+[17] that is ideal for clustered term occurrences. The goal of the
+document reordering approach is to create more clustered, and thus
+more compressible, term occurrences. Interpolative Coding (IPC)
+has been shown to perform well in this case [5, 7, 20, 21, 22].
+
+IPC differs from the other methods in an important way: It di-
+rectly compresses docIDs, and not docID gaps. Given a set of do-
+cIDs di < di+1 < : : : < dj where l < di and dj < r for
+some bounding values l and r known to the decoder, we ﬁrst encode
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA312dm where m = (i + j)=2, then recursively compress the docIDs
+di; : : : ; dm−1 using l and dm as bounding values, and then recur-
+sively compress dm+1; : : : ; dj using dm and r as bounding values.
+Thus, we compress the docID in the center, and then recursively
+the left and right half of the sequence. To encode dm, observe that
+dm > l + m − i (since there are m − i values di; : : : dm−1 be-
+tween it and l) and dm < r − (j − m) (since there are j − m
+values dm+1; : : : dj between it and r). Thus, it sufﬁces to encode
+an integer in the range [0; x] where x = r − l − j + i − 2 that is
+added to l + m − i + 1 during decoding; this can be done trivially
+in ⌈log2(x + 1)⌉ bits, since the decoder knows the value of x.
+In the inverted list where there are many documents that contain
+the term, the value x will be smaller than r − l. As a special case,
+if we have to encode k docIDs larger than l and less than r where
+k = r−l−1, then nothing needs to be stored at all as we know that
+all docIDs properly between l and r contain the term. This means
+IPC can use less than one bit per value for dense term occurrences.
+(This is also true for OPT-PFD, but not for Gamma Coding.)
+2.3 Prior Work on DocID Assignment
+
+The compressed size of an inverted list, and thus the entire in-
+verted index, is a function of the d-gaps being compressed, which
+itself depends on how we assign docIDs to documents (or columns
+to documents in the matrix). Common integer compression algo-
+rithms require fewer bits to represent a smaller integer than a larger
+one, but the number of bits required is typically less than linear in
+the value (except for, e.g., unary codes). This means that if we as-
+sign docIDs to documents such that we get many small d-gaps, and
+a few larger d-gaps, the resulting inverted list will be more com-
+pressible than another list with the same average value but more
+uniform gaps (e.g., an exponential distribution). This is the insight
+that has motivated all the recent work on optimizing docID assign-
+ment [7, 20, 22, 21, 5, 6, 4]. Note that this work is related in large
+part to the more general topic of sparse matrix compression [16],
+with parallel lines of work often existing between the two ﬁelds.
+
+More formally, the DocID Assignment Problem seeks a permu-
+tation of docIDs that minimizes total compressed index size. This
+permutation (cid:5) is a bijection that maps each docID dj into a unique
+integer assignment (cid:5)(dj) ∈ [1;|D|]. Let (cid:22)l(cid:5)
+i be the d-gaps associ-
+ated with term ti after permutation (cid:5). Under a speciﬁc encoding
+scheme, s, the “cost” (size) of compressing list (cid:22)l(cid:5)
+is denoted by
+i
+Costs((cid:22)l(cid:5)
+
+i ), and the total compressed index cost is
+
+∑
+
+Costs(I(cid:5)) =
+
+Costs((cid:22)l(cid:5)
+
+i );
+
+(cid:22)li
+
+Clearly, examining all possible (cid:5) would result in an exponential
+number of evaluations. Thus, we need more tractable ways to either
+compute or approximate such permutations.
+
+A common assumption in prior work is that docIDs should be
+assigned such that similar documents (i.e., documents that share a
+lot of terms) are close to each other. Thus, with the exception of [4],
+prior work has focused on efﬁciently maximizing the similarity of
+close-by documents in the docID assignment. These techniques can
+be divided into three classes: (i) top-down approaches that partition
+the collection into clusters of similar documents and then assign
+consecutive docIDs to documents in the same cluster, (ii) bottom-
+up approaches that assign consecutive docIDs to very similar pairs
+of documents and then connect these pairs into longer paths, and
+(iii) the heuristic in [21] based on sorting by URL.
+
+Bottom-Up: These approaches create a dense graph G = (D; E)
+where D is the set of documents, and E is a set of edges each rep-
+resenting the connection between two documents di and dj in D.
+Each edge (i; j) is typically assigned some weight representing the
+
+similarity between di and dj, e.g., the number of terms in the inter-
+section of the documents as used in [20, 6]. The edges of this graph
+are then traversed such that the total path similarity is maximized.
+In [20], Shieh et al proposed computing a Maximum Spanning
+Tree on this graph, that is, a tree with maximum total edge weight.
+They then propose traversing this tree in a depth-ﬁrst manner, and
+assigning docIDs to documents in the order they are encountered.
+Another approach in [20] attempts to ﬁnd a tour of G such that the
+sum of all edge weights traversed is maximized. This is of course
+equivalent to the Maximum Traveling Salesman Problem (hence-
+forth just called TSP). While this is a known NP-Complete prob-
+lem, it also occurs frequently in practice and many effective heuris-
+tics have been proposed. In [20], a simple greedy nearest neighbors
+(GNN) approach is used, where an initial starting node is chosen,
+from which a tour is grown by adding one edge at a time in a way
+that greedily maximizes the current total weight of the tour. While
+this heuristic may seem simplistic, it signiﬁcantly outperformed the
+spanning tree approach above, and was also slightly faster.
+
+Blanco and Barreiro [6] further reduce the computational effort
+through SVD for dimensionality reduction, however, even in this
+case the time is still quadratic in the number of documents. Over-
+all, TSP-based techniques seem to provide the best performance
+amongst bottom-up approaches. However, these techniques are
+currently limited to at most a few hundred thousand documents.
+
+Top-Down: Among these approaches, an algorithm in [7] has
+been shown to consistently outperform others in this class, in fact
+performing better than the sorting-based and Bottom-Up approaches
+as shown in [21, 6]. However, the algorithm is even less efﬁcient
+than the TSP approaches, and limited to fairly small data sets.
+
+Sorting: In this approach, proposed by Silvestri in [21], we
+simply sort the collection by their URLs, then assign docIDs ac-
+cording to this ordering. This is the simplest and fastest approach,
+and also performs very well in compressed size on many web data
+sets. In fact, it appears to obtain a smaller size than other scalable
+approaches, with the exception of the TSP approach and the top-
+down algorithm in [7], both of which do not scale to the data sizes
+considered in [21]. Of course, the sorting-based approach is only
+applicable to certain types of collections, in particular web data sets
+where URL similarity is a strong indicator of document similarity.
+This is not the case for many other collections such as the Reuters
+or WSJ corpus or, as we shall see, pages from Wikipedia.
+
+In summary, we have a highly scalable approach based on sort-
+ing that achieves decent compression on certain data sets, and ap-
+proaches that achieve slightly better compression but do not scale
+to large datasets. Our goal in the next few sections is to improve the
+TSP-based approach such that it scales to tens of millions of pages
+while getting signiﬁcantly better compression than that for sorting.
+3. SCALING TSP USING HASHING
+
+In this section, we describe our framework for scaling the TSP-
+based approach for doc-ID reordering studied in [20, 6] to much
+larger corpora. The main ingredient here is Locality Sensitive Hash-
+ing [15], a technique commonly used for clustering of large docu-
+ment collections for applications such as near-duplicate detection
+[13] and document compression [18]. We start with the outline of
+the framework, and then provide more details in Subsection 3.2.
+3.1 Basic Idea and Discussion
+
+While bottom-up, TSP-based approaches seem to offer the most
+compressible doc-ID ordering amongst all comparable methods, to
+achieve this level of compressibility requires signiﬁcant computa-
+tional effort. Even though the GNN heuristic simpliﬁes the known
+NP-Hard TSP problem, approximating a solution in quadratic time,
+given the millions to billions of documents present in a typical
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA313search engine, GNN has difﬁculty scaling. A solution was pro-
+posed in [6] involves a dimensionality reduction through singular
+value decomposition (SVD). While it offers a substantial improve-
+ment in run time, the complexity of this method is still hindered by
+a quadratic dependency on the size of the corpus, and thus does not
+scale to typical index sizes.
+
+In our approach, we avoid this computational bottleneck by ﬁrst
+creating a sparse graph, weeding out the vast majority of the n2
+edges used in prior approaches (n = |D|). We then run a GNN
+approximation to the TSP on this sparse graph, thereby avoiding
+examining all pairs of nodes. Our goal is to carefully select about
+k · n edges (where k << n) from G in such a way that this sparse
+graph is able to produce a TSP tour similar in quality to the TSP
+tour obtainable on a full graph. Speciﬁcally, we select for each
+node those k out of n incoming edges that have the highest weight,
+i.e, edges that point at the k nearest neighbors, as these are the most
+promising edges for the TSP. However, this leaves us with the prob-
+lem of ﬁnding the k nearest neighbors of each node without looking
+at all pairs of nodes. Fortunately, for the types of similarity metrics
+we are interested in (e.g., Jaccard similarity), there are highly efﬁ-
+cient techniques [15, 13] for ﬁnding the k nearest neighbors of all
+nodes in time O(n · polylog(n)), much faster than (cid:2)(n2).
+
+The idea of accelerating a graph computation by working on a
+suitably constructed sparse graph is well known in the algorithms
+community. The most closely related application is in the context
+of compressing a collection of similar ﬁles, as described in [18],
+where ﬁnding an optimal compression scheme reduces to ﬁnding
+a Maximum Branching (essentially a directed form of a Maximum
+Spanning Tree) in a directed graph. To speed up this computation,
+[18] also builds a sparse k-nearest neighbor graph using the tech-
+niques from [15, 13], and then runs the Maximum Branching com-
+putation on this sparse graph. In fact, for the Maximum Branch-
+ing problem it has been shown [2] that the solution on the sparse
+graph approximates that on the complete graph within a factor of
+k=(k + 1). Note that this is not true for the case of Maximal TSP;
+in fact, one can show that the solution on the sparse subgraph can
+be arbitrarily away from the optimum. However, we will see that
+in practice this approach works quite well.
+3.2 Details
+
+We now provide more details on our framework, which can be
+
+divided into four phases as follows.
+
+(1) Min-Hashing: We scan over the document collection, and
+select from each document s random terms (here s = 100)
+using the Min-Hash sampling technique [9] as described in
+[13]. In particular, the i-th sample is obtained by hashing all
+terms in the document using a hash function hi, and selecting
+the term that hashes to the minimum value.
+
+′
+
+(2) Selecting Nearest Neighbor Candidates: The goal of this
+phase is to select for each node k
+> k other nodes that
+are likely to contain the k nearest neighbors using the Lo-
+cality Sensitive Hashing approach in [15, 13]. We compute
+for each document t superhashes (here t = 80), where the
+j-th superhash of each document is computed by selecting
+l indexes i1; : : : ; il at random from {1; : : : ; s}, concatenat-
+ing the terms selected from the document as the i1-th, i2-th,
+to il-th samples in the previous phase, and hashing the con-
+catenation to a 32-bit integer using MD5 or a similar func-
+tion. It is important that the same randomly selected indexes
+i1; : : : ; il are used to select the j-th superhash of every doc-
+uments. This results in t ﬁles F1 to Ft such that Fj contains
+the the j-th superhash of all documents.
+The crucial point, analyzed in detail in [13], is that if two
+
+Figure 1: Architecture for LSH-based Dimensionality Reduc-
+tion for TSP-Based Doc-ID Assignment Algorithms
+
+documents share the same j-th superhash for some j, their
+similarity is likely to be above some threshold (cid:18) that depends
+on our choice of s and l. Conversely, if two documents have
+similarity above (cid:18), and if t is chosen large enough, then it
+is likely that their j-th superhashes are identical for some
+j ∈ {1; : : : ; t}. Thus, by sorting each ﬁle Fj and looking for
+identical values, we can identify pairs of documents that are
+likely to be similar.
+However, for any ﬁxed threshold (cid:18), we may get some nodes
+with a large number of neighbors with similarity above (cid:18),
+and some nodes with few or no neighbors. In order to select
+about k
+nearest neighbors for each node, we iterate this en-
+tire phase several times, starting with a very high threshold (cid:18)
+and then in each iteration removing nodes that already have
+enough neighbors and lowering the threshold until all nodes
+have enough neighbors. At the end of this phase, we have a
+long list of candidate nearest neighbor pairs.
+
+′
+
+(3) Filtering: In this phase, we check all the candidate pairs
+from the previous phase to select the actual k neighbors that
+we retain for each node. This is done by computing the sim-
+ilarity of each pair using all s samples from the ﬁrst phase,
+and selecting the k candidates with highest similarity.
+
+(4) TSP Computation: We perform a TSP computation on the
+sparse subgraph, using a TSP heuristic (for instance GNN)
+when no outgoing edge is available, we “restart”, mimick-
+ing the heuristic explored in [20], selecting the remaining
+node with greatest remaining similarity in the sparse sub-
+graph. Note that this approximation to G, G
+may not even
+be connected. The ordering determined by this tour is output
+and then used to compress the inverted index.
+
+′
+
+This architecture is illustrated in ﬁgure 1. We emphasize again
+that the hashing techniques in phases (1) and (2) are described and
+analyzed in more detail in [13], and that we reimplemented these
+phases based on that description. While the nearest neighbor can-
+didates are selected based on the Jaccard similarity between docu-
+ments, it is sometimes beneﬁcial to apply other similarity metrics
+during the ﬁltering phase, e.g., to try to maximize set intersection
+rather than Jaccard similarity along the TSP tour. This will be dis-
+cussed in detail in the next section.
+
+A few comments on efﬁciency. The ﬁrst phase requires scanning
+over and parsing the entire collection, though this could be over-
+lapped with the parsing for index building. Hashing every term
+s = 100 times is somewhat inefﬁcient, but can be avoided with
+clever optimizations. The second and third phases require repeated
+scanning of samples, superhashes, and resulting candidate pairs;
+the data sizes involved are smaller than the collection but still of
+signiﬁcant size (about 5 to 20 GB each as opposed to the 500
+GB uncompressed size for the TREC GOV2 data set). However,
+all steps in these phases scale essentially linearly with collection
+size (with the caveat that parameters for k, t, and l are adjusted
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA314slightly as the collection grows). Moreover, they can be easily and
+highly efﬁciently implemented using mapReduce [12] or various
+I/O-efﬁcient computing paradigms.
+
+While the ﬁnal phase, actual computation of the TSP path, is the
+fastest in our setting, this is the only phase that has not been im-
+plemented in an I/O efﬁcient paradigm, requiring the entire sparse
+graph to reside in main memory. The min-hashing techniques pro-
+vide sufﬁcient compression of this graph such that even the 25 mil-
+lion documents of the TREC GOV2 data set can easily reside in
+a few GB of main memory. While this data set represents vastly
+larger set than is evaluated in previous work [20, 6], it’s size is
+insigniﬁcant in comparison to corpora commonly seen in commer-
+cial search engines– data sizes that prevent in-memory computa-
+tion using even the most powerful servers. While the TSP is very
+well-studied– literally hundreds of proposed solution schemes ex-
+ist [10], we were unable to ﬁnd approximation algorithms designed
+for external-memory or mapReduce environments. To extend the
+applicability to the largest document collections, a current frontier
+and algorithmic challenge is exploring novel TSP algorithms im-
+plemented in mapReduce and I/O-efﬁcient computation.
+
+In summary, in this section we have shown how to implement
+the TSP-based approach to the doc-ID assignment problem in an
+efﬁcient and highly scalable manner, using the well-known hashing
+techniques in [15, 13]. In the next sections, we show how to reﬁne
+this approach to optimize the resulting index compression on real
+data sets and with real index compression technology.
+
+4. CHOOSING EDGE WEIGHTS IN TSP
+
+The TSP approach to document reordering relies on suitable edges
+weights based on document similarity to ﬁnd an assignment of do-
+cIDs that achieves good compression. However, it is not obvious
+what is the best measure of document similarity for this case. Pre-
+vious work has sometimes used the Jaccard measure (the ratio of
+intersection to the union of the two documents) and sometimes used
+the absolute size of the intersection to determine the edge weight
+in the resulting TSP problem. We now discuss this issue in more
+detail and suggest additional weight functions.
+
+Intersection size: This measure was previously used in [20, 6],
+and has a simple and meaningful interpretation in the context of
+TSP-based reordering: choosing an edge of weight w in the TSP
+tour assigns consecutive docIDs for two documents with w terms
+in common, thereby leading to w 1-gaps in the resulting inverted
+index structure. Formally, the maximum TSP tour in a graph with
+edge weights given by raw intersection size results in an inverted
+index structure with the largest possible number of 1-gaps.
+
+As we show later, using intersection size indeed results in in-
+dexes with large numbers of 1-gaps. However, improved compres-
+sion does not just depend solely on the number of 1-gaps, as we
+discuss further below.
+
+Jaccard measure: This measure does not have any natural inter-
+pretation in terms of gaps, but was previously used in [22, 6]. The
+Jaccard measure also has two other attractive features in the context
+of TSP. First, it gives higher weights to documents of similar size.
+For example, if a small document is properly contained in another
+larger document, then their Jaccard similarity is very small while
+their intersection is quite large. While this is not a problem in an
+optimal solution of the (NP-Complete) TSP problem, many greedy
+heuristics for TSP appear to suffer by naively choosing edges be-
+tween documents of very different size. Use of the Jaccard mea-
+sure discourages use of such edges. Second, the LSH technique
+from [13] used in our framework works naturally with the Jaccard
+measure, while scalable nearest-neighbor techniques for other sim-
+ilarity measures are more complicated to implement [15].
+
+Log-Jaccard measure: To explore the space between intersec-
+tion size and Jaccard, we propose a hybrid measure where the in-
+tersection is divided by the logarithm of the size of the union, thus
+discouraging edges between documents of widely different size.
+
+Term-weighted intersection: As mentioned before, the result-
+ing compressed index size does not just depend on the number of 1-
+gaps. In particular, it could be argued that not all 1-gaps are equal:
+Making a 1000-gap into a 1-gap is more beneﬁcial than making a
+2-gap into a 1-gap. This argument is a bit misleading as there is
+no one-to-one correspondence between gaps before and after re-
+ordering. Assuming that docIDs are initially assigned at random,
+and any two terms t1 and t2 in the collection, with associated ft1
+and ft2, the number of postings in the corresponding inverted lists.
+Prior to reordering, the average gaps are approximately n=ft1 in
+the list for t1 and about n=ft2 in the list for t2 (where n is the
+number of documents), with a geometric distribution around the
+averages. Thus, if ft1 < ft2 then it could be argued that creating a
+1-gap in the list for t1 provides more beneﬁt compared to the case
+of random assignment than creating a gap in the list for t2.
+
+This argument leads to a weighted intersection measure where
+each term t is weighted in the intersection proportional to log(n=ft).
+This weight could also be interpreted as the savings obtained from
+gamma coding a 1-gap rather than an (n=ft)-gap.
+
+Implementation of different measures: As mentioned, our LSH-
+based implementation works naturally with the Jaccard measure.
+To implement various other similarity measures, we ﬁrst use the
+Jaccard-based LSH method to select the k
+candidates for the near-
+est neighbors, and then use the ﬁltering phase to rank the candidates
+according to the actual similarity measure of interest. If k
+is cho-
+sen sufﬁciently larger than k, then this seems to perform quite well.
+
+′
+
+′
+
+5. MULTI-GAP OPTIMIZATIONS
+
+As discussed, compressed index size does not just depend on the
+number of 1-gaps. This fact motivated the weighted intersection
+measure in the previous section. Note that any measure that focuses
+on 1-gaps, even if suitably weighted, fails to account for the impact
+of other types of small gaps on index size. A method that increases
+the number of 1-gaps as well as 2- and 3-gaps may provide much
+better compression than a method that solely optimized the number
+of 1-gaps. Thus, a better approach to document reordering would
+try to improve the overall distribution of gaps, giving credit for
+creating 1-gaps as well as other small gaps.
+
+However, this multi-gap notion collides with a basic assumption
+of the TSP-based approach: beneﬁt can be modeled solely by a
+weighted edge. A direct TSP formulation can only model 1-gaps!
+To model larger gaps we have to change the underlying problem
+formulation so that it considers interactions between documents
+that are 2, 3, or more positions apart on the TSP tour.
+
+Luckily, the greedy TSP algorithm can be adjusted to take larger
+gaps into account. Recall that in this algorithm, we grow a TSP tour
+by selecting a starting point and then greedily moving to the best
+neighbor, and from there to a neighbors of that neighbor, and so
+on. Now assume that we have already chosen a sequence of nodes
+(sets of terms) d1; d2; : : : ; di−1 and now have to decide which node
+to choose as di. For a particular candidate node d, the number of
+1-gaps created by choosing d is |d ∩ di−1|, while the number of 2-
+gaps is |(d∩ di−2)− di−1|. More generally, the number of created
+j-gaps is the number of terms in the intersection of d and di−j that
+do not occur in any of the documents di−j+1 to di−1. Thus, we
+should select the next document by looking not just at the edge
+weight, but also at the nodes preceding the last node we selected.
+
+To implement this efﬁciently, we need two additional data struc-
+tures during the TSP algorithm. We add for each node a compact
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA315but sufﬁciently large sample of its terms. These samples are kept
+in main memory. We found that using a sample of about 10% of
+the terms, selected by choosing all terms that hash to a value (say)
+7 mod 10 for some hash function (such as MD5), works well. This
+results in a few dozen terms per document which can be com-
+pressed to about one byte per term; on the other hand, it is not
+necessary anymore to store the edge weights in memory as part of
+the graph as these are now computed online. The second structure
+is a dictionary that contains for each term that is sampled the index
+of the last selected document that contained the term. Initially, all
+entries are set to 0, and when a term t occurs in a newly selected
+node di during the greedy algorithm, we update its entry to i.
+
+Using these structures, the modiﬁed algorithm works as follows:
+Having already selected d1 to di−1, we select di by iterating over
+all unvisited neighbors of di−1, and for each neighbor we iterate
+over all terms in its sample. For each term, we look at the dictionary
+to determine the length of the gap that would be created for this
+term, and compute a suitable weighted total beneﬁt of choosing
+this document. We then greedily select the neighbor giving the
+most beneﬁt. We note that this algorithm relies on a basic approach
+that grows a tour one edge at a time, and could not be easily added
+to just any algorithm for TSP. Also, note that the ﬁltering step still
+selects the k nearest neighbors based on a pairwise measure, and
+we are limited to selecting di from among these neighbors.
+
+This leaves us with the problem of modeling the beneﬁt of dif-
+ferent gaps. One approach would be to assign a beneﬁt of 1 +
+log(gavg=j) to any j-gap with j < gavg for a term t, where gavg =
+n=ft is the average gap in the randomly ordered case as used in the
+previous section. Thus, a positive beneﬁt is assigned for making a
+gap smaller than the average gap in the random ordering case, and
+no beneﬁt is given for any larger gaps. However, this misses an im-
+portant observation: Reordering of docIDs does not usually result
+in a reduction in the average d-gap of an inverted list.1 Rather, the
+goal of reordering is to skew the gap distribution to get many gaps
+signiﬁcantly smaller, and a few gaps much larger, than the average.
+Thus, getting a gap above the average n=ft is actually good,
+since for every gap above the average, other gaps have to become
+even smaller! This means that a candidate document should get
+beneﬁt for containing terms that have recently occurred in another
+document, and also for not containing terms that have not recently
+occurred. Or alternatively, we give negative beneﬁt for containing
+terms that have not recently occurred. This leads us to deﬁne the
+beneﬁt of a j-gap for a term t as 1 + log(gavg=j) for j < gavg and
+−(cid:11) · (1 + log(j=gavg)) otherwise, say for (cid:11) = 0:5.
+6. EXPERIMENTAL EVALUATION
+
+In this section, we evaluate the performance of our scalable TSP-
+based methods. Note that additional hybrid methods that combine
+TSP- and sort-based approaches are described and evaluated in Sec-
+tion 7. Throughout this section, we focus on total index size due to
+docIDs. The impact on the sizes of frequency values and positions
+will be discussed in later sections.
+6.1 Experimental Setup
+
+The reductions in index size achievable through reordering de-
+pend on the properties of the document collection, both in absolute
+(collections with many similar documents give more gains) and rel-
+ative terms (sorting-based methods do not work well if URLs or
+other names are not indicative of content). In our experiments, we
+use three data sets that are substantially different from each other:
+1In fact, if we also count the gap between the last docID in the list
+and the end of the collection as a d-gap, then the average d-gap
+does not change under any reordering. If we do not count this ﬁnal
+gap, then the average does not change by much.
+
+# of documents
+
+# of distinct words
+
+# of postings
+
+GOV2
+
+25,205,179
+36,759,149
+6,797 M
+
+Ireland
+
+10,000,000
+18,579,966
+2,560 M
+
+Wiki
+2,401,798
+19,586,472
+787 M
+
+Table 1: Basic statistics of our data sets.
+
+GOV2
+
+Ireland
+
+Wiki
+
+IPC
+RANDOM 6516
+2821
+SORT
+2908
+TSP-jacc
+TSP-inter
+2824
+RANDOM 2467
+690
+SORT
+617
+TSP-jacc
+TSP-inter
+610
+RANDOM 697
+653
+594
+565
+
+SORT
+TSP-jacc
+TSP-inter
+
+OPT-PFD Gamma % of 1 gaps
+
+6661
+3105
+3197
+3135
+2502
+746
+620
+614
+724
+714
+664
+663
+
+8088
+3593
+3475
+3415
+3820
+1020
+953
+947
+1226
+1116
+1006
+984
+
+7.00%
+59.00%
+67.90%
+68.20%
+8.00%
+77.00%
+83.80%
+84.10%
+6.00%
+13.00%
+28.00%
+28.00%
+
+Table 2: Index size in MB and percentage of 1-gaps in the index,
+for the three data sets and four different orderings.
+
+• GOV2: The TREC GOV2 collection of 25:2 million pages
+crawled from the gov domain used in some of the TREC
+competition tracks.
+• Ireland: This is a random sample of 10 million pages taken
+from a crawl of about 100 million pages in the Irish (ie) web
+domain provided to us by the Internet Archive.
+• Wiki: This is a snapshot of the English version of Wikipedia,
+taken on January 8, 2008, of about 2:4 million wikipedia arti-
+cles. (These are the actual articles, not including other pages
+such as discussion, history, or disambiguation pages.)
+
+We note here that the GOV2 collection is very dense in the sense
+that the gov domain was crawled almost to exhaustion. Thus, for
+any pair of similar pages there is a good chance both pages are in
+the set, and as shown in [23] reductions of about a factor of 2 in
+index size are achievable for this set. The Ireland data set is a new
+collection not previously used; by sampling from a larger domain
+we get a less dense set of pages. The Wiki data set is different
+from the other two in that the pages are much more uniform in
+type and style, and more similar to other non-web corpora (e.g.,
+Reuters or WSJ collections). We also expect less duplication, and
+less beneﬁt from reordering by URL sorting as URLs are probably
+less meaningful in this case.
+
+Table 1 summarizes the statistics:
+
+the number of documents,
+number of distinct words, and total number of postings (in mil-
+lions). In the basic version of these data sets, we did not perform
+near-duplicate detection to remove pages with different URLs that
+are almost or completely identical. However, we show the impact
+of near-duplicates in one of our experiments further below.
+6.2 Comparison of Basic Methods
+
+We start by comparing some baseline methods: a random or-
+dering of docIDs (RANDOM), an ordering according to sorting by
+URL (SORT), and two methods, TSP-jacc and TSP-inter, based
+on our TSP approach. In both methods we use our implementa-
+tion of LSH to determine 400 out-going candidate edges for each
+node, and then ﬁlter these down to 300 out-going edges per node.
+These values seem to work well in practice; thorough investigation
+into appropriate tuning of parameters is beyond the scope of this
+work. We then run a greedy Max-TSP algorithm on this graph,
+where TSP-jacc uses the Jaccard measure between two documents
+as edge weight, while TSP-inter uses the raw size of the intersection
+between the two documents.
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA316GOV2
+
+Ireland
+
+Wiki
+
+IPC
+RANDOM 7.67
+3.32
+SORT
+3.42
+TSP-jacc
+TSP-inter
+3.32
+RANDOM 7.71
+SORT
+2.16
+TSP-jacc
+1.92
+TSP-inter
+1.90
+RANDOM 7.08
+6.63
+6.03
+5.74
+
+SORT
+TSP-jacc
+TSP-inter
+
+OPT-PFD Gamma
+
+7.84
+3.66
+3.76
+3.68
+7.82
+2.33
+1.93
+1.91
+7.35
+7.25
+6.75
+6.74
+
+9.52
+4.23
+4.09
+4.02
+11.94
+3.19
+2.98
+2.96
+12.45
+11.34
+10.22
+9.82
+
+Table 3: Compression in bits per document ID for the three
+data sets and four document orderings.
+
+Tables 2 and 3 present the absolute size of the docID portion of
+the inverted index, and the number of bits per docID, respectively,
+for the three data sets. We see that on all data sets, using the raw
+intersection size outperforms use of the Jaccard measure. On the
+Wiki data set, sorting only gives a minor improvement over random
+ordering, while the TSP methods achieve more signiﬁcant gains,
+resulting in a size reduction of up to 19%. For Ireland, sorting
+does OK, but TSP-based methods do much better. On the other
+hand, for the GOV2 data set, SORT gets a similar size reduction
+as TSP-inter (about the same for IPC and OPT-PFD, and less than
+TSP-inter for Gamma coding). We also see that IPC and OPT-PFD
+substantially and consistently outperform Gamma coding, with IPC
+slightly outperforming OPT-PFD. (But note that OPT-PFD has a
+much higher decompression speed than either IPC or Gamma [23].)
+Table 2 also shows the number of 1-gaps (i.e., cases where two
+consecutive documents in the ordering share a term) for the dif-
+ferent ordering methods. TSP-size achieves a signiﬁcantly higher
+number of 1-gaps than the other methods. This is not surprising
+since the optimal TSP on the complete graph would in fact max-
+imize the total number of 1-gaps. (We believe our simple greedy
+TSP on the reduced graph is a reasonable approximation.) How-
+ever, as we see for the case of GOV2, this does not directly imply
+better compression. While TSP-size has many more 1-gaps than
+SORT, the resulting compression is about the same. This conﬁrms
+our conjecture in the previous section, that to minimize size we
+have to look at more than 1-gaps, and in particular at longer gaps.
+We now examine how the number of neighbors in the reduced
+graph impacts performance.
+In Figure 2, we plot the resulting
+compression in bits per docID for Wiki as we increase the number
+of neighbors. For all three compression schemes (IPC, OPT-PFD,
+Gamma) we see that compression improves with the number of
+neighbors (as expected), but improvement becomes less signiﬁcant
+beyond about 200 to 300 neighbors. In the following, unless stated
+otherwise, we use 300 neighbors per node, as in our basic experi-
+ments above. A larger number of neighbors increases the time for
+the TSP-based methods as well as the amount of memory needed
+during the greedy TSP itself; we explore this further below.
+
+Next, we consider the impact of near-duplicates (near-dups) on
+compression. To do this, we used our LSH implementation to de-
+tect all near-dups in the three data sets, deﬁned here as pairs of
+documents with a Jaccard score (ratio of intersection and union) of
+more than 0:95. (Note that for very short documents, one might
+argue that this threshold is too strict as it requires two documents
+to be identical. However, such documents contribute only a small
+part of the postings in the index.) We found that Wiki has less
+than 0:2% near-dups, while Ireland and GOV2 have 26% and 33%
+near-dups. Even for the case of GOV2, with more than 8:3 million
+near-dups out of 25:2 million documents, the beneﬁts of reordering
+
+Figure 2: Compression in bits per docID on Wiki data as we
+vary the number of neighbors.
+
+IPC + dups
+IPC - dups
+
+OPT-PFD + dups
+OPT-PFD - dups
+Gamma + dups
+Gamma - dups
+
+RANDOM SORT
+2821
+2747
+3105
+3031
+3593
+3148
+
+6516
+4360
+6661
+4360
+8088
+6211
+
+TSP-jacc
+
+2908
+2804
+3197
+3141
+3475
+3022
+
+TSP-inter
+2824
+2760
+3135
+3059
+3415
+3002
+
+Table 4: Index in MB for GOV2 with and without near-dups.
+
+are not just due to near-dups: Removing near-dups from the index
+under a random ordering results in a size reduction of about 30%,
+while subsequent reordering of the set without near-dups results in
+an additional 37% reduction (for IPC, relative to a random ordering
+without duplicates).
+
+Another interesting observation is that for the reordering meth-
+ods, the size of the index with and without near-dups is very similar
+– this implies that use of reordering methods neutralizes the impact
+of near-dups on index size, thereby allowing us to keep near-dups
+during indexing without index size penalty and then deal with them
+during query processing (which might sometimes be preferable).
+Closer inspection of the statistics for near-dups also showed that
+they are highly skewed and that a signiﬁcant fraction of the total
+near-dups in GOV2 and Ireland is due to a small number of docu-
+ments being near-duplicated many times (rather than due to many
+documents having one or two near-copies each).
+6.3 Advanced TSP Methods
+
+We now evaluate our various reﬁnements of the basic TSP method.
+In Table 5 we compare the performance of the SORT and TSP-inter
+methods from above with three additional TSP-based methods de-
+scribed in earlier sections: (i) TSP-log-jacc, which uses as edge
+weight the size of the intersection divided by the logarithm of the
+size of the union, (ii) TSP-log-ft, which weighs each term in the
+intersection of two documents by log(N=ft) (thus giving higher
+weights to 1-gaps created in short lists), and (iii) TSP-gaps, which
+also considers larger gaps as described in Subsection 5.
+
+The results are shown in Table 5, where we show the number of
+bits per docID under IPC, PFD, and Gamma coding. We observe
+that TSP-log-ft does not offer any improvement over raw intersec-
+tion. TSP-log-jacc gives decent improvements on Wiki, moder-
+ate improvements on GOV2, and only minuscule improvements on
+Ireland. However, TSP-gaps outperforms all other methods, and
+achieves improvements, e.g., for IPC, ranging from 2% on Ireland
+(which may be hard to further improve as it is already less than
+two bits per docID) to about 8% on Wiki (compared to TSP-inter).
+Thus, as conjectured, it is important to model longer gaps, not just
+1-gaps, to achieve the best possible compression.
+
+Recall that TSP-gaps differs from the other methods in that it
+cannot be modeled as a strict Max-TSP problem; the total beneﬁt
+is not simply a sum of precomputed edge weights but a more com-
+plicated expression along the chosen path. However, as discussed
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA317Ireland
+
+SORT
+
+GOV2
+
+SORT
+
+OPT-PFD Gamma
+
+TSP-inter
+TSP-log-ft
+TSP-log-jacc
+
+TSP-gaps
+
+TSP-inter
+TSP-log-ft
+TSP-log-jacc
+
+4.23
+4.02
+4.09
+4.04
+3.96
+3.19
+2.96
+2.99
+2.96
+2.91
+11.34
+9.82
+10.10
+9.12
+8.83
+Table 5: Compressed size in bits per docID.
+
+3.66
+3.68
+3.73
+3.68
+3.53
+2.33
+1.91
+1.94
+1.91
+1.89
+7.25
+6.74
+6.68
+6.31
+6.02
+
+TSP-inter
+TSP-log-ft
+TSP-log-jacc
+
+IPC
+3.32
+3.32
+3.36
+3.30
+3.18
+2.16
+1.90
+1.91
+1.89
+1.87
+6.63
+5.74
+6.09
+5.63
+5.36
+
+TSP-gaps
+
+SORT
+
+TSP-gaps
+
+Wiki
+
+GOV2
+
+Ireland
+
+Wiki
+
+TSP-gaps
+
+TSP-gaps-(5)
+
+TSP-gaps
+
+TSP-gaps-(5)
+
+TSP-gaps
+
+TSP-gaps-(5)
+TSP-gaps-(5,5)
+
+IPC
+3.18
+3.12
+1.87
+1.85
+5.36
+5.26
+5.25
+
+OPT-PFD Gamma
+
+3.53
+3.46
+1.89
+1.87
+6.02
+5.95
+5.93
+
+3.96
+3.90
+2.91
+2.87
+8.83
+8.83
+8.81
+
+Table 6: Compression for extended search in bits per docID.
+in the previous section, we can “graft” this method on top of our
+simple greedy TSP method that grows a path one edge at a time, by
+adding suitable data structures and in each step some computation
+for updating the beneﬁt. A natural question is how much better we
+could do by using better heuristics for the TSP problem, instead of
+the simple greedy heuristic used in this and previous work. How-
+ever, TSP-gaps makes it more difﬁcult to apply other heuristics, as
+we are restricted to heuristics that grow (one or several) long paths
+one edge at a time.
+
+To test the potential for additional improvements, we experi-
+mented with local search strategies that select the next edge to be
+added to the path by performing a limited search of the neighbor-
+hood of the current endpoint. That is, for a depth-d method, we
+check not just all outgoing edges to select the best one, but for the
+top-k1 out-going edges, we explore edges at depth 2, and for the
+top-k2 resulting paths of length 2 we explore one more level, and
+so on until we have paths of length d. We then add the ﬁrst edge
+of the best path to our existing path, and repeat. Thus, a depth-d
+method is deﬁned by d − 1 parameters k1 to kd−1, plus a discount
+factor (cid:11) that is applied to beneﬁts due to edges further away from
+the current endpoint, and some threshold value for further pruning
+of paths (e.g., we might consider paths with a value at least 80% of
+the current best path). There are obviously other heuristics one can
+apply, so this is just a ﬁrst exploration of the potential for improve-
+ments. We note that there is a trade-off with computation time; in
+a graph with n out-going edges per node, we have to compute the
+beneﬁt of up to (1 + k1 + : : : kd−1) · n instead of n edges.
+
+The results are presented in Table 6, where we look at the beneﬁt
+of a depth-2 search (with k1 = 5) over TSP-gaps. We see that the
+beneﬁts are very limited, with the best improvement of only 2% in
+index size on the GOV2 and Wiki data set. While deeper searching
+strategies were explored, the observed beneﬁt was very small.
+6.4 Efﬁciency Issues
+
+We now discuss the efﬁciency of the various methods. We note
+that URL sorting is highly efﬁcient as it does not require any access
+to the text in the documents. While it would be impossible for any
+method that exploits the content of documents to run in time com-
+
+generating min-hashes
+generating super-hashes
+
+neighbor ﬁnding (7 iterations)
+
+TSP-jacc
+TSP-inter
+TSP-gaps
+
+TSP-gaps-(5)
+
+2 hour and 15 minutes
+3 hours and 30 minutes
+6 hours and 40 minutes
+10 minutes
+10 minutes
+1 hour and 30 minutes
+10 hours
+
+Table 7: Time for each step in our TSP-based framework, for
+GOV2 with 300 neighbors per node.
+
+parable to SORT, it is important that a method achieve efﬁciency
+that is comparable to that of building a full-text index, and scala-
+bility to large data sets. All of our run were performed on a single
+AMD Opteron 2.3Ghz processor on a machine with 64GB of mem-
+ory and SATA disks. For all experiments at most 8 GB were used,
+except for the TSP computation in the case of TSP-gaps where at
+most 16 GB were used.
+
+Some sample results are shown in Table 7 for the GOV2 collec-
+tion of 25:2 million pages, our largest data set. In the ﬁrst step, we
+create 100 min-hashes per document, while in the second step, 80
+32-bit super-hashes are created from the min-hashes for each doc-
+ument and for each iteration in the subsequent step (i.e., 560 super-
+hashes per document for the seven iterations). We create a separate
+ﬁle for each of the 560 super-hashes and then sort each super-hash
+ﬁle using an I/O-efﬁcient merge sort. In the third step, for each
+node we generate up to 400 candidate nearest-neighbor edges for
+each node, by performing seven iterations with different threshold
+values for the LSH computation (using the super-hashes previously
+created according to the chosen thresholds). Each iteration involves
+a scan over the corresponding 80 super-hash ﬁles, then excluding
+nodes with more than400 candidate edges from subsequent itera-
+tions. At the end, the 400 candidates are re-ranked based on the
+real weight function (i.e., Jaccard, raw intersection, or log-Jaccard)
+using the min-hashes, and the top 300 edges for each node are kept.
+Note that to avoid duplicated candidate edges, we assume that all
+candidate edges ﬁt in main memory; otherwise we split the nodes
+into several subsets and perform a superhash scan for each subset.
+Overall, we note that producing the min-hashes and super-hashes,
+and then ﬁnding and ﬁltering nearest neighbor edges, takes time
+roughly comparable to that of building a full-text index on such a
+data set. (The presented running times are reasonably but not com-
+pletely optimized, so some improvements could be obtained with
+careful optimization and tuning of parameters such as the number
+of neighbors or iterations.) Moreover, we point out that these three
+steps can be very efﬁciently and easily ported to a mapReduce en-
+vironment, or executed in an I/O-efﬁcient manner on a single ma-
+chine, thus allowing us to scale to much larger data sets.
+
+The fourth step is the actual greedy TSP approximation. Our
+current implementation requires the entire graph reside in main
+memory– a solution that is inherently non-parrallelizable. We are
+presently experimenting with new TSP algorithms leveraging mapRe-
+duce and I/O efﬁcient techniques to allow arbitrarily large data sets
+to be processed. Initial experiments are promising and scalable TSP
+algorithms remain a direction for future research.
+
+As we see, the TSP computation is very fast for precomputed
+edge weights (e.g., TSP-jacc, TSP-inter), and somewhat slower for
+the multi-gap approach. TSP-gaps also requires more memory to
+store extra min-hashes (a 10% sample of each document) to com-
+pute online the beneﬁts of larger gaps. Once we add an additional
+search of the neighborhood, the running time quickly increases to
+about 10 hours even for k1 = 5. Thus, it is more realistic to just
+use TSP-gaps. Overall, for our current GNN, both running time
+and memory requirements for this step scale roughly linearly with
+the number of nodes and number of edges per node.
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA318SORT
+
+SORT+SIZE
+
+TSP-gaps
+
+TSP-gaps-(5)
+
+Hybrid-50lsh-250sort
+Hybrid-150lsh-150sort
+
+Hybrid-150lsh-150sort+size
+
+Hybrid-50lsh-50sort
+
+IPC
+3.32
+3.23
+3.18
+3.12
+2.96
+2.92
+2.92
+3.02
+
+OPT-PFD Gamma
+
+3.66
+3.58
+3.53
+3.46
+3.24
+3.22
+3.22
+3.31
+
+4.23
+4.17
+3.96
+3.90
+3.59
+3.57
+3.58
+3.66
+
+Table 8: Compression in bits per docID for hybrids on GOV2.
+
+docIDs (IPC)
+freqs (IPC)
+total (IPC)
+
+docIDs (PFD)
+freqs (PFD)
+total (PFD)
+
+RANDOM SORT
+2821
+1238
+4059
+3105
+1442
+4547
+
+6516
+1831
+8347
+6661
+2098
+8759
+
+TSP-gaps Hybrid
+
+2703
+1191
+3894
+3051
+1421
+4472
+
+2480
+1151
+3631
+2735
+1378
+4113
+
+Table 9: Index size (MB) including frequency values for GOV2.
+
+duce the LSH computation time (min-hashing, super-hashing, and
+neighbor ﬁnding) reported in the previous section.
+
+In Table 8 we present some selected results for the hybrid meth-
+ods. We see that SORT+SIZE is better than just URL sorting, but
+not as good as TSP-gaps. Note that while using 50 LSH edges
+and 250 sort edges is close to the best result for 300 neighbors,
+even using just 50 LSH edges and 50 sort edges does better than
+the best TSP-gaps method with 300 neighbors. This is important
+because using fewer total edges improves both machine time and
+memory consumption for the TSP computation, while using fewer
+LSH edges improves the efﬁciency of the various LSH steps. Thus,
+in practice using 50 sort edges and 50 LSH edges may be a very
+good choice. However, using sort+size edges instead of sort edges
+in the hybrid gives no beneﬁts.
+8.
+
+IMPACT ON QUERY PROCESSING
+
+In preceding sections, we focused on minimizing the total size of
+docID component of the inverted index. One purpose of minimiz-
+ing index size is to improve query processing speed, as a smaller
+index requires less data to be transferred between disk and memory
+and between memory and CPU. In this section, we measure the im-
+pact of reordering on query processing, using GOV2 and 100; 000
+queries from the TREC Efﬁciency TASK and Wiki data and 5; 000
+selected queries from AOL related to wikipedia.
+
+We start with some numbers for index size including frequency
+values in the index. We apply the Most Likely Next (MLN) trans-
+formation to frequency values before compression, as proposed in
+[23]. As we see in Table 9 for GOV2, the methods with the best
+docID compression also give the best compression for frequencies.
+Then, we look at the impact of our technique on position com-
+pression. In our implementation we treat all documents in the col-
+lection as one consecutive "big page" and index the position of each
+term inside this "big page" as proposed in [11]. Table 10 gives the
+result for a 2-million subset from GOV2 which have consecutive
+alphabetic URLs. From Table 10 we can see under a better docID
+assignment the position compression is also improved.
+
+Next, we look at the amount of index data per query, that is, the
+total sizes of the inverted lists associated with the query terms of a
+typical query. This puts more weight on the most commonly used
+query terms, and is a measure for the amount of data per query that
+
+RANDOM SORT Hybrid
+
+position (PFD)
+position (IPC)
+
+3495
+3154
+
+2834
+2737
+
+2709
+2638
+
+Table 10: Position index (MB) for a 2-million subset of GOV2.
+
+Figure 3: Performance of hybrid using both LSH and sort
+edges on GOV2 under IPC with 300 edges, for varying per-
+centages of LSH edges.
+
+7. HYBRID ALGORITHMS
+
+In the previous section, we demonstrated that a TSP-based ap-
+proach provides signiﬁcant improvements over the sort-based ap-
+proach on the Wiki and Ireland data sets and more modest improve-
+ments on GOV2, while allowing for a reasonably efﬁcient and scal-
+able implementation. Of course, the sorting-based approach has
+advantages in terms of run time. Therefore, it would be interesting
+to combine the beneﬁts of the two approaches. In this section, we
+explore possible hybrid algorithms that use sorting as well as TSP
+to get better compression and faster computation of the reordering.
+We start with a simple extension of the sort-based approach,
+called SORT+SIZE, where we combine sorting by URL with use of
+document size. Intuitively, sorting brings similar documents closer,
+but probably does not work well on the local level since very often
+several groups of similar pages (but different from each other) are
+mixed in the same site or subdirectory. One heuristic to tease such
+groups apart is to use document size, i.e., the number of words in a
+document, as an additional feature. In particular, we experimented
+with the following heuristic: We ﬁrst sort by URL, then in each web
+site, we split documents into a number of classes according to size,
+and then in each class we sort again by URL. (Thus, we ﬁrst have
+all the largest pages in the site, then all the moderately large pages,
+and so on.) As we will show, this simple heuristic already gives im-
+provements in certain cases. It also motivates the search for other
+heuristics that are only based on simple features such as URL and
+document size; see for comparison the recent work in [3] on how
+to detect near-duplicates based only on URLs without using page
+content. We note that [8] recently and independently proposed to
+sort all documents by size only; this achieves measurable beneﬁts
+but does not perform as well as sorting.
+
+We also consider hybrids between sorting and TSP-based meth-
+ods. A simple approach is to ﬁrst sort by URL, then create for
+each node edges to its, say, 100 closest neighbors in this ordering,
+and run a TSP algorithm on the resulting graph to determine the
+ﬁnal ordering. Thus, sorting is used to select edges, and then TSP
+locally reorders the nodes. We can also combine such sort edges
+with edges determined via LSH. In the following, we experiment
+with these heuristic.
+
+In Figure 3, we look at how to best combine LSH edges and sort
+edges. Given 300 neighbors, we vary the number of sort edges
+from 0 to 300, and choose the remaining edges using the LSH
+method. As we see, this approach achieves signiﬁcant improve-
+ments over our previous methods, decreasing index size by more
+than 10% in some case over TSP-gaps. We also see that using a
+roughly equal number of edges from both sets performs best. How-
+ever, even choosing just 50 LSH edges comes close to optimum.
+Additionally, using only sort edges does not perform well. We note
+that decreasing the number of LSH edges to 50 will signiﬁcantly re-
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA319size/query
+
+SORT
+1.116
+
+TSP-gaps Hybrid
+0.98
+
+1.076
+
+Table 11: Size of inverted lists per query for docID in MB, for
+GOV2 using IPC.
+
+Random
+
+Sort
+
+TSP-gaps
+
+query processing time(ms/query)
+
+0.274
+0.256
+0.192
+
+decoded postings(k/query)
+
+91264
+81920
+60416
+
+Table 12: Query processing performance on Wikipedia
+
+has to be transferred from disk to main memory in a disk-resident
+index. As we see from Table 11, a better reordering signiﬁcantly
+reduces the amount of index data required per query. In fact, the
+improvement per query is larger than the improvement in total in-
+dex size, since more frequently accessed inverted lists appear to
+beneﬁt more from reordering.
+
+State-of-the-art IR query processors cache parts of the inverted
+index in main memory to reduce disk accesses and thus speed up
+processing. It is important to realize that the reduction in disk ac-
+cesses is not linear in either the total or per-query index size, but
+usually much larger since a higher percentage of the smaller index
+will ﬁt into cache, thus in turn increasing the cache hit rate. Ex-
+periments show that both TSP-gaps and the hybrid method achieve
+signiﬁcant improvements over the sort-based ordering for caching
+performance. For space reason we omit the experiments.
+
+Finally, it was shown in [23] that reordering also signiﬁcantly re-
+duces the CPU costs of intersecting inverted lists in main memory,
+as it results in larger skips within the lists. As we see from Table
+12, a better reordering can reduce the amount of time for query
+processing by up to 25% compared with sorting.
+
+We note that all our algorithms here only explicitly try to opti-
+mize docID compression, and not frequency and position compres-
+sion or query processing. Optimizing directly for these measure is
+an open problem for future research.
+9. DISCUSSION AND CONCLUSIONS
+
+In this paper, we proposed new algorithms for docID assign-
+ment that attempt to minimize index size.
+In particular, we de-
+scribed a framework for scaling the TSP-based approach shown
+to perform well in previous work, but limited by scalability. Our
+improvements utilize Locality Sensitive Hashing (LSH), and al-
+low TSP-based techniques to consider far larger data sets. Within
+this approach, we experimented with different weight functions,
+search heuristics, and hybrids, and provide evidence that the TSP
+approach can signiﬁcantly outperform URL sorting, the best previ-
+ously known approach that scales to such large data sets.
+
+Overall, the main lessons from this work are that the TSP ap-
+proach can be applied to sets of tens of millions of pages,that the
+TSP-gaps approach in particular appears to give a reasonable bal-
+ance between computational cost and index size, and that in some
+cases selecting candidates edges using both sorting and LSH results
+in additional improvements over TSP-gaps. There are several open
+questions raised in this paper that remain directions for future re-
+search. Amongst these are the development of novel TSP approx-
+imation techniques that could be implemented using mapReduce
+or I/O efﬁcient computation. Additionally, a deeper exploration
+of parameter settings and different data sets is required to develop
+good rules of thumb for deciding what parameter settings and re-
+ordering techniques a practitioner should explore. Additionally, it
+would be interesting to look at other reordering heuristics that only
+use meta data such as URLs, mime type, and size, motivated by
+work in [3]. Since document reordering is known to lead to more
+skips in the inverted lists during query processing [23], one could
+
+try to directly optimize the docID ordering for this objective, lead-
+ing to faster query processing, or optimizing frequency or position
+compression. Finally, a major limitation of document reordering
+techniques is that they are often not applicable in the presence of
+early termination techniques for query processing that assume a
+particular ordering of the index structures. It would be interesting
+to explore trade-offs between and possible combinations of early
+termination and document reordering techniques.
+
+Acknowledgments: This research was supported by NSF Grant
+IIS-0803605, "Efﬁcient and Effective Search Services over Archival
+Webs", and by a grant from Google.
+10. REFERENCES
+[1] V. Anh and A. Moffat. Inverted index compression using word-aligned binary
+
+codes. Information Retrieval, 8(1):151–166, Jan. 2005.
+
+[2] A. Bagchi, A. Bhargava, and T. Suel. Approximate maximum weighted
+
+branchings. In Information Processing Letters, volume 99, 2006.
+
+[3] E. Baykan, M. R. Henzinger, L. Marian, and I. Weber. Purely url-based topic
+classiﬁcation. In 18th International World Wide Web Conference, April 2009.
+
+[4] R. Blanco and A. Barreiro. Characterization of a simple case of the
+
+reassignment of document identiﬁers as a pattern sequencing problem. In Proc.
+of the 28th annual int. ACM SIGIR conference on Research and development in
+inf. retrieval, 2005.
+
+[5] R. Blanco and A. Barreiro. Document identiﬁer reassignment through
+
+dimensionality reduction. In Proc. of the 27th European Conf. on Information
+Retrieval, pages 375–387, 2005.
+
+[6] R. Blanco and A. Barreiro. Tsp and cluster-based solutions to the reassignment
+
+of document identiﬁers. Inf. Retr., 9(4):499–517, 2006.
+
+[7] D. Blandford and G. Blelloch. Index compression through document reordering.
+
+In Proc. of the Data Compression Conference, pages 342–351, 2002.
+
+[8] B. Brewington and G. Cybenko. Keeping up with the changing web. IEEE
+
+Computer, 33(5), May 2000.
+
+[9] A. Broder, M. Charikar, A. Frieze, and M. Mitzenmacher. Min-wise
+
+independent permutations. In Proc. of the 30th Annual ACM Symp. on Theory
+of Computing, 1998.
+
+[10] V. C. David L. Applegate, Robert E. Bixby and W. J. Cook. The traveling
+
+salesman problem: A computational study, 2006.
+
+[11] J. Dean. Challenges in building large-scale information retrieval systems. In
+
+Second ACM International Conference on Web Search and Data Mining, 2009.
+
+[12] J. Dean and S. Ghemawat. Mapreduce: Simpliﬁed data processing on large
+
+clusters. In 6th Symposium on Operating System Design and Implementation,
+2004.
+
+[13] T. Haveliwala, A. Gionis, and P. Indyk. Scalable techniques for clustering the
+
+web. In Proc. of the WebDB Workshop, Dallas, TX, 2000.
+
+[14] S. Heman. Super-scalar database compression between RAM and CPU-cache.
+
+MS Thesis, Centrum voor Wiskunde en Informatica, Amsterdam, 2005.
+
+[15] P. Indyk and R. Motwani. Approximate nearest neighbors: Towards removing
+
+the curse of dimensionality. In Proc. of the 30th ACM Symp. on Theory of
+Computing, 1998.
+
+[16] D. Johnson, S. Krishnan, J. Chhugani, S. Kumar, and S. Venkatasubramanian.
+Compressing large boolean matrices using reordering techniques. In 30th Int.
+Conf. on Very Large Data Bases(VLDB 2004), August 2004.
+
+[17] A. Moffat and L. Stuiver. Binary interpolative coding for effective index
+
+compression. Information Retrieval, 3(1):25–47, 2000.
+
+[18] Z. Ouyang, N. Memon, T. Suel, and D. Trendaﬁlov. Cluster-based delta
+
+compression of a collection of ﬁles. In Third Int. Conf. on Web Information
+Systems Engineering, 2002.
+
+[19] F. Scholer, H. Williams, J. Yiannis, and J. Zobel. Compression of inverted
+
+indexes for fast query evaluation. In Proc. of the 25th Annual SIGIR Conf. on
+Research and Development in Inf Retrieval, pages 222–229, 2002.
+
+[20] W. Shieh, T. Chen, J. Shann, and C. Chung. Inverted ﬁle compression through
+
+document identiﬁer reassignment. Inf. Processing and Management,
+39(1):117–131, 2003.
+
+[21] F. Silvestri. Sorting out the document identiﬁer assignment problem. In Proc. of
+
+29th European Conf. on Information Retrieval, pages 101–112, 2007.
+
+[22] F. Silvestri, S. Orlando, and R. Perego. Assigning identiﬁers to documents to
+
+enhance the clustering property of fulltext indexes. In Proc. of the 27th Annual
+Int. ACM SIGIR Conf on Research and Development in Inf. Retrieval, 2004.
+
+[23] H. Yan, S. Ding, and T. Suel. Inverted index compression and query processing
+
+with optimized document ordering. In 18th International World Wide Web
+Conference (WWW2009), April 2009.
+
+[24] J. Zhang, X. Long, and T. Suel. Performance of compressed inverted list
+
+caching in search engines. In Proc. of the 17th Int. World Wide Web Conf, 2008.
+[25] J. Zobel and A. Moffat. Inverted ﬁles for text search engines. ACM Computing
+
+Surveys, 38(2), 2006.
+
+[26] M. Zukowski, S. Heman, N. Nes, and P. Boncz. Super-scalar RAM-CPU cache
+
+compression. In Proc. of the Int. Conf. on Data Engineering, 2006.
+
+WWW 2010 • Full PaperApril 26-30 • Raleigh • NC • USA320
