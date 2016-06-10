@@ -9,6 +9,5 @@ This repository contains the following folders:
 5. www_No_ABS --> clean text out of original paper, (title, abstract, kephrases, section-names, references excluded)
 6. www_Title --> only the title of the paper
 7. www_References --> only references (raw text)
-8. code --> how to evaluate using i-measure & sample textrank (source language: python) 
 
 #########################################
