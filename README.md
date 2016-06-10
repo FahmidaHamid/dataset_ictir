@@ -1,6 +1,6 @@
 ######################################### 
 
-This file contains the following folders:
+This repository contains the following folders:
 
 1. wwwSampleDataSet --> pdf files
 2. wwwSampleDataSetOut --> raw text files from the corresponding pdfs
